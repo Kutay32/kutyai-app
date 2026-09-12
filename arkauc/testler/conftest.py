@@ -22,6 +22,10 @@ os.environ["KUTYAI_VERITABANI_URL"] = f"sqlite+aiosqlite:///{(_TMP / 'test.db').
 os.environ["KUTYAI_GIZLI_ANAHTAR"] = "test-gizli-anahtar-degeri-0123456789"
 os.environ["KUTYAI_SIFRELEME_ANAHTARI"] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 os.environ["KUTYAI_MASKELEME_AKTIF"] = "true"
+# Oran sinirlayici testlerde devre disi sayilir: her test izole edilir ve
+# limitler yuksek tutulur; sinirlayiciya ozel testler kendi limitini kurar.
+os.environ["KUTYAI_ORAN_SINIRI_ISTEK_DK"] = "100000"
+os.environ["KUTYAI_ORAN_SINIRI_KIMLIK_DK"] = "100000"
 
 from datetime import datetime, timezone  # noqa: E402
 
@@ -50,10 +54,14 @@ VARSAYILAN_PAROLA = "Parola123!"
 @pytest.fixture(autouse=True)
 async def veritabani():
     """Her test icin temiz sema + tohum verisi."""
+    from arkauc.app.cekirdek.oran_siniri import sinirlayiciyi_sifirla
+
     await motoru_sifirla()
+    sinirlayiciyi_sifirla()
     await tablolari_olustur()
     await tohumla()
     yield
+    sinirlayiciyi_sifirla()
     await tablolari_sil()
     await motoru_sifirla()
 

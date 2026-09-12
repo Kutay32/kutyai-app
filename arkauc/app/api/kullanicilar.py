@@ -126,7 +126,7 @@ async def kullanici_guncelle(
     return kimlik_servisi.kullanici_sozlugu(kullanici)
 
 
-@router.delete("/{kullanici_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{kullanici_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def kullanici_pasiflestir(
     kullanici_id: int,
     istek: Request,

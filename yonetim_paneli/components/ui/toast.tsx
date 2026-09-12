@@ -92,7 +92,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               type="button"
               onClick={() => kapat(oge.id)}
               aria-label="Bildirimi kapat"
-              className="rounded-md p-0.5 transition-colors hover:bg-black/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-900"
+              className="rounded-md p-0.5 transition-colors hover:bg-black/5 focus:outline-none focus:border-neutral-900 focus:ring-0"
             >
               <X aria-hidden className="size-4" />
             </button>

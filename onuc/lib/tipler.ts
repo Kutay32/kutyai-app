@@ -29,17 +29,32 @@ export type KayitYaniti = {
 
 export type MesajYaniti = { mesaj: string; gelistirme_baglantisi?: string };
 
-export type KullanimOzeti = {
-  toplam_istek: number;
-  toplam_token: number;
-  basarili: number;
-  hatali: number;
-  kota_asimi: number;
-  ortalama_gecikme_ms: number;
+/** Kota sınırları; `null` sınır sınırsız anlamına gelir (API.md §13). */
+export type KullanimKotasi = {
+  gunluk_istek: number | null;
+  kullanilan_gunluk: number;
+  aylik_token: number | null;
+  kullanilan_aylik: number;
+  gun_sifirlanma: string;
+  ay_sifirlanma: string;
 };
 
-export type KullanimSerisi = {
-  seri: { etiket: string; istek: number; token: number }[];
+export type KullanimSerisiNoktasi = {
+  /** `YYYY-MM-DD` */
+  tarih: string;
+  token: number;
+};
+
+/** Kişisel kullanım özeti (`GET /kullanim/benim`). */
+export type KisiselKullanim = {
+  gun: number;
+  toplam_istek: number;
+  toplam_token: number;
+  girdi_token: number;
+  cikti_token: number;
+  ortalama_gecikme_ms: number;
+  kota: KullanimKotasi | null;
+  seri: KullanimSerisiNoktasi[];
 };
 
 export const ROL_ETIKETLERI: Record<Rol, string> = {

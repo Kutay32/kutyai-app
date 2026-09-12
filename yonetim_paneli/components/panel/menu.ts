@@ -15,8 +15,8 @@ export type MenuOgesi = {
   etiket: string;
   ikon: LucideIcon;
   /**
-   * Sayfası bu dalgada mevcut mu? `false` olan öğeler menüde gizlenir;
-   * Dalga 2'de ilgili sayfa yazıldığında `true` yapılır.
+   * Sayfası bu dalgada mevcut mu? `false` olan öğeler menüde gizlenir
+   * (ör. sayfası henüz yazılmamış bir rota eklenirse).
    */
   hazir: boolean;
 };
@@ -24,13 +24,13 @@ export type MenuOgesi = {
 /** Sol menü sırası spec §12.2 ile aynıdır. */
 export const MENU: MenuOgesi[] = [
   { href: "/", etiket: "Kontrol Paneli", ikon: LayoutDashboard, hazir: true },
-  { href: "/bdm", etiket: "BDM'ler", ikon: Bot, hazir: false },
-  { href: "/loglar", etiket: "Konuşma Kayıtları", ikon: MessagesSquare, hazir: false },
-  { href: "/kullanim", etiket: "Kullanım", ikon: BarChart3, hazir: false },
-  { href: "/kullanicilar", etiket: "Kullanıcılar", ikon: Users, hazir: false },
-  { href: "/api-anahtarlari", etiket: "API Anahtarları", ikon: KeyRound, hazir: false },
-  { href: "/ayarlar", etiket: "Ayarlar", ikon: Settings, hazir: false },
-  { href: "/islem-kayitlari", etiket: "İşlem Kayıtları", ikon: ScrollText, hazir: false },
+  { href: "/bdm", etiket: "BDM'ler", ikon: Bot, hazir: true },
+  { href: "/loglar", etiket: "Konuşma Kayıtları", ikon: MessagesSquare, hazir: true },
+  { href: "/kullanim", etiket: "Kullanım", ikon: BarChart3, hazir: true },
+  { href: "/kullanicilar", etiket: "Kullanıcılar", ikon: Users, hazir: true },
+  { href: "/api-anahtarlari", etiket: "API Anahtarları", ikon: KeyRound, hazir: true },
+  { href: "/ayarlar", etiket: "Ayarlar", ikon: Settings, hazir: true },
+  { href: "/islem-kayitlari", etiket: "İşlem Kayıtları", ikon: ScrollText, hazir: true },
 ];
 
 /** Yolu menüde gösterilecek (sayfası olan) öğelere indirger. */

@@ -1,0 +1,31 @@
+# arkauc imajinin derleme baglami = depo koku. Yalnizca calistirmak icin gereken
+# Python paketleri tasinir; sanal ortam, arayuzler, testler ve ciktilar haric tutulur.
+# (Dockerfile'a ozel .dockerignore: derleme sirasinda yalnizca bu dosya okunur.)
+*
+!pyproject.toml
+!alembic.ini
+!requirements.txt
+!arkauc
+!arkauc/**
+!bdm_veritabani
+!bdm_veritabani/**
+!bdm_hazırlama_ucu
+!bdm_hazırlama_ucu/**
+!bdm_yönetim_ucu
+!bdm_yönetim_ucu/**
+!bdm_listesi
+!bdm_listesi/**
+!bdm_konusma_gecmisi
+!bdm_konusma_gecmisi/**
+
+# Testler ve onbellekler uretim imajina girmez.
+**/testler/**
+**/__pycache__/**
+**/*.pyc
+**/*.db
+**/*.sqlite3
+kaynak/**
+onuc/**
+yonetim_paneli/**
+.venv/**
+.pytest_cache/**

@@ -1,0 +1,12 @@
+# yonetim_paneli imajinin derleme baglami = depo koku. Yalnizca panel kaynagi tasinir.
+# (Dockerfile'a ozel .dockerignore: derleme sirasinda yalnizca bu dosya okunur.)
+*
+!yonetim_paneli
+!yonetim_paneli/**
+yonetim_paneli/node_modules/**
+yonetim_paneli/.next/**
+yonetim_paneli/tsconfig.tsbuildinfo
+yonetim_paneli/.env.local
+# Arayuz testleri ve tarayici profilleri imaja girmez; kilitli gecici dosyalar
+# derleme baglaminin okunmasini da bozar.
+yonetim_paneli/testler/**

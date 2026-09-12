@@ -218,6 +218,7 @@ Geçersiz durum geçişi `409 gecersiz_gecis`.
 | GET | `/loglar/konusmalar?kullanici_id=&bdm_id=&baslangic=&bitis=&arama=&sayfa=&boyut=` | `Sayfa<{id,baslik,kullanici_eposta,bdm_ad,mesaj_sayisi,token_girdi,token_cikti,olusturulma}>` |
 | GET | `/loglar/konusmalar/{id}` | mesajlarla birlikte |
 | GET | `/loglar/konusmalar/{id}/disa-aktar?bicim=json\|md\|csv` | dosya indirme |
+| GET | `/islem-kayitlari?eylem=&kullanici_id=&baslangic=&bitis=&sayfa=&boyut=` | Denetim izi: `Sayfa<{id, kullanici_id, kullanici_eposta, eylem, hedef_tur, hedef_id, ayrinti, ip, olusturulma}>` (personel; en yeni önce) |
 | DELETE | `/loglar/konusmalar/{id}` | `204` — yönetici/operatör (`izleyici` → `403`) |
 | POST | `/loglar/temizle` `{gun?}` | `{silinen:number}` (yalnız yönetici) |
 

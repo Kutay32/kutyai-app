@@ -48,7 +48,7 @@ export function Topbar({ markaAdi, kullanici, onMenuToggle }: TopbarProps) {
           type="button"
           onClick={onMenuToggle}
           aria-label="Menüyü aç"
-          className="rounded-md p-2 text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-900 md:hidden"
+          className="rounded-md p-2 text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus:outline-none focus:border-neutral-900 focus:ring-0 md:hidden"
         >
           <Menu aria-hidden className="size-5" />
         </button>
@@ -61,7 +61,7 @@ export function Topbar({ markaAdi, kullanici, onMenuToggle }: TopbarProps) {
           onClick={() => setMenuAcik((acik) => !acik)}
           aria-haspopup="menu"
           aria-expanded={menuAcik}
-          className="flex items-center gap-2 rounded-md border border-neutral-300 px-3 py-1.5 text-sm text-neutral-800 transition-colors hover:border-neutral-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2"
+          className="flex items-center gap-2 rounded-md border border-neutral-300 px-3 py-1.5 text-sm text-neutral-800 transition-colors hover:border-neutral-900 focus:outline-none focus:border-neutral-900 focus:ring-0"
         >
           <UserRound aria-hidden className="size-4 text-neutral-500" />
           <span className="max-w-[12rem] truncate">{kullanici.ad_soyad}</span>
@@ -94,7 +94,7 @@ export function Topbar({ markaAdi, kullanici, onMenuToggle }: TopbarProps) {
                 onClick={cikisYap}
                 disabled={cikiliyor}
                 className={cn(
-                  "flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-neutral-700 transition-colors hover:bg-neutral-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-900 disabled:opacity-50",
+                  "flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-neutral-700 transition-colors hover:bg-neutral-100 focus:outline-none focus:border-neutral-900 focus:ring-0 disabled:opacity-50",
                 )}
               >
                 <LogOut aria-hidden className="size-4" />

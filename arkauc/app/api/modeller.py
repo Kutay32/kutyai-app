@@ -17,7 +17,7 @@ from arkauc.app.cekirdek.bagimliliklar import (
     veritabani_oturumu,
 )
 from arkauc.app.cekirdek.denetim import islem_kaydet
-from arkauc.app.cekirdek.hatalar import GecersizGecis
+from arkauc.app.cekirdek.hatalar import GecersizGecis, YetkiYok
 from bdm_listesi import (
     BdmGuncelle,
     BdmKopyala,
@@ -39,6 +39,11 @@ router = APIRouter()
 YONETICI_OPERATOR = (Rol.yonetici, Rol.operator)
 YALNIZ_YONETICI = (Rol.yonetici,)
 
+# GUV-03: saglayici adresi ve upstream anahtari yalniz yoneticiye aittir.
+# Operator bunlari degistirip cozulmus anahtari kendi sunucusuna yonlendiremez.
+YONETICI_ALANLARI = ("temel_url", "api_anahtari", "saglayici")
+YONETICI_ALANI_MESAJI = "Sağlayıcı adresi ve API anahtarını yalnız yönetici değiştirebilir."
+
 _kimlikli_personel = gecerli_personel()
 _duzenleyici_personel = gecerli_personel(YONETICI_OPERATOR)
 _yonetici_personel = gecerli_personel(YALNIZ_YONETICI)
@@ -47,6 +52,29 @@ _yonetici_personel = gecerli_personel(YALNIZ_YONETICI)
 def _ip(istek: Request) -> str:
     """Denetim izi icin istemci IP adresi."""
     return istek.client.host if istek.client else ""
+
+
+def _guncelleme_alanlarini_koru(govde: BdmGuncelle, kullanici: Kullanici) -> None:
+    """Guncellemede korumali alanlar yalniz yoneticide kalir (GUV-03)."""
+    if kullanici.rol == Rol.yonetici:
+        return
+    verilen = sorted(
+        alan for alan in YONETICI_ALANLARI if alan in govde.model_fields_set
+    )
+    if verilen:
+        raise YetkiYok(YONETICI_ALANI_MESAJI, {"alanlar": verilen})
+
+
+def _olusturma_alanlarini_koru(govde: BdmOlustur, kullanici: Kullanici) -> None:
+    """Yeni kayitta yalniz upstream anahtari yoneticiye aittir (GUV-03).
+
+    `temel_url` serbesttir: yeni kayit mevcut bir anahtari baska adrese
+    tasimaz. Bos anahtar (`""`) yerel saglayicilar icin gecerlidir.
+    """
+    if kullanici.rol == Rol.yonetici:
+        return
+    if govde.api_anahtari:
+        raise YetkiYok(YONETICI_ALANI_MESAJI, {"alanlar": ["api_anahtari"]})
 
 
 @router.get("/modeller")
@@ -84,6 +112,7 @@ async def bdm_olustur_ucu(
     oturum: AsyncSession = Depends(veritabani_oturumu),
 ) -> dict[str, object]:
     """Yeni BDM kaydi olusturur (taslak durumunda)."""
+    _olusturma_alanlarini_koru(govde, kullanici)
     bdm = await bdm_olustur(oturum, govde)
     await islem_kaydet(
         oturum,
@@ -106,6 +135,7 @@ async def bdm_guncelle_ucu(
     oturum: AsyncSession = Depends(veritabani_oturumu),
 ) -> dict[str, object]:
     """BDM kaydini kismen gunceller."""
+    _guncelleme_alanlarini_koru(govde, kullanici)
     bdm = await bdm_getir(oturum, bdm_id)
     await bdm_guncelle(oturum, bdm, govde)
     await islem_kaydet(

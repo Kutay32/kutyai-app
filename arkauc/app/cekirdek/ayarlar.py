@@ -45,6 +45,8 @@ class Ayarlar(BaseSettings):
     saklama_gun: int = 90
     maskeleme_aktif: bool = True
     oran_siniri_istek_dk: int = 60
+    oran_siniri_kimlik_dk: int = 10
+    guvenilir_vekil: bool = False
 
     smtp_host: str = ""
     smtp_port: int = 587
@@ -55,6 +57,7 @@ class Ayarlar(BaseSettings):
 
     docker_soketi: str = ""
     image_onbellek: str = "vllm/vllm-openai:latest,ollama/ollama:latest"
+    hf_onbellek: str = ""
 
     _uretilen: list[str] = PrivateAttr(default_factory=list)
 
@@ -102,6 +105,13 @@ class Ayarlar(BaseSettings):
     @property
     def image_listesi(self) -> list[str]:
         return [parca.strip() for parca in self.image_onbellek.split(",") if parca.strip()]
+
+    def hf_onbellek_yolu(self) -> str:
+        """HuggingFace model onbellegi; konteynere de bu dizin baglanir."""
+        ham = (self.hf_onbellek or "").strip()
+        if ham:
+            return ham
+        return (KOK / "bdm_veritabani" / "hf-onbellek").as_posix()
 
     @property
     def smtp_var_mi(self) -> bool:

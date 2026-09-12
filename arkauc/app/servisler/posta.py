@@ -7,7 +7,7 @@ sifrelenmemis eski kayitlar icin).
 
 Etkin host bos ise `konsol` surucusu kullanilir: iletiyi loglar, gonderimi
 basarili sayar ve baglanti test/kurulum icin `gelistirme_baglantisi` alanina
-yazilir.
+yazilir (yalnizca uretim disi ortamda; bkz. GUVENLIK.md).
 """
 
 from __future__ import annotations

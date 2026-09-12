@@ -62,7 +62,10 @@ class YerelSurucusu:
         try:
             yanit = httpx.get(f"{temel}/api/tags", timeout=ZAMAN_ASIMI)
         except Exception as hata:
-            return False, [], f"Ollama sunucusuna ulaşılamadı ({temel}): {hata}"
+            logger.error(
+                "Ollama sunucusuna ulaşılamadı (%s): %s", temel, type(hata).__name__
+            )
+            return False, [], f"Ollama sunucusuna ulaşılamadı ({temel})."
         if yanit.status_code >= 400:
             return False, [], f"Ollama sunucusu {yanit.status_code} döndü ({temel})."
         try:
@@ -130,8 +133,9 @@ class YerelSurucusu:
                 timeout=ZAMAN_ASIMI,
             )
         except Exception as hata:
+            logger.exception("Ollama modeli boşaltılamadı (%s).", temel)
             raise UstSaglayiciHatasi(
-                f"Ollama sunucusuna ulaşılamadı ({temel}); model bellekten boşaltılamadı: {hata}",
+                "Ollama sunucusuna ulaşılamadı; model bellekten boşaltılamadı.",
                 {"temel_url": temel, "model": model},
             ) from hata
         if yanit.status_code >= 400:

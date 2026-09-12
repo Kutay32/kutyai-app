@@ -104,65 +104,113 @@ async function govdeCoz<T>(cevap: Response): Promise<T> {
   return govde as T;
 }
 
-// Aynı anda birden çok 401 gelirse tek yenileme isteği paylaşılır.
-let yenilemeSozu: Promise<boolean> | null = null;
+/** Yenileme denemesinin sonucu: yalnız `gecersiz` oturumu sonlandırır. */
+type YenilemeSonucu = "basarili" | "gecersiz" | "ulasilamadi";
 
-async function jetonuYenile(): Promise<boolean> {
+/** Oturumun gerçekten bittiğini gösteren hata kodları (API.md §1). */
+const OTURUM_BITTI_KODLARI: Record<string, true> = {
+  jeton_gecersiz: true,
+  jeton_suresi_doldu: true,
+  gecersiz_kimlik_bilgisi: true,
+  kimlik_gerekli: true,
+};
+
+async function yenilemeDene(): Promise<YenilemeSonucu> {
   const yenileme = oturumOku("yenileme");
-  if (!yenileme) return false;
+  if (!yenileme) return "gecersiz";
 
-  const istek = (async () => {
-    const cevap = await fetch(`${API_TABANI}/kimlik/yenile`, {
+  let cevap: Response;
+  try {
+    cevap = await fetch(`${API_TABANI}/kimlik/yenile`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ yenileme_jetonu: yenileme }),
       cache: "no-store",
     });
-    if (!cevap.ok) return false;
-
-    const veri = (await cevap.json()) as {
-      erisim_jetonu?: string;
-      yenileme_jetonu?: string;
-    };
-    const kullanici = kullaniciOku();
-    if (!veri.erisim_jetonu || !veri.yenileme_jetonu || !kullanici) return false;
-
-    oturumKaydet({
-      erisim_jetonu: veri.erisim_jetonu,
-      yenileme_jetonu: veri.yenileme_jetonu,
-      kullanici,
-    });
-    return true;
-  })().catch(() => false);
-
-  yenilemeSozu = istek;
-  try {
-    return await istek;
-  } finally {
-    if (yenilemeSozu === istek) yenilemeSozu = null;
+  } catch {
+    // Ağ hatası: jeton geçersizliği değil, oturum korunur.
+    return "ulasilamadi";
   }
+
+  if (!cevap.ok) {
+    if (cevap.status === 401 || cevap.status === 403) return "gecersiz";
+    const govde = (await cevap.json().catch(() => null)) as { hata?: { kod?: unknown } } | null;
+    const kod = typeof govde?.hata?.kod === "string" ? govde.hata.kod : null;
+    return kod && OTURUM_BITTI_KODLARI[kod] === true ? "gecersiz" : "ulasilamadi";
+  }
+
+  const veri = (await cevap.json().catch(() => null)) as {
+    erisim_jetonu?: string;
+    yenileme_jetonu?: string;
+  } | null;
+  const kullanici = kullaniciOku();
+  if (!veri?.erisim_jetonu || !veri.yenileme_jetonu || !kullanici) return "gecersiz";
+
+  oturumKaydet({
+    erisim_jetonu: veri.erisim_jetonu,
+    yenileme_jetonu: veri.yenileme_jetonu,
+    kullanici,
+  });
+  return "basarili";
+}
+
+/** Uçuşta olan yenileme sözü: eşzamanlı 401'ler tek isteği paylaşır (single-flight). */
+let yenilemeSozu: Promise<YenilemeSonucu> | null = null;
+
+/**
+ * Uçuşta bir yenileme varsa onu paylaşır; yoksa yenisini başlatır.
+ * Böylece eşzamanlı 401 dalgası sunucuda yenileme jetonu rotasyonu yarışına girmez.
+ */
+function jetonuYenile(): Promise<YenilemeSonucu> {
+  if (!yenilemeSozu) {
+    const soz = yenilemeDene();
+    yenilemeSozu = soz;
+    void soz.then(() => {
+      if (yenilemeSozu === soz) yenilemeSozu = null;
+    });
+  }
+  return yenilemeSozu;
+}
+
+/**
+ * 401 alındığında tekilleştirilmiş yenileme ve **tek** yeniden deneme uygular.
+ * Oturum yalnızca yenileme jetonu gerçekten geçersizse temizlenir; ağ hatasında korunur.
+ */
+async function jetonluIstek(yol: string, secenekler: IstekSecenekleri): Promise<Response> {
+  const kullanilanJeton = secenekler.jeton === undefined ? oturumOku("erisim") : secenekler.jeton;
+  const cevap = await hamIstek(yol, secenekler);
+
+  // Kimliksiz istek veya yenileme kapalı: oturuma dokunulmaz.
+  if (cevap.status !== 401 || secenekler.yenile === false || secenekler.jeton === null) {
+    return cevap;
+  }
+
+  // İstek bayat bir jetonla gitti ve bu arada başka bir yenileme tamamlandıysa
+  // yenileme isteğini yinelemeye gerek yoktur; doğrudan güncel jetonla denenir.
+  if (secenekler.jeton === undefined && kullanilanJeton) {
+    const guncelJeton = oturumOku("erisim");
+    if (guncelJeton && guncelJeton !== kullanilanJeton) {
+      return hamIstek(yol, { ...secenekler, yenile: false });
+    }
+  }
+
+  const sonuc = await jetonuYenile();
+  if (sonuc === "basarili") return hamIstek(yol, { ...secenekler, yenile: false });
+  if (sonuc === "gecersiz") oturumTemizle();
+  return cevap;
 }
 
 /**
  * API çağrısı. 401 alınırsa yenileme jetonuyla **tek** kez yeniden dener;
- * yenileme başarısızsa oturum temizlenir ve hata yukarı taşınır.
+ * yenileme jetonu geçersizse oturum temizlenir ve hata yukarı taşınır.
  */
 export async function istek<T>(yol: string, secenekler: IstekSecenekleri = {}): Promise<T> {
-  const cevap = await hamIstek(yol, secenekler);
-
-  if (cevap.status === 401 && secenekler.yenile !== false) {
-    if (await jetonuYenile()) {
-      return govdeCoz<T>(await hamIstek(yol, { ...secenekler, jeton: undefined, yenile: false }));
-    }
-    oturumTemizle();
-  }
-
-  return govdeCoz<T>(cevap);
+  return govdeCoz<T>(await jetonluIstek(yol, secenekler));
 }
 
 /** Kimlik doğrulamalı dosya indirir (ör. log dışa aktarma). */
 export async function dosyaIndir(yol: string, dosyaAdi: string): Promise<void> {
-  const cevap = await hamIstek(yol, {});
+  const cevap = await jetonluIstek(yol, {});
   if (!cevap.ok) throw zarfCoz(null, cevap.status);
 
   const adres = URL.createObjectURL(await cevap.blob());

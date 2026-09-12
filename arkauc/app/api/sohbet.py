@@ -24,7 +24,7 @@ from arkauc.app.cekirdek.hatalar import (
     YetkiYok,
 )
 from arkauc.app.servisler.akış import sohbet_akisi, tahmin_token
-from arkauc.app.servisler.kota import kota_kontrol, kota_kullan
+from arkauc.app.servisler.kota import kota_kullan, kota_token_ekle
 from arkauc.app.servisler.upstream import UstSaglayici
 from bdm_konusma_gecmisi import (
     konusma_detayi,
@@ -161,9 +161,9 @@ async def _konusma_getir(
 
 
 async def _kota_denetle(oturum: AsyncSession, bdm: Bdm, kimlik: IstemciKimligi) -> None:
-    """Kota asiminda 429 firlatir ve asimi kullanim kaydina isler."""
+    """Kotadan istek rezerve eder; limit doluysa 429 firlatir ve kaydeder."""
     try:
-        await kota_kontrol(
+        await kota_kullan(
             oturum,
             kullanici_id=kimlik.kullanici_id,
             api_anahtari_id=kimlik.anahtar_id,
@@ -181,18 +181,6 @@ async def _kota_denetle(oturum: AsyncSession, bdm: Bdm, kimlik: IstemciKimligi) 
         raise
 
 
-async def _kullanim_cagrisi(
-    oturum: AsyncSession, bdm: Bdm, kimlik: IstemciKimligi, *, token: int
-) -> None:
-    await kota_kullan(
-        oturum,
-        kullanici_id=kimlik.kullanici_id,
-        api_anahtari_id=kimlik.anahtar_id,
-        bdm_id=bdm.id,
-        token=token,
-    )
-
-
 async def _hatayi_kaydet(
     oturum: AsyncSession, bdm: Bdm, konusma: Konusma, kimlik: IstemciKimligi
 ) -> None:
@@ -205,7 +193,6 @@ async def _hatayi_kaydet(
             konusma_id=konusma.id,
             durum=KullanimDurumu.hata,
         )
-        await _kullanim_cagrisi(oturum, bdm, kimlik, token=0)
         await oturum.commit()
     except Exception as hata:  # pragma: no cover - kayit arizasi
         logger.warning("Hatalı istek kaydedilemedi: %s", hata)
@@ -296,7 +283,12 @@ async def sohbet(
         gecikme_ms=gecikme_ms,
         durum=KullanimDurumu.basarili,
     )
-    await _kullanim_cagrisi(oturum, bdm, kimlik, token=girdi + cikti)
+    await kota_token_ekle(
+        oturum,
+        kullanici_id=kimlik.kullanici_id,
+        api_anahtari_id=kimlik.anahtar_id,
+        token=girdi + cikti,
+    )
     await oturum.commit()
 
     return {

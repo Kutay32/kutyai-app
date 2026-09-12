@@ -1,53 +1,141 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Korumali } from "@/components/korumali";
-import { BuyukKart, Kart } from "@/components/ui/kart";
-import { YukleniyorDurumu } from "@/components/ui/yukleniyor";
+import { Buton } from "@/components/ui/buton";
+import { Kart } from "@/components/ui/kart";
 import { cn } from "@/lib/cn";
-import { ApiHatasi, apiFetch } from "@/lib/api";
-import { sayiBicimle } from "@/lib/bicim";
-import type { KullanimOzeti, KullanimSerisi } from "@/lib/tipler";
+import { ApiHatasi } from "@/lib/api";
+import { kisaTarihBicimle, sayiBicimle, tarihBicimle } from "@/lib/bicim";
+import {
+  GUN_SECENEKLERI,
+  VARSAYILAN_GUN,
+  kisiselKullanimGetir,
+  kotaYuzdesi,
+  seriYukseklikleri,
+} from "@/lib/kullanim";
+import type { KisiselKullanim } from "@/lib/tipler";
 
-const GUN_SECENEKLERI = [7, 30, 90];
+type OlcuAnahtari =
+  | "toplam_istek"
+  | "toplam_token"
+  | "girdi_token"
+  | "cikti_token"
+  | "ortalama_gecikme_ms";
 
-const OZET_ALANLARI: { anahtar: keyof KullanimOzeti; etiket: string }[] = [
+const OLCULER: { anahtar: OlcuAnahtari; etiket: string }[] = [
   { anahtar: "toplam_istek", etiket: "Toplam istek" },
   { anahtar: "toplam_token", etiket: "Toplam token" },
-  { anahtar: "basarili", etiket: "Başarılı" },
-  { anahtar: "hatali", etiket: "Hatalı" },
-  { anahtar: "kota_asimi", etiket: "Kota aşımı" },
+  { anahtar: "girdi_token", etiket: "Girdi token" },
+  { anahtar: "cikti_token", etiket: "Çıktı token" },
   { anahtar: "ortalama_gecikme_ms", etiket: "Ortalama gecikme (ms)" },
 ];
 
+/** Ölçü kartları ve grafik yerine geçen yükleme iskeleti. */
+function Iskelet() {
+  return (
+    <div role="status" aria-live="polite" className="flex flex-col gap-6">
+      <span className="sr-only">Kullanım verileri yükleniyor</span>
+      <div aria-hidden className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        {OLCULER.map((olcu) => (
+          <Kart key={olcu.anahtar}>
+            <div className="h-3 w-20 animate-pulse rounded-md bg-neutral-100" />
+            <div className="mt-3 h-7 w-28 animate-pulse rounded-md bg-neutral-100" />
+          </Kart>
+        ))}
+      </div>
+      <Kart aria-hidden className="flex flex-col gap-5">
+        <div className="h-3 w-32 animate-pulse rounded-md bg-neutral-100" />
+        <div className="h-2 w-full animate-pulse rounded-md bg-neutral-100" />
+        <div className="h-2 w-full animate-pulse rounded-md bg-neutral-100" />
+      </Kart>
+      <Kart aria-hidden className="flex flex-col gap-4">
+        <div className="h-3 w-40 animate-pulse rounded-md bg-neutral-100" />
+        <div className="h-40 w-full animate-pulse rounded-md bg-neutral-100" />
+      </Kart>
+    </div>
+  );
+}
+
+type KotaCubuguOzellikleri = {
+  etiket: string;
+  kullanilan: number;
+  /** `null` sınır sınırsız demektir; ilerleme çubuğu yerine yalnız sıfırlanma tarihi yazılır. */
+  sinir: number | null;
+  birim: string;
+  sifirlanma: string;
+  sifirlanmaEtiketi: string;
+};
+
+function KotaCubugu({
+  etiket,
+  kullanilan,
+  sinir,
+  birim,
+  sifirlanma,
+  sifirlanmaEtiketi,
+}: KotaCubuguOzellikleri) {
+  const yuzde = kotaYuzdesi(kullanilan, sinir);
+  const doldu = yuzde !== null && yuzde >= 100;
+  const olcu = birim ? `${sayiBicimle(kullanilan)} ${birim}` : sayiBicimle(kullanilan);
+  const sinirMetni = sinir === null ? "Sınırsız" : birim ? `${sayiBicimle(sinir)} ${birim}` : sayiBicimle(sinir);
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <span className="text-[13px] text-neutral-900">{etiket}</span>
+        <span className="text-[13px] text-neutral-500">
+          {olcu} / {sinirMetni}
+        </span>
+      </div>
+      {yuzde !== null ? (
+        <div
+          role="progressbar"
+          aria-label={`${etiket} kullanımı`}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={yuzde}
+          className="h-2 w-full overflow-hidden rounded-md border border-neutral-200"
+        >
+          <div
+            className={cn("h-full rounded-md", doldu ? "bg-rose-600" : "bg-neutral-900")}
+            style={{ width: `${yuzde}%` }}
+          />
+        </div>
+      ) : null}
+      <p className="text-[13px] text-neutral-500">
+        {sifirlanmaEtiketi} {tarihBicimle(sifirlanma)} tarihinde sıfırlanır.
+      </p>
+    </div>
+  );
+}
+
 function KullanimIcerigi() {
-  const [gun, setGun] = useState(30);
-  const [ozet, setOzet] = useState<KullanimOzeti | null>(null);
-  const [seri, setSeri] = useState<KullanimSerisi["seri"]>([]);
+  const [gun, setGun] = useState(VARSAYILAN_GUN);
+  const [kullanim, setKullanim] = useState<KisiselKullanim | null>(null);
   const [yukleniyor, setYukleniyor] = useState(true);
   const [hata, setHata] = useState<string | null>(null);
+  const sonIstek = useRef(0);
 
   const yukle = useCallback(async (seciliGun: number) => {
+    const sira = ++sonIstek.current;
     setYukleniyor(true);
     setHata(null);
     try {
-      const [ozetYaniti, seriYaniti] = await Promise.all([
-        apiFetch<KullanimOzeti>(`/kullanim/ozet?gun=${seciliGun}`),
-        apiFetch<KullanimSerisi>(`/kullanim/zaman-serisi?gun=${seciliGun}&kirilim=bdm`),
-      ]);
-      setOzet(ozetYaniti);
-      setSeri(seriYaniti.seri ?? []);
+      const yanit = await kisiselKullanimGetir(seciliGun);
+      if (sira !== sonIstek.current) return;
+      setKullanim(yanit);
     } catch (yakalanan) {
-      setOzet(null);
-      setSeri([]);
+      if (sira !== sonIstek.current) return;
+      setKullanim(null);
       setHata(
         yakalanan instanceof ApiHatasi
           ? yakalanan.message
           : "Kullanım verileri alınamadı. Lütfen tekrar deneyin.",
       );
     } finally {
-      setYukleniyor(false);
+      if (sira === sonIstek.current) setYukleniyor(false);
     }
   }, []);
 
@@ -55,7 +143,9 @@ function KullanimIcerigi() {
     void yukle(gun);
   }, [gun, yukle]);
 
-  const enYuksekIstek = seri.reduce((enBuyuk, kayit) => Math.max(enBuyuk, kayit.istek), 0);
+  const seri = kullanim?.seri ?? [];
+  const yukseklikler = seriYukseklikleri(seri);
+  const enYuksekToken = seri.reduce((enBuyuk, nokta) => Math.max(enBuyuk, nokta.token), 0);
 
   return (
     <div className="flex flex-col gap-6">
@@ -79,86 +169,90 @@ function KullanimIcerigi() {
       </div>
 
       {hata ? (
-        <div role="alert" className="rounded-lg border border-rose-200 p-4">
+        <Kart role="alert" className="flex flex-col items-start gap-3 border-rose-200">
           <p className="text-[13px] text-rose-600">{hata}</p>
-        </div>
-      ) : null}
-
-      {yukleniyor ? (
-        <Kart>
-          <YukleniyorDurumu etiket="Kullanım verileri yükleniyor" />
+          <Buton tur="ikincil" boyut="kucuk" onClick={() => void yukle(gun)}>
+            Yeniden dene
+          </Buton>
         </Kart>
-      ) : ozet ? (
+      ) : yukleniyor ? (
+        <Iskelet />
+      ) : kullanim ? (
         <>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            {OZET_ALANLARI.map((alan) => (
-              <Kart key={alan.anahtar}>
-                <p className="text-[13px] text-neutral-500">{alan.etiket}</p>
+            {OLCULER.map((olcu) => (
+              <Kart key={olcu.anahtar}>
+                <p className="text-[13px] text-neutral-500">{olcu.etiket}</p>
                 <p className="mt-1 text-2xl text-neutral-900">
-                  {sayiBicimle(ozet[alan.anahtar])}
+                  {sayiBicimle(kullanim[olcu.anahtar])}
                 </p>
               </Kart>
             ))}
           </div>
 
-          <Kart className="p-0">
-            <div className="border-b border-neutral-100 p-4">
-              <h2 className="text-sm font-medium text-neutral-900">Modele göre dağılım</h2>
+          <Kart className="flex flex-col gap-5">
+            <div>
+              <h2 className="text-sm font-medium text-neutral-900">Kota kullanımı</h2>
               <p className="mt-0.5 text-[13px] text-neutral-500">
-                Seçilen aralıkta model başına istek ve token toplamı.
+                Günlük istek ve aylık token sınırlarınız.
+              </p>
+            </div>
+            {kullanim.kota ? (
+              <>
+                <KotaCubugu
+                  etiket="Günlük istek"
+                  kullanilan={kullanim.kota.kullanilan_gunluk}
+                  sinir={kullanim.kota.gunluk_istek}
+                  birim=""
+                  sifirlanma={kullanim.kota.gun_sifirlanma}
+                  sifirlanmaEtiketi="Günlük sınır"
+                />
+                <KotaCubugu
+                  etiket="Aylık token"
+                  kullanilan={kullanim.kota.kullanilan_aylik}
+                  sinir={kullanim.kota.aylik_token}
+                  birim="token"
+                  sifirlanma={kullanim.kota.ay_sifirlanma}
+                  sifirlanmaEtiketi="Aylık sınır"
+                />
+              </>
+            ) : (
+              <p className="text-[13px] text-neutral-500">
+                Hesabınız için tanımlı bir kota yok; kullanımınız sınırlandırılmıyor.
+              </p>
+            )}
+          </Kart>
+
+          <Kart className="flex flex-col gap-4">
+            <div>
+              <h2 className="text-sm font-medium text-neutral-900">Günlük token kullanımı</h2>
+              <p className="mt-0.5 text-[13px] text-neutral-500">
+                Son {gun} günde gün başına işlenen token.
               </p>
             </div>
             {seri.length === 0 ? (
-              <p className="p-4 text-[13px] text-neutral-500">
-                Bu aralıkta kayıtlı kullanım yok.
-              </p>
+              <p className="text-[13px] text-neutral-500">Bu aralıkta kayıtlı kullanım yok.</p>
             ) : (
-              <table className="w-full border-collapse text-left">
-                <caption className="sr-only">Modele göre kullanım dağılımı</caption>
-                <thead>
-                  <tr className="border-b border-neutral-100 text-[13px] text-neutral-500">
-                    <th scope="col" className="p-4 font-normal">
-                      Etiket
-                    </th>
-                    <th scope="col" className="p-4 font-normal">
-                      İstek
-                    </th>
-                    <th scope="col" className="p-4 font-normal">
-                      Token
-                    </th>
-                    <th scope="col" className="hidden p-4 font-normal md:table-cell">
-                      Dağılım
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {seri.map((kayit) => (
-                    <tr key={kayit.etiket} className="border-b border-neutral-100 last:border-b-0">
-                      <th scope="row" className="p-4 text-[13px] font-medium text-neutral-900">
-                        {kayit.etiket}
-                      </th>
-                      <td className="p-4 text-[13px] text-neutral-600">
-                        {sayiBicimle(kayit.istek)}
-                      </td>
-                      <td className="p-4 text-[13px] text-neutral-600">
-                        {sayiBicimle(kayit.token)}
-                      </td>
-                      <td className="hidden p-4 md:table-cell">
-                        <div className="h-2 w-full max-w-40 rounded-md border border-neutral-200">
-                          <div
-                            className="h-full rounded-md bg-neutral-900"
-                            style={{
-                              width: `${
-                                enYuksekIstek > 0 ? Math.round((kayit.istek / enYuksekIstek) * 100) : 0
-                              }%`,
-                            }}
-                          />
-                        </div>
-                      </td>
-                    </tr>
+              <div className="flex flex-col gap-2">
+                <div
+                  role="img"
+                  aria-label={`Günlük token grafiği: ${seri.length} gün, en yüksek gün ${sayiBicimle(enYuksekToken)} token`}
+                  className="flex h-40 items-end gap-1"
+                >
+                  {seri.map((nokta, sira) => (
+                    <div
+                      key={nokta.tarih}
+                      title={`${nokta.tarih}: ${sayiBicimle(nokta.token)} token`}
+                      className="min-w-0 flex-1 rounded-t-md bg-neutral-900"
+                      style={{ height: `${yukseklikler[sira]}%` }}
+                    />
                   ))}
-                </tbody>
-              </table>
+                </div>
+                <div className="flex justify-between text-[13px] text-neutral-500">
+                  <span>{kisaTarihBicimle(seri[0]?.tarih)}</span>
+                  <span>{kisaTarihBicimle(seri[seri.length - 1]?.tarih)}</span>
+                </div>
+              </div>
             )}
           </Kart>
         </>
@@ -174,7 +268,7 @@ export default function KullanimSayfasi() {
         <div className="mb-6">
           <h1 className="marka-serif text-2xl text-neutral-900">Kullanım</h1>
           <p className="mt-1 text-sm text-neutral-500">
-            İstek, token ve gecikme özetiniz.
+            İstek, token ve gecikme özetiniz. Yalnızca kendi kullanımınız gösterilir.
           </p>
         </div>
         <KullanimIcerigi />

@@ -32,7 +32,7 @@ export function Tabs({ items, value, onValueChange, className }: TabsProps) {
             aria-selected={secili}
             onClick={() => onValueChange(oge.value)}
             className={cn(
-              "-mb-px rounded-t-md border-b-2 px-4 py-2 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2",
+              "-mb-px rounded-t-md border-b-2 px-4 py-2 text-sm font-medium transition-colors focus:outline-none focus:border-neutral-900 focus:ring-0",
               secili
                 ? "border-neutral-900 text-neutral-900"
                 : "border-transparent text-neutral-500 hover:text-neutral-900",

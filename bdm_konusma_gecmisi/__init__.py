@@ -1,7 +1,12 @@
 """Konusma gecmisi katmani: maskeleme, yazim, sorgu, disa aktarim, saklama."""
 
 from bdm_konusma_gecmisi.disa_aktarim import BICIMLER, disa_aktar, dosya_adi_uret
-from bdm_konusma_gecmisi.maskeleme import kurallari_yukle, maskele, maskele_metin
+from bdm_konusma_gecmisi.maskeleme import (
+    kurallari_yukle,
+    maskele,
+    maskele_metin,
+    maskeleme_etkin,
+)
 from bdm_konusma_gecmisi.saklama import eski_konusmalari_sil
 from bdm_konusma_gecmisi.sorgu import (
     konusma_detayi,
@@ -25,6 +30,7 @@ __all__ = [
     "kurallari_yukle",
     "maskele",
     "maskele_metin",
+    "maskeleme_etkin",
     "eski_konusmalari_sil",
     "konusma_detayi",
     "konusma_sahibi_mi",

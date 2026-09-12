@@ -68,7 +68,7 @@ export function Drawer({
             type="button"
             onClick={onClose}
             aria-label="Kapat"
-            className="rounded-md p-1 text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-900"
+            className="rounded-md p-1 text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus:outline-none focus:border-neutral-900 focus:ring-0"
           >
             <X aria-hidden className="size-4" />
           </button>

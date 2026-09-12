@@ -9,7 +9,8 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from arkauc.app.cekirdek import guvenlik
-from arkauc.app.cekirdek.ayarlar_db import ayar_oku, ayar_yaz
+from arkauc.app.cekirdek.ayarlar import ayarlar
+from arkauc.app.cekirdek.ayarlar_db import ayar_oku
 from arkauc.app.cekirdek.bagimliliklar import gecerli_kullanici, veritabani_oturumu
 from arkauc.app.cekirdek.denetim import islem_kaydet
 from arkauc.app.cekirdek.hatalar import (
@@ -101,7 +102,12 @@ async def _giris_yap(
     panel: bool,
 ) -> dict[str, object]:
     kullanici = await kimlik_servisi.kullanici_bul(oturum, veri.eposta)
-    if kullanici is None or not kimlik_servisi.parola_gecerli_mi(kullanici, veri.parola):
+    if kullanici is None:
+        # Hesap var/yok ayrimi yanit suresinden okunmasin: kayitsiz e-postada da
+        # kayitli hesaptakiyle ayni sabit maliyetli argon2 dogrulamasi odenir.
+        kimlik_servisi.zamanlama_dogrulamasi()
+        raise kimlik_servisi.GecersizKimlikBilgisi()
+    if not kimlik_servisi.parola_gecerli_mi(kullanici, veri.parola):
         raise kimlik_servisi.GecersizKimlikBilgisi()
     if kullanici.durum == KullaniciDurumu.pasif:
         raise YetkiYok("Hesabınız devre dışı bırakılmış. Yöneticiye başvurun.")
@@ -180,9 +186,8 @@ async def kayit(
         "kullanici": kimlik_servisi.kullanici_sozlugu(kullanici),
         "dogrulama_gerekli": True,
     }
-    if not await smtp_tanimli_mi(oturum):
+    if not ayarlar.uretim_mi and not await smtp_tanimli_mi(oturum):
         yanit["gelistirme_baglantisi"] = baglanti
-        await ayar_yaz(oturum, "son_dogrulama_baglantisi", baglanti)
 
     await islem_kaydet(
         oturum,
@@ -311,9 +316,8 @@ async def sifre_sifirlama_iste(
         kimlik_servisi.SIFRE_SIFIRLAMA_SAAT,
     )
     await posta_gonder(oturum, kullanici.eposta, konu, govde)
-    if not await smtp_tanimli_mi(oturum):
+    if not ayarlar.uretim_mi and not await smtp_tanimli_mi(oturum):
         yanit["gelistirme_baglantisi"] = baglanti
-        await ayar_yaz(oturum, "son_sifirlama_baglantisi", baglanti)
     await islem_kaydet(
         oturum,
         "kimlik.sifre_sifirlama_iste",

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+import sqlalchemy as sa
 from fastapi import APIRouter, Depends, Query, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,7 +28,7 @@ from bdm_konusma_gecmisi import (
     konusmalari_listele,
 )
 from bdm_konusma_gecmisi.sorgu import EN_BUYUK_SAYFA_BOYUTU
-from bdm_veritabani.modeller import Konusma, Kullanici, Rol
+from bdm_veritabani.modeller import IslemKaydi, Konusma, Kullanici, Rol
 
 router = APIRouter()
 
@@ -41,6 +42,18 @@ class TemizleIstegi(BaseModel):
 def _kiyaslanabilir(an: datetime) -> datetime:
     """Bilinçsiz damgayı UTC kabul ederek karşılaştırmayı güvenli kılar."""
     return an if an.tzinfo is not None else an.replace(tzinfo=timezone.utc)
+
+
+def _araligi_dogrula(baslangic: datetime | None, bitis: datetime | None) -> None:
+    """Ters tarih aralığını reddeder."""
+    if (
+        baslangic is not None
+        and bitis is not None
+        and _kiyaslanabilir(baslangic) > _kiyaslanabilir(bitis)
+    ):
+        raise GecersizIstek(
+            "Başlangıç tarihi bitiş tarihinden sonra olamaz.", {"alan": "baslangic"}
+        )
 
 
 async def _konusma_getir(oturum: AsyncSession, konusma_id: int) -> Konusma:
@@ -63,14 +76,7 @@ async def konusma_loglari(
     _personel: Kullanici = Depends(gecerli_personel()),
 ) -> dict[str, object]:
     """Filtrelenebilir ve sayfalanabilir konuşma listesi."""
-    if (
-        baslangic is not None
-        and bitis is not None
-        and _kiyaslanabilir(baslangic) > _kiyaslanabilir(bitis)
-    ):
-        raise GecersizIstek(
-            "Başlangıç tarihi bitiş tarihinden sonra olamaz.", {"alan": "baslangic"}
-        )
+    _araligi_dogrula(baslangic, bitis)
     return await konusmalari_listele(
         oturum,
         kullanici_id=kullanici_id,
@@ -81,6 +87,63 @@ async def konusma_loglari(
         sayfa=sayfa,
         boyut=boyut,
     )
+
+
+@router.get("/islem-kayitlari")
+async def islem_kayitlari(
+    eylem: str | None = Query(default=None),
+    kullanici_id: int | None = Query(default=None),
+    baslangic: datetime | None = Query(default=None),
+    bitis: datetime | None = Query(default=None),
+    sayfa: int = Query(default=1, ge=1),
+    boyut: int = Query(default=25, ge=1, le=EN_BUYUK_SAYFA_BOYUTU),
+    oturum: AsyncSession = Depends(veritabani_oturumu),
+    _personel: Kullanici = Depends(gecerli_personel()),
+) -> dict[str, object]:
+    """Denetim izini en yeni kayıt önce listeler; tüm personel okuyabilir."""
+    _araligi_dogrula(baslangic, bitis)
+
+    kosullar: list[sa.ColumnElement[bool]] = []
+    if eylem:
+        kosullar.append(IslemKaydi.eylem == eylem)
+    if kullanici_id is not None:
+        kosullar.append(IslemKaydi.kullanici_id == kullanici_id)
+    if baslangic is not None:
+        kosullar.append(IslemKaydi.olusturulma >= baslangic)
+    if bitis is not None:
+        kosullar.append(IslemKaydi.olusturulma <= bitis)
+
+    toplam = (
+        await oturum.execute(
+            sa.select(sa.func.count()).select_from(IslemKaydi).where(*kosullar)
+        )
+    ).scalar_one()
+    satirlar = (
+        await oturum.execute(
+            sa.select(IslemKaydi, Kullanici.eposta)
+            .outerjoin(Kullanici, Kullanici.id == IslemKaydi.kullanici_id)
+            .where(*kosullar)
+            .order_by(IslemKaydi.olusturulma.desc(), IslemKaydi.id.desc())
+            .offset((sayfa - 1) * boyut)
+            .limit(boyut)
+        )
+    ).all()
+
+    kayitlar = [
+        {
+            "id": kayit.id,
+            "kullanici_id": kayit.kullanici_id,
+            "kullanici_eposta": eposta,
+            "eylem": kayit.eylem,
+            "hedef_tur": kayit.hedef_tur,
+            "hedef_id": kayit.hedef_id,
+            "ayrinti": kayit.ayrinti or {},
+            "ip": kayit.ip,
+            "olusturulma": kayit.olusturulma.isoformat(),
+        }
+        for kayit, eposta in satirlar
+    ]
+    return {"toplam": int(toplam), "sayfa": sayfa, "boyut": boyut, "kayitlar": kayitlar}
 
 
 @router.get("/loglar/konusmalar/{konusma_id}")
@@ -112,7 +175,7 @@ async def konusma_disa_aktar(
     )
 
 
-@router.delete("/loglar/konusmalar/{konusma_id}", status_code=204)
+@router.delete("/loglar/konusmalar/{konusma_id}", status_code=204, response_model=None)
 async def konusma_sil(
     konusma_id: int,
     oturum: AsyncSession = Depends(veritabani_oturumu),

@@ -74,7 +74,8 @@ async def test_kayit_dogrula_giris_yenile_cikis_akisi(istemci):
         f"{ayarlar.onuc_url.rstrip('/')}/dogrula?jeton={_jeton_coz(baglanti)}"
     )
     async with oturum_fabrikasi()() as oturum:
-        assert await ayar_oku(oturum, "son_dogrulama_baglantisi") == baglanti
+        # Jeton iceren baglanti `ayar` tablosunda saklanmaz (GUVENLIK.md).
+        assert await ayar_oku(oturum, "son_dogrulama_baglantisi") is None
         kayit = (
             await oturum.execute(
                 sa.select(DogrulamaJetonu).where(
@@ -394,7 +395,8 @@ async def test_sifre_sifirlama_akisi(istemci, yardimci):
         f"{ayarlar.onuc_url.rstrip('/')}/sifre-sifirla?jeton={_jeton_coz(baglanti)}"
     )
     async with oturum_fabrikasi()() as oturum:
-        assert await ayar_oku(oturum, "son_sifirlama_baglantisi") == baglanti
+        # Jeton iceren baglanti `ayar` tablosunda saklanmaz (GUVENLIK.md).
+        assert await ayar_oku(oturum, "son_sifirlama_baglantisi") is None
         kayit = (
             await oturum.execute(
                 sa.select(DogrulamaJetonu).where(
@@ -985,4 +987,76 @@ async def test_yonetici_kendi_hesabini_kilitleyemez(istemci, yardimci):
         satir = await oturum.get(Kullanici, yonetici.id)
         assert satir.rol == Rol.yonetici
         assert satir.durum == KullaniciDurumu.aktif
+
+
+async def test_gelistirme_baglantisi_uretimde_donmez(istemci, yardimci, monkeypatch):
+    monkeypatch.setattr(ayarlar, "ortam", "uretim")
+    assert ayarlar.uretim_mi is True
+
+    kayit = await _kayit(istemci, "uretim@kutyai.local")
+    assert kayit.status_code == 201
+    assert "gelistirme_baglantisi" not in kayit.json()
+
+    await yardimci.kullanici_ekle(eposta="uretim.sifirla@kutyai.local")
+    istek = await istemci.post(
+        "/api/v1/kimlik/sifre-sifirlama-iste",
+        json={"eposta": "uretim.sifirla@kutyai.local"},
+    )
+    assert istek.status_code == 200
+    assert "gelistirme_baglantisi" not in istek.json()
+
+    async with oturum_fabrikasi()() as oturum:
+        # Baglanti hicbir kosulda yanitta ya da `ayar` tablosunda olmamali.
+        assert await ayar_oku(oturum, "son_dogrulama_baglantisi") is None
+        assert await ayar_oku(oturum, "son_sifirlama_baglantisi") is None
+        # Akis bozulmuyor: sifirlama jetonu yine uretilir (posta ile iletilir).
+        adet = (
+            await oturum.execute(
+                sa.select(sa.func.count())
+                .select_from(DogrulamaJetonu)
+                .where(DogrulamaJetonu.tur == JetonTuru.sifre_sifirlama)
+            )
+        ).scalar_one()
+        assert adet == 1
+
+
+async def test_giris_ayni_maliyetli_dogrulama(istemci, yardimci, monkeypatch):
+    from arkauc.app.cekirdek import guvenlik as guvenlik_modulu
+
+    bilinen_eposta = "giris.zamanlama@kutyai.local"
+    await yardimci.kullanici_ekle(eposta=bilinen_eposta)
+
+    gercek_dogrula = guvenlik_modulu.sifre_dogrula
+    cagrilar: list[str] = []
+
+    def sayan(sifre_hash: str, sifre: str):
+        cagrilar.append(sifre_hash)
+        return gercek_dogrula(sifre_hash, sifre)
+
+    monkeypatch.setattr(guvenlik_modulu, "sifre_dogrula", sayan)
+
+    sureler: dict[str, list[float]] = {"bilinen": [], "bilinmeyen": []}
+    for eposta, etiket in (
+        (bilinen_eposta, "bilinen"),
+        ("yok@kutyai.local", "bilinmeyen"),
+    ):
+        for _ in range(3):
+            baslangic = time.perf_counter()
+            yanit = await istemci.post(
+                "/api/v1/kimlik/giris",
+                json={"eposta": eposta, "parola": "YanlisParola!"},
+            )
+            sureler[etiket].append((time.perf_counter() - baslangic) * 1000)
+            assert yanit.status_code == 401
+            assert yanit.json()["hata"]["kod"] == "gecersiz_kimlik_bilgisi"
+
+    print(
+        "kimlik/giris zamanlama (ms): "
+        f"bilinen={sorted(round(s, 1) for s in sureler['bilinen'])} "
+        f"bilinmeyen={sorted(round(s, 1) for s in sureler['bilinmeyen'])}"
+    )
+
+    # Sabit maliyet: iki durumda da istek basina tam olarak bir argon2 dogrulamasi.
+    assert len(cagrilar) == 6
+
 

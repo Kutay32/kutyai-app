@@ -9,7 +9,7 @@ export default function BulunamadiSayfasi() {
       </p>
       <Link
         href="/"
-        className="rounded-md border border-neutral-900 bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-neutral-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2"
+        className="rounded-md border border-neutral-900 bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-neutral-800 focus:outline-none focus:border-neutral-900 focus:ring-0"
       >
         Kontrol paneline dön
       </Link>

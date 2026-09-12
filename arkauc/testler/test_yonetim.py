@@ -10,6 +10,7 @@ import socket
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import httpx
 import pytest
 import sqlalchemy as sa
 
@@ -69,7 +70,7 @@ async def _durum_yaz(bdm_id: int, durum: BdmDurumu) -> None:
     async with oturum_fabrikasi()() as oturum:
         bdm = await oturum.get(Bdm, bdm_id)
         assert bdm is not None
-        yasam_dongusu.gecis_uygula(bdm, durum)
+        await yasam_dongusu.gecisi_kilitle(oturum, bdm, durum)
         await oturum.commit()
 
 
@@ -209,6 +210,18 @@ class _DurdurmaHatasiSurucusu(SahteSurucu):
         raise UstSaglayiciHatasi("Model boşaltılamadı (sahte).")
 
 
+class _YavasBaslatanSurucu(SahteSurucu):
+    """Konteyner başlatmayı geciktirir: iki isteğin iç içe geçmesini sağlar."""
+
+    def __init__(self, gecikme: float = 0.2) -> None:
+        super().__init__(docker_var=True, gpu_var=True)
+        self.gecikme = gecikme
+
+    async def baslat(self, bdm: dict[str, object], manifest: dict[str, object]) -> str:
+        await asyncio.sleep(self.gecikme)
+        return await super().baslat(bdm, manifest)  # type: ignore[arg-type]
+
+
 class _SahteKonteyner:
     """`docker` SDK konteyner nesnesinin sağlık sondası için gereken yüzü."""
 
@@ -220,10 +233,17 @@ class _SahteKonteyner:
     def reload(self) -> None:
         return None
 
+    def stop(self, timeout: int = 10) -> None:
+        self.status = "exited"
+
+    def remove(self, force: bool = False) -> None:
+        return None
+
 
 class _SahteKonteynerler:
     def __init__(self, konteyner: _SahteKonteyner) -> None:
         self._konteyner = konteyner
+        self.son_ayarlar: dict[str, object] = {}
 
     def get(self, ad: str) -> _SahteKonteyner:
         if ad != self._konteyner.id:
@@ -231,6 +251,7 @@ class _SahteKonteynerler:
         return self._konteyner
 
     def run(self, image: str, **ayarlar: object) -> _SahteKonteyner:
+        self.son_ayarlar = dict(ayarlar)
         etiketler = ayarlar.get("labels") or {}
         self._konteyner.labels = dict(etiketler)  # type: ignore[arg-type]
         return self._konteyner
@@ -365,7 +386,11 @@ async def test_vllm_gpu_yok_503(istemci, personel, surucu_gpusuz, manifest):
         "Bu model GPU gerektirir; Ollama gibi CPU uyumlu bir sağlayıcı seçin "
         "veya GPU çalışma zamanını kurun."
     )
-    assert (await _bdm_oku(bdm_id)).durum == BdmDurumu.hazir
+    # Başarısız başlatma `hata`ya çekilir; kayıt "çalışıyor" gibi görünmez.
+    kayit = await _bdm_oku(bdm_id)
+    assert kayit.durum == BdmDurumu.hata
+    assert kayit.konteyner is None
+    assert "bdm.baslatilamadi" in await _eylemler(bdm_id)
 
 
 async def test_surucu_durum_sozlugu(istemci, personel, surucu):
@@ -723,3 +748,204 @@ async def test_docker_saglik_sondasi_manifest_adresini_kullanir(monkeypatch, sah
     assert saglik.hazir is True
     assert saglik.ayrinti["saglik_kaynagi"] == "konteyner_durumu"
     assert saglik.ayrinti["saglik_url_yok"] is True
+
+
+async def test_docker_baslat_manifest_birimlerini_volume_olarak_baglar(monkeypatch):
+    """Manifest `birimler` alanı `containers.run(volumes=...)` çağrısına dönüşür."""
+    from arkauc.app.servisler.konteyner_docker import DockerSurucusu
+
+    konteyner = _SahteKonteyner()
+    istemci = _SahteDockerIstemcisi(konteyner)
+    surucu = DockerSurucusu()
+    monkeypatch.setattr(surucu, "istemci", lambda: istemci)
+
+    await surucu.baslat(
+        {"slug": "hacimli"},
+        {
+            "image": "nginx:alpine",
+            "komut": [],
+            "birimler": [
+                {
+                    "kaynak": "E:/kutyai-app/bdm_veritabani/hf-onbellek",
+                    "hedef": "/root/.cache/huggingface",
+                    "mod": "rw",
+                },
+                {"kaynak": "E:/kutyai-app/gecici", "hedef": "/veri", "mod": "ro"},
+            ],
+        },
+    )
+    # Windows yol biçimi Docker'a olduğu gibi geçer.
+    assert istemci.containers.son_ayarlar["volumes"] == {
+        "E:/kutyai-app/bdm_veritabani/hf-onbellek": {
+            "bind": "/root/.cache/huggingface",
+            "mode": "rw",
+        },
+        "E:/kutyai-app/gecici": {"bind": "/veri", "mode": "ro"},
+    }
+
+    # `birimler` yoksa `volumes` hiç gönderilmez.
+    istemci.containers.son_ayarlar = {}
+    await surucu.baslat({"slug": "hacimsiz"}, {"image": "nginx:alpine", "komut": []})
+    assert "volumes" not in istemci.containers.son_ayarlar
+
+    # `mod` verilmezse okuma-yazma varsayılır.
+    await surucu.baslat(
+        {"slug": "modsuz"},
+        {
+            "image": "nginx:alpine",
+            "birimler": [{"kaynak": "E:/kutyai-app/x", "hedef": "/x"}],
+        },
+    )
+    assert istemci.containers.son_ayarlar["volumes"] == {
+        "E:/kutyai-app/x": {"bind": "/x", "mode": "rw"}
+    }
+
+
+async def test_es_zamanli_baslat_tek_konteyner_baslatir(istemci, personel, manifest):
+    """İki eşzamanlı `baslat` isteğinden yalnız biri konteyner açar; diğeri 409."""
+    sahte = _YavasBaslatanSurucu()
+    surucu_ata(sahte)
+    try:
+        bdm_id = await _bdm_ekle("vllm", BdmDurumu.hazir)
+        yanitlar = await asyncio.gather(
+            istemci.post(f"{UC}/{bdm_id}/baslat", headers=personel),
+            istemci.post(f"{UC}/{bdm_id}/baslat", headers=personel),
+        )
+        assert sorted(y.status_code for y in yanitlar) == [200, 409], [
+            y.text for y in yanitlar
+        ]
+        kaybeden = next(y for y in yanitlar if y.status_code == 409)
+        assert kaybeden.json()["hata"]["kod"] == "gecersiz_gecis"
+
+        # Sürücüde TEK konteyner var ve kayıt onu gösteriyor.
+        assert len(sahte.konteynerler) == 1
+        kayit = await _bdm_oku(bdm_id)
+        assert kayit.durum == BdmDurumu.calisiyor
+        assert kayit.konteyner["konteyner_id"] == next(iter(sahte.konteynerler))
+    finally:
+        surucu_temizle()
+
+
+async def test_es_zamanli_yeniden_baslat_tek_konteyner_baslatir(istemci, personel, manifest):
+    """İki eşzamanlı `yeniden-baslat` isteğinden yalnız biri konteyner açar."""
+    sahte = _YavasBaslatanSurucu()
+    surucu_ata(sahte)
+    try:
+        bdm_id = await _bdm_ekle("vllm", BdmDurumu.durdu)
+        yanitlar = await asyncio.gather(
+            istemci.post(f"{UC}/{bdm_id}/yeniden-baslat", headers=personel),
+            istemci.post(f"{UC}/{bdm_id}/yeniden-baslat", headers=personel),
+        )
+        assert sorted(y.status_code for y in yanitlar) == [200, 409], [
+            y.text for y in yanitlar
+        ]
+        assert len(sahte.konteynerler) == 1
+        kayit = await _bdm_oku(bdm_id)
+        assert kayit.konteyner["konteyner_id"] == next(iter(sahte.konteynerler))
+    finally:
+        surucu_temizle()
+
+
+async def test_baslatma_hatasinda_durum_hata_konteyner_kaydi_temizlenir(
+    istemci, personel, manifest
+):
+    """Başarısız başlatma `hata`ya çekilir; konteyner kaydı silinir, `yol` korunur."""
+    sahte = SahteSurucu(docker_var=True, gpu_var=True)
+    sahte.baslatma_hatasi = SurucuYok("Konteyner başlatılamadı.")
+    surucu_ata(sahte)
+    try:
+        bdm_id = await _bdm_ekle(
+            "vllm",
+            BdmDurumu.durdu,
+            konteyner={"konteyner_id": "eski-1", "yol": {"oncelik": 3}},
+        )
+        yanit = await istemci.post(f"{UC}/{bdm_id}/baslat", headers=personel)
+        assert yanit.status_code == 503
+
+        kayit = await _bdm_oku(bdm_id)
+        assert kayit.durum == BdmDurumu.hata
+        assert kayit.konteyner == {"yol": {"oncelik": 3}}
+        assert "bdm.baslatilamadi" in await _eylemler(bdm_id)
+    finally:
+        surucu_temizle()
+
+
+async def test_docker_istemcisi_ayarlardaki_soketi_kullanir(monkeypatch):
+    """`KUTYAI_DOCKER_SOKETI` doluysa istemci o adrese bağlanır, boşsa varsayılan."""
+    docker = pytest.importorskip("docker")
+    from arkauc.app.cekirdek.ayarlar import ayarlar
+    from arkauc.app.servisler.konteyner_docker import DockerSurucusu
+
+    cagrilar: list[str] = []
+    monkeypatch.setattr(docker, "DockerClient", lambda base_url=None: cagrilar.append(base_url) or "istemci")
+    monkeypatch.setattr(docker, "from_env", lambda: cagrilar.append("varsayilan") or "istemci")
+
+    monkeypatch.setattr(ayarlar, "docker_soketi", "unix:///var/run/vekil-docker.sock")
+    assert DockerSurucusu().istemci() == "istemci"
+    assert cagrilar == ["unix:///var/run/vekil-docker.sock"]
+
+    monkeypatch.setattr(ayarlar, "docker_soketi", "")
+    assert DockerSurucusu().istemci() == "istemci"
+    assert cagrilar[-1] == "varsayilan"
+
+
+async def test_surucu_hata_mesajlari_ic_ayrinti_sizdirmaz(monkeypatch, sahte_sunucu):
+    """Hata mesajları sabit ve Türkçe; istisna/soket ayrıntısı istemciye dönmez."""
+    from arkauc.app.servisler.konteyner_docker import DockerSurucusu
+    from arkauc.app.servisler.konteyner_yerel import YerelSurucusu
+
+    ic_metin = "npipe:////./pipe/docker_engine erişim engellendi"
+
+    def patlat(*args: object, **kwargs: object) -> object:
+        raise RuntimeError(ic_metin)
+
+    konteyner = _SahteKonteyner()
+    istemci = _SahteDockerIstemcisi(konteyner)
+    surucu = DockerSurucusu()
+    monkeypatch.setattr(surucu, "istemci", lambda: istemci)
+
+    # imaj çekilemedi
+    monkeypatch.setattr(istemci.images, "get", patlat)
+    monkeypatch.setattr(istemci.images, "pull", patlat)
+    with pytest.raises(SurucuYok) as hata:
+        await surucu.baslat({"slug": "sizinti"}, {"image": "yok-imaj"})
+    assert hata.value.mesaj == "Konteyner imajı çekilemedi."
+    assert hata.value.ayrinti == {"image": "yok-imaj"}
+
+    # konteyner başlatılamadı
+    monkeypatch.setattr(istemci.images, "get", lambda image: object())
+    monkeypatch.setattr(istemci.containers, "run", patlat)
+    with pytest.raises(SurucuYok) as hata:
+        await surucu.baslat({"slug": "sizinti"}, {"image": "nginx:alpine"})
+    assert hata.value.mesaj == "Konteyner başlatılamadı."
+    assert hata.value.ayrinti == {"image": "nginx:alpine", "ad": "kutyai-sizinti"}
+
+    # konteyner durdurulamadı
+    monkeypatch.setattr(konteyner, "stop", patlat)
+    with pytest.raises(SurucuYok) as hata:
+        await surucu.durdur(konteyner.id)
+    assert hata.value.mesaj == "Konteyner durdurulamadı."
+    assert ic_metin not in str(hata.value.ayrinti)
+
+    # yerel sürücü: model boşaltma isteği hata döndü
+    yerel = YerelSurucusu()
+    await yerel.baslat(
+        {
+            "slug": "bozuk-model",
+            "temel_url": f"{sahte_sunucu.temel_url}/v1",
+            "upstream_model": "llama3",
+        },
+        {},
+    )
+    sahte_sunucu.yanit_kodu = 500
+    with pytest.raises(UstSaglayiciHatasi) as hata:
+        await yerel.durdur("yerel:bozuk-model")
+    assert hata.value.mesaj == "Ollama sunucusu model boşaltma isteğine 500 döndü."
+    assert hata.value.ayrinti == {"temel_url": sahte_sunucu.temel_url, "model": "llama3"}
+
+    # yerel sürücü: sunucuya ulaşılamıyor (istisna metni istemciye dönmez)
+    monkeypatch.setattr(httpx, "post", patlat)
+    with pytest.raises(UstSaglayiciHatasi) as hata:
+        await yerel.durdur("yerel:bozuk-model")
+    assert hata.value.mesaj == "Ollama sunucusuna ulaşılamadı; model bellekten boşaltılamadı."
+    assert ic_metin not in str(hata.value.ayrinti)

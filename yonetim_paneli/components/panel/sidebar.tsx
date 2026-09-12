@@ -32,9 +32,9 @@ export function Sidebar({ onNavigate, className }: SidebarProps) {
             onClick={onNavigate}
             aria-current={aktif ? "page" : undefined}
             className={cn(
-              "flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2",
+              "flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors focus:outline-none focus:border-neutral-900 focus:ring-0",
               aktif
-                ? "bg-neutral-900 font-medium text-white"
+                ? "border border-neutral-900 bg-neutral-900 font-medium text-white focus:border-neutral-400"
                 : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900",
             )}
           >

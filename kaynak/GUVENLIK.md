@@ -8,7 +8,7 @@
 | Erişim jetonu | JWT HS256, ömür `KUTYAI_ERISIM_OMRU_DK` (varsayılan 15 dk) |
 | Yenileme jetonu | Rastgele 48 bayt; veritabanında yalnız SHA-256 özeti |
 | Rotasyon | Her yenilemede eski kayıt `iptal=true`, yeni jeton üretilir |
-| İptal | Çıkış, şifre sıfırlama ve hesap pasifleştirmede tüm oturumlar iptal edilir |
+| Çıkış / şifre sıfırlama | Yenileme jetonu iptal edilir. Erişim jetonu `exp`'e kadar (varsayılan **15 dakika**) geçerli kalır — kısa ömür bilinçli telafi. Anında kesin iptal gerekiyorsa `KUTYAI_ERISIM_OMRU_DK` düşürün. |
 | Roller | `yonetici`, `operator`, `izleyici`, `son_kullanici` |
 | E-posta doğrulama | Tek kullanımlık, 24 saat ömürlü jeton; doğrulanmadan sohbet engellenir |
 
@@ -39,10 +39,18 @@
 
 **Not:** Maskeleme geri döndürülemez. Kayıt anında uygulanır; bu bilinçli bir tasarım kararıdır (spec §11).
 
+**Geliştirme bağlantıları:** SMTP tanımlı değilken doğrulama/şifre sıfırlama bağlantısı API yanıtındaki `gelistirme_baglantisi` alanında döner. Bu **yalnız `KUTYAI_ORTAM != uretim`** iken geçerlidir; üretimde bağlantı yalnız sunucu günlüğüne yazılır ve yanıtta asla görünmez. Üretimde SMTP tanımlamak zorunludur.
+
+**Bilinen ve kabul edilen sızıntılar:**
+- `POST /kimlik/kayit` kayıtlı e-postada `409`, yeni e-postada `201` döner; e-posta varlığı tek istekle öğrenilebilir. Sözleşme gereği korunur (kullanıcıya "bu e-posta kayıtlı" demek gerekir).
+- `/sohbet` yanıtı istemciye ham akıtılır, kayıt maskelenir (API.md §9).
+
 ## 5. Ağ ve çalışma zamanı
 
+- **Giden adres doğrulaması:** `bdm.temel_url` yalnız `http`/`https` olabilir; bulut metadata adresleri (`169.254.169.254`, `100.100.100.200`, `metadata.google.internal`) reddedilir. Loopback/özel ağ adresleri **kabul edilir** (yerel Ollama/vLLM bu adreslerde çalışır); bu nedenle `temel_url` ve upstream API anahtarı değişikliği **yalnız yönetici** rolüne açıktır — operatör model tanımını düzenleyebilir ama adresi değiştirip anahtarı başka bir sunucuya yönlendiremez.
+- `bdm.upstream_model` konteyner komut satırına girdiği için karakter kümesiyle sınırlanır (`A-Z a-z 0-9 . _ - / :`), `-` ile başlayamaz (bayrak enjeksiyonu engeli).
 - CORS yalnız `KUTYAI_CORS_KAYNAKLAR` listesindeki kaynaklara açıktır.
-- Oran sınırı kullanıcı/anahtar/IP başına dakikalık istek sayısıyla sınırlanır (`KUTYAI_ORAN_SINIRI_ISTEK_DK`).
+- Oran sınırı: kimlik uçlarında IP başına dakikada 10 deneme (kaba kuvvet), diğer uçlarda istemci başına `KUTYAI_ORAN_SINIRI_ISTEK_DK`. Ters vekil arkasında gerçek istemci IP'si için `KUTYAI_GUVENILIR_VEKIL=true` ayarlayın (yalnız güvenilen vekilde açın; aksi hâlde `X-Forwarded-For` sahtelenebilir).
 - Konteynerler yalnız gerekli portu yayınlar; model servisleri varsayılan olarak `localhost` üzerinde dinler.
 - Hata yanıtları teknik ayrıntı içermez; traceback ve upstream gövdesi sunucu günlüğüne ve denetim izine gider.
 

@@ -1,0 +1,12 @@
+# onuc imajinin derleme baglami = depo koku. Yalnizca onuc kaynagi tasinir.
+# (Dockerfile'a ozel .dockerignore: derleme sirasinda yalnizca bu dosya okunur.)
+*
+!onuc
+!onuc/**
+onuc/node_modules/**
+onuc/.next/**
+onuc/tsconfig.tsbuildinfo
+onuc/.env.local
+# Arayuz testleri ve tarayici profilleri imaja girmez; kilitli gecici dosyalar
+# derleme baglaminin okunmasini da bozar.
+onuc/testler/**

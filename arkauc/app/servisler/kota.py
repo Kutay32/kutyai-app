@@ -125,14 +125,20 @@ def _ayrinti(kayit: Kota, sifirlanma: datetime, bdm_id: int | None) -> dict[str,
     return ayrinti
 
 
-async def kota_kontrol(
+async def kota_kullan(
     oturum: AsyncSession,
     *,
     kullanici_id: int | None,
     api_anahtari_id: int | None,
     bdm_id: int | None = None,
+    token: int = 0,
 ) -> None:
-    """Kota asiminda `429 kota_asildi` firlatir; sayaclari artirmaz."""
+    """Istegi kotadan duser: sayaci tek kosullu UPDATE ile atomik artirir.
+
+    Gunluk/aylik limit dolduysa hicbir sayac artmaz ve `429 kota_asildi`
+    firlatilir. Kosul ve artirim ayni SQL ifadesinde oldugu icin paralel
+    isteklerden yalnizca biri sayaci ilerletir (kayip guncelleme yok).
+    """
     an = datetime.now(timezone.utc)
     for kayit, gunluk, aylik in await _kapsamlar(
         oturum,
@@ -143,6 +149,24 @@ async def kota_kontrol(
         if kayit is None:
             continue
         _sifirla(kayit, an)
+        await oturum.flush()
+        kosullar: list[sa.ColumnElement[bool]] = [Kota.id == kayit.id]
+        if gunluk is not None:
+            kosullar.append(Kota.kullanilan_gunluk < gunluk)
+        if aylik is not None:
+            kosullar.append(Kota.kullanilan_aylik < aylik)
+        sonuc = await oturum.execute(
+            sa.update(Kota)
+            .where(*kosullar)
+            .values(
+                kullanilan_gunluk=Kota.kullanilan_gunluk + 1,
+                kullanilan_aylik=Kota.kullanilan_aylik + max(0, int(token)),
+            )
+            .execution_options(synchronize_session="fetch")
+        )
+        if int(sonuc.rowcount or 0) == 1:
+            continue
+        await oturum.refresh(kayit)
         if gunluk is not None and kayit.kullanilan_gunluk >= gunluk:
             raise KotaAsildi(
                 "Günlük istek kotanız doldu.",
@@ -153,31 +177,37 @@ async def kota_kontrol(
                 "Aylık token kotanız doldu.",
                 _ayrinti(kayit, kayit.ay_sifirlanma, bdm_id),
             )
-    await oturum.flush()
+        raise KotaAsildi("Kotanız doldu.", _ayrinti(kayit, kayit.gun_sifirlanma, bdm_id))
 
 
-async def kota_kullan(
+async def kota_token_ekle(
     oturum: AsyncSession,
     *,
     kullanici_id: int | None,
     api_anahtari_id: int | None,
-    bdm_id: int | None = None,
-    token: int = 0,
+    token: int,
 ) -> None:
-    """Istek sayacini bir artirir, aylik token sayacina `token` ekler."""
+    """Aylik token sayacini tek SQL ifadesiyle atomik artirir (limit denetlemez)."""
+    token = max(0, int(token))
+    if token == 0:
+        return
     an = datetime.now(timezone.utc)
     for kayit, _, _ in await _kapsamlar(
         oturum,
         kullanici_id=kullanici_id,
         api_anahtari_id=api_anahtari_id,
-        olustur=True,
+        olustur=False,
     ):
         if kayit is None:
             continue
         _sifirla(kayit, an)
-        kayit.kullanilan_gunluk += 1
-        kayit.kullanilan_aylik += max(0, int(token))
-    await oturum.flush()
+        await oturum.flush()
+        await oturum.execute(
+            sa.update(Kota)
+            .where(Kota.id == kayit.id)
+            .values(kullanilan_aylik=Kota.kullanilan_aylik + token)
+            .execution_options(synchronize_session="fetch")
+        )
 
 
 async def kota_durumu(

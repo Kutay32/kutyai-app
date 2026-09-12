@@ -15,6 +15,7 @@ from typing import Any
 
 import httpx
 
+from arkauc.app.cekirdek.ayarlar import ayarlar
 from arkauc.app.cekirdek.hatalar import GecersizIstek, SurucuYok
 from arkauc.app.servisler.konteyner import SaglikDurumu, SurucuDurumu
 
@@ -37,7 +38,11 @@ class DockerSurucusu:
     # -- altyapi -------------------------------------------------------------
 
     def istemci(self) -> Any:
-        """Docker istemcisini dondurur; erisilemiyorsa `SurucuYok` firlatir."""
+        """Docker istemcisini dondurur; erisilemiyorsa `SurucuYok` firlatir.
+
+        `KUTYAI_DOCKER_SOKETI` tanimliysa istemci o adrese baglanir (uretimde
+        soket bir vekil arkasinda olabilir); bos ise ortam varsayilanlari kullanilir.
+        """
         if self._istemci is None:
             try:
                 import docker
@@ -46,7 +51,11 @@ class DockerSurucusu:
                     "Docker SDK kurulu değil. `pip install docker` ile kurup tekrar deneyin."
                 ) from hata
             try:
-                self._istemci = docker.from_env()
+                soket = str(ayarlar.docker_soketi or "").strip()
+                if soket:
+                    self._istemci = docker.DockerClient(base_url=soket)
+                else:
+                    self._istemci = docker.from_env()
             except Exception as hata:
                 raise SurucuYok(
                     "Docker çalışma zamanına ulaşılamadı. Docker kurulu ve çalışır durumda olmalıdır."
@@ -145,7 +154,8 @@ class DockerSurucusu:
             try:
                 istemci.images.pull(image)
             except Exception as hata:
-                raise SurucuYok(f"'{image}' imajı çekilemedi: {hata}") from hata
+                logger.exception("'%s' imajı çekilemedi.", image)
+                raise SurucuYok("Konteyner imajı çekilemedi.", {"image": image}) from hata
 
         ayarlar: dict[str, Any] = {
             "detach": True,
@@ -162,6 +172,9 @@ class DockerSurucusu:
         bellek_gb = manifest.get("bellek_gb")
         if bellek_gb:
             ayarlar["mem_limit"] = f"{int(bellek_gb)}g"
+        birimler = self._birimler(manifest)
+        if birimler:
+            ayarlar["volumes"] = birimler
         if manifest.get("gpu"):
             from docker.types import DeviceRequest
 
@@ -171,10 +184,19 @@ class DockerSurucusu:
             konteyner = istemci.containers.run(image, **ayarlar)
         except Exception as hata:
             if not self._ad_cakismasi_mi(hata):
-                raise SurucuYok(f"Konteyner başlatılamadı: {hata}") from hata
+                logger.exception("Konteyner başlatılamadı (%s).", ayarlar["name"])
+                raise SurucuYok(
+                    "Konteyner başlatılamadı.", {"image": image, "ad": ayarlar["name"]}
+                ) from hata
             logger.warning("Aynı adlı konteyner kaldırılıp yeniden oluşturuluyor: %s", ayarlar["name"])
             self._ad_cakismasini_gider(istemci, ayarlar["name"])
-            konteyner = istemci.containers.run(image, **ayarlar)
+            try:
+                konteyner = istemci.containers.run(image, **ayarlar)
+            except Exception as hata:
+                logger.exception("Konteyner yeniden oluşturulamadı (%s).", ayarlar["name"])
+                raise SurucuYok(
+                    "Konteyner başlatılamadı.", {"image": image, "ad": ayarlar["name"]}
+                ) from hata
         kimlik = str(konteyner.id)
         saglik_url = str(manifest.get("saglik_url") or "")
         if saglik_url:
@@ -192,7 +214,10 @@ class DockerSurucusu:
         try:
             konteyner.stop(timeout=DURDURMA_ZAMAN_ASIMI)
         except Exception as hata:
-            raise SurucuYok(f"Konteyner durdurulamadı: {hata}") from hata
+            logger.exception("Konteyner durdurulamadı (%s).", konteyner_id)
+            raise SurucuYok(
+                "Konteyner durdurulamadı.", {"konteyner_id": konteyner_id}
+            ) from hata
 
     async def sil(self, konteyner_id: str) -> None:
         await asyncio.to_thread(self._sil, konteyner_id)
@@ -205,7 +230,8 @@ class DockerSurucusu:
         try:
             konteyner.remove(force=True)
         except Exception as hata:
-            raise SurucuYok(f"Konteyner silinemedi: {hata}") from hata
+            logger.exception("Konteyner silinemedi (%s).", konteyner_id)
+            raise SurucuYok("Konteyner silinemedi.", {"konteyner_id": konteyner_id}) from hata
 
     async def saglik(self, konteyner_id: str) -> SaglikDurumu:
         return await asyncio.to_thread(self._saglik, konteyner_id)
@@ -223,10 +249,11 @@ class DockerSurucusu:
             konteyner.reload()
             durum = str(konteyner.status or "")
         except Exception as hata:
+            logger.exception("Konteyner durumu okunamadı (%s).", konteyner_id)
             return SaglikDurumu(
                 calisiyor=False,
                 hazir=False,
-                mesaj=f"Konteyner durumu okunamadı: {hata}",
+                mesaj="Konteyner durumu okunamadı.",
                 ayrinti={"konteyner_id": konteyner_id},
             )
         calisiyor = durum == "running"
@@ -256,8 +283,9 @@ class DockerSurucusu:
     def _http_sondasi(url: str) -> tuple[bool, str]:
         try:
             yanit = httpx.get(url, timeout=SAGLIK_ZAMAN_ASIMI)
-        except Exception as hata:
-            return False, f"Sağlık adresine ulaşılamadı: {hata}"
+        except Exception:
+            logger.exception("Sağlık adresine ulaşılamadı (%s).", url)
+            return False, "Sağlık adresine ulaşılamadı."
         if yanit.status_code < 400:
             return True, "Çalışıyor."
         return False, f"Sağlık adresi {yanit.status_code} döndü."
@@ -279,6 +307,28 @@ class DockerSurucusu:
                 await asyncio.to_thread(kapat)
 
     # -- yardimcilar ---------------------------------------------------------
+
+    @staticmethod
+    def _birimler(manifest: dict[str, Any]) -> dict[str, dict[str, str]]:
+        """Manifest `birimler` alanını `containers.run(volumes=...)` sözlüğüne çevirir.
+
+        Kaynak yollar Docker'a **olduğu gibi** geçirilir: Windows biçimli yollar
+        (`E:/...` ya da `E:\\...`) Docker Desktop'ın kendi yol eşlemesiyle
+        çözülür, bu yüzden burada yol dönüşümü/normalizasyonu yapılmaz. `hedef`
+        ya da `kaynak` taşımayan girdiler atlanır (uyarı loglanır).
+        """
+        birimler: dict[str, dict[str, str]] = {}
+        for birim in manifest.get("birimler") or []:
+            if not isinstance(birim, dict):
+                logger.warning("Manifest birim girdisi sözlük değil, atlandı: %r", birim)
+                continue
+            kaynak = str(birim.get("kaynak") or "").strip()
+            hedef = str(birim.get("hedef") or "").strip()
+            if not kaynak or not hedef:
+                logger.warning("Manifest birimi kaynak/hedef içermiyor, atlandı: %r", birim)
+                continue
+            birimler[kaynak] = {"bind": hedef, "mode": str(birim.get("mod") or "rw")}
+        return birimler
 
     @staticmethod
     def _konteyner_adi(bdm: dict[str, Any]) -> str:

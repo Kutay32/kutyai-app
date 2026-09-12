@@ -2,7 +2,9 @@
 
 Olay sirasi: `baslangic` → `parca`* → `kullanim` → `bitti`. Hata durumunda
 `hata` olayi hata zarfini tasir ve ardindan her zaman `bitti` gonderilir.
-Istemci koptugunda upstream istegi iptal edilir ve kismi yanit kaydedilmez.
+Istemci koptugunda upstream istegi iptal edilir ve kismi yanit kaydedilmez;
+gunluk istek kotasi akis baslamadan rezerve edildigi icin rezervasyon kalir,
+yanit sonunda yalnizca token sayaci artar.
 """
 
 from __future__ import annotations
@@ -16,7 +18,7 @@ from collections.abc import AsyncIterator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from arkauc.app.cekirdek.hatalar import KutyaiHatasi, SunucuHatasi
-from arkauc.app.servisler.kota import kota_kullan
+from arkauc.app.servisler.kota import kota_token_ekle
 from arkauc.app.servisler.upstream import UstSaglayici
 from bdm_konusma_gecmisi import kullanim_yaz, mesaj_ekle
 from bdm_veritabani.modeller import (
@@ -180,11 +182,10 @@ async def _tamamla(
         gecikme_ms=gecikme_ms,
         durum=KullanimDurumu.basarili,
     )
-    await kota_kullan(
+    await kota_token_ekle(
         oturum,
         kullanici_id=kullanici_id,
         api_anahtari_id=api_anahtari_id,
-        bdm_id=bdm.id,
         token=girdi + cikti,
     )
     await oturum.commit()
@@ -209,13 +210,6 @@ async def _hatali_kaydet(
             konusma_id=konusma.id,
             gecikme_ms=gecikme_ms,
             durum=KullanimDurumu.hata,
-        )
-        await kota_kullan(
-            oturum,
-            kullanici_id=kullanici_id,
-            api_anahtari_id=api_anahtari_id,
-            bdm_id=bdm.id,
-            token=0,
         )
         await oturum.commit()
     except Exception as hata:  # pragma: no cover - kayit arizasi

@@ -81,8 +81,6 @@ function GirisFormu() {
         setGenelHata(
           "Bu hesap yönetim paneline giremez. Yönetici, operatör veya izleyici rolüyle giriş yapın.",
         );
-      } else if (hata instanceof ApiHatasi && hata.kod === "eposta_dogrulanmadi") {
-        setGenelHata("E-posta adresiniz doğrulanmamış.");
       } else if (hata instanceof ApiHatasi && hata.durum === 401) {
         setGenelHata("E-posta veya parola hatalı.");
       } else {

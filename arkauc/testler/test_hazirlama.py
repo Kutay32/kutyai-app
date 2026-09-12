@@ -7,12 +7,15 @@ uzerinden enjekte edilir; konteyner surucusu `SahteSurucu` ile degistirilir.
 from __future__ import annotations
 
 import json
+import pathlib
+import types
 
 import httpx
 import pytest
 import sqlalchemy as sa
 
-from arkauc.app.cekirdek.hatalar import GecersizIstek
+from arkauc.app.cekirdek.ayarlar import ayarlar
+from arkauc.app.cekirdek.hatalar import GecersizIstek, UstSaglayiciHatasi
 from arkauc.app.servisler.konteyner import SahteSurucu, surucu_ata, surucu_temizle
 from bdm_hazırlama_ucu import cekim, dogrulama, manifest
 from bdm_hazırlama_ucu.on_kontrol import (
@@ -76,6 +79,20 @@ async def bdm_durumu(bdm_id: int) -> BdmDurumu:
 
 def _ndjson(parcalar: list[dict]) -> bytes:
     return ("\n".join(json.dumps(p) for p in parcalar) + "\n").encode("utf-8")
+
+
+def _sahte_snapshot(cagrilar: list[tuple[str, dict]] | None = None):
+    """Ağa çıkmadan `snapshot_download` yerine geçen indirici."""
+
+    def _indir(repo_id: str, **kwargs):
+        if cagrilar is not None:
+            cagrilar.append((repo_id, kwargs))
+        anlik = pathlib.Path(kwargs["cache_dir"]) / "models--sahte" / "snapshots" / "rev1"
+        anlik.mkdir(parents=True, exist_ok=True)
+        (anlik / "config.json").write_text("{}", encoding="utf-8")
+        return anlik.as_posix()
+
+    return _indir
 
 
 # -- dogrula ----------------------------------------------------------------
@@ -198,7 +215,9 @@ async def test_dogrula_gecersiz_adres_500_yerine_turkce_sonuc(istemci, yardimci)
     yonetici = await yardimci.yonetici()
     basliklar = yardimci.basliklar(yonetici)
 
-    for temel_url in ("http://\u2603.com/v1", "http://[::1/v1"):
+    # Sema denetiminden geçip httpx'in reddettiği adresler: IDNA-geçersiz konak
+    # (`httpx.InvalidURL`) ve geçersiz IDNA kod noktası (`UnicodeError`).
+    for temel_url in ("http://\u2603.com/v1", "http://xn--a/v1"):
         bdm_id = await bdm_ekle(
             "ozel", upstream_model="gpt-4o-mini", temel_url=temel_url
         )
@@ -477,6 +496,192 @@ async def test_cek_ucu_kimlik_gerekli(istemci):
     assert yanit.status_code == 401
 
 
+# -- cek: HuggingFace snapshot (vllm/tgi) -----------------------------------
+
+
+@pytest.mark.parametrize(
+    ("saglayici", "model"),
+    [
+        ("vllm", "mistralai/Mistral-7B-Instruct-v0.3"),
+        ("tgi", "meta-llama/Llama-3.1-8B-Instruct"),
+    ],
+)
+async def test_cek_hf_snapshot_indirir(saglayici, model, monkeypatch, tmp_path):
+    """Regresyon (spec §7.5): vllm/tgi için ağırlıklar HF snapshot'ı olarak iner."""
+    onbellek = tmp_path / "hf-onbellek"
+    monkeypatch.setattr(ayarlar, "hf_onbellek", str(onbellek))
+    cagrilar: list[tuple[str, dict]] = []
+    monkeypatch.setattr(cekim, "snapshot_download", _sahte_snapshot(cagrilar))
+
+    bdm_id = await bdm_ekle(saglayici, upstream_model=model)
+    async with oturum_fabrikasi()() as oturum:
+        bdm = await bdm_getir(oturum, bdm_id)
+        olaylar = [olay async for olay in cekim.cek_akisi(bdm)]
+
+    assert onbellek.is_dir()
+    assert [olay["yuzde"] for olay in olaylar] == [5, 60, 90, 100]
+    assert all(olay["mesaj"] for olay in olaylar)
+    assert olaylar[-1]["mesaj"] == "Model hazır"
+    assert len(cagrilar) == 1
+    repo_id, kwargs = cagrilar[0]
+    assert repo_id == model
+    assert pathlib.Path(kwargs["cache_dir"]) == onbellek
+    assert kwargs["token"] is None  # anahtar tanımlı değil
+
+
+async def test_cek_hf_ozel_saglayici_depo_kimligini_kabul_eder(monkeypatch, tmp_path):
+    monkeypatch.setattr(ayarlar, "hf_onbellek", str(tmp_path / "hf"))
+    monkeypatch.setattr(cekim, "snapshot_download", _sahte_snapshot())
+    bdm_id = await bdm_ekle(
+        "ozel",
+        upstream_model="Qwen/Qwen2.5-7B-Instruct",
+        temel_url="http://127.0.0.1:1234/v1",
+    )
+    async with oturum_fabrikasi()() as oturum:
+        bdm = await bdm_getir(oturum, bdm_id)
+        olaylar = [olay async for olay in cekim.cek_akisi(bdm)]
+
+    assert olaylar[-1] == {"yuzde": 100, "mesaj": "Model hazır"}
+
+
+async def test_cek_hf_anahtari_snapshot_indirmeye_gecirir(monkeypatch, tmp_path):
+    monkeypatch.setattr(ayarlar, "hf_onbellek", str(tmp_path / "hf"))
+    cagrilar: list[tuple[str, dict]] = []
+    monkeypatch.setattr(cekim, "snapshot_download", _sahte_snapshot(cagrilar))
+    bdm_id = await bdm_ekle(
+        "vllm",
+        upstream_model="meta-llama/Llama-3.1-8B-Instruct",
+        api_anahtari="hf-jeton-1234567890",
+    )
+    async with oturum_fabrikasi()() as oturum:
+        bdm = await bdm_getir(oturum, bdm_id)
+        async for _ in cekim.cek_akisi(bdm):
+            pass
+
+    assert cagrilar[0][1]["token"] == "hf-jeton-1234567890"
+
+
+async def test_cek_hf_bos_snapshot_hata_verir(monkeypatch, tmp_path):
+    monkeypatch.setattr(ayarlar, "hf_onbellek", str(tmp_path / "hf"))
+    monkeypatch.setattr(
+        cekim,
+        "snapshot_download",
+        lambda repo_id, **kwargs: str(tmp_path / "bos"),
+    )
+    (tmp_path / "bos").mkdir()
+    bdm_id = await bdm_ekle("vllm", upstream_model="mistralai/Mistral-7B-Instruct-v0.3")
+    async with oturum_fabrikasi()() as oturum:
+        bdm = await bdm_getir(oturum, bdm_id)
+        with pytest.raises(UstSaglayiciHatasi) as hata:
+            async for _ in cekim.cek_akisi(bdm):
+                pass
+
+    assert "boş" in hata.value.mesaj.lower()
+
+
+@pytest.mark.parametrize("durum", [401, 403, 404])
+async def test_cek_hf_hata_mesaji_turkce(durum, monkeypatch, tmp_path):
+    monkeypatch.setattr(ayarlar, "hf_onbellek", str(tmp_path / "hf"))
+
+    class _SahteHata(Exception):
+        response = types.SimpleNamespace(status_code=durum)
+
+    def _patlat(repo_id: str, **kwargs):
+        raise _SahteHata("depo hatası")
+
+    monkeypatch.setattr(cekim, "snapshot_download", _patlat)
+    bdm_id = await bdm_ekle("tgi", upstream_model="meta-llama/Llama-3.1-8B-Instruct")
+    async with oturum_fabrikasi()() as oturum:
+        bdm = await bdm_getir(oturum, bdm_id)
+        with pytest.raises(UstSaglayiciHatasi) as hata:
+            async for _ in cekim.cek_akisi(bdm):
+                pass
+
+    assert hata.value.kod == "ust_saglayici_hatasi"
+    if durum in (401, 403):
+        assert "erişim reddedildi" in hata.value.mesaj.lower()
+    else:
+        assert "bulunamadı" in hata.value.mesaj.lower()
+
+
+async def test_cek_ucu_hf_sse_cerceveleri(istemci, yardimci, surucu_kur, monkeypatch, tmp_path):
+    surucu_kur(gpu_var=True)
+    monkeypatch.setattr(ayarlar, "hf_onbellek", str(tmp_path / "hf"))
+    monkeypatch.setattr(cekim, "snapshot_download", _sahte_snapshot())
+    yonetici = await yardimci.yonetici()
+    bdm_id = await bdm_ekle("vllm", upstream_model="mistralai/Mistral-7B-Instruct-v0.3")
+
+    yanit = await istemci.post(
+        f"{HAZIRLAMA}/{bdm_id}/cek", headers=yardimci.basliklar(yonetici)
+    )
+
+    assert yanit.status_code == 200
+    assert yanit.headers["content-type"].startswith("text/event-stream")
+    metin = yanit.text
+    assert 'event: ilerleme\ndata: {"yuzde": 5' in metin
+    assert 'event: ilerleme\ndata: {"yuzde": 100, "mesaj": "Model hazır"}' in metin
+    assert "event: hata" not in metin
+    assert metin.rstrip().endswith("event: bitti\ndata: {}")
+
+
+async def test_cek_ucu_hf_hatasi_sse_cercevesi_akitir(
+    istemci, yardimci, surucu_kur, monkeypatch, tmp_path
+):
+    surucu_kur(gpu_var=True)
+    monkeypatch.setattr(ayarlar, "hf_onbellek", str(tmp_path / "hf"))
+
+    def _patlat(repo_id: str, **kwargs):
+        raise httpx.ConnectError("bağlantı kurulamadı")
+
+    monkeypatch.setattr(cekim, "snapshot_download", _patlat)
+    yonetici = await yardimci.yonetici()
+    bdm_id = await bdm_ekle("vllm", upstream_model="mistralai/Mistral-7B-Instruct-v0.3")
+
+    yanit = await istemci.post(
+        f"{HAZIRLAMA}/{bdm_id}/cek", headers=yardimci.basliklar(yonetici)
+    )
+
+    assert yanit.status_code == 200
+    metin = yanit.text
+    assert "event: hata" in metin
+    assert "ust_saglayici_hatasi" in metin
+    assert metin.rstrip().endswith("event: bitti\ndata: {}")
+
+
+@pytest.mark.parametrize(
+    ("saglayici", "model", "temel_url"),
+    [
+        ("vllm", "mistralai/Mistral-7B-Instruct-v0.3", ""),
+        ("tgi", "meta-llama/Llama-3.1-8B-Instruct", ""),
+        ("ozel", "Qwen/Qwen2.5-7B-Instruct", "http://127.0.0.1:1234/v1"),
+    ],
+)
+async def test_cek_destegi_denetle_hf_dalini_kabul_eder(saglayici, model, temel_url):
+    bdm_id = await bdm_ekle(saglayici, upstream_model=model, temel_url=temel_url)
+    async with oturum_fabrikasi()() as oturum:
+        bdm = await bdm_getir(oturum, bdm_id)
+        cekim.cek_destegi_denetle(bdm)  # fırlatmamalı
+
+
+@pytest.mark.parametrize(
+    ("saglayici", "model", "temel_url"),
+    [
+        ("openai", "gpt-4o-mini", "https://api.openai.com/v1"),
+        ("azure", "gpt-4o-mini", "https://ornek.openai.azure.com/v1"),
+        ("openrouter", "anthropic/claude-3.5-sonnet", "https://openrouter.ai/api/v1"),
+        ("ozel", "gpt-4o-mini", "http://127.0.0.1:1234/v1"),
+    ],
+)
+async def test_cek_destegi_denetle_hf_olmayanlari_reddeder(saglayici, model, temel_url):
+    bdm_id = await bdm_ekle(saglayici, upstream_model=model, temel_url=temel_url)
+    async with oturum_fabrikasi()() as oturum:
+        bdm = await bdm_getir(oturum, bdm_id)
+        with pytest.raises(GecersizIstek) as hata:
+            cekim.cek_destegi_denetle(bdm)
+
+    assert "indirme desteklenmiyor" in hata.value.mesaj
+
+
 # -- GPU denetimi -----------------------------------------------------------
 
 
@@ -595,16 +800,53 @@ async def test_manifest_gizli_ortami_maskeler(istemci, yardimci, surucu_kur):
     )
 
     assert yanit.status_code == 200
-    ortam = yanit.json()["ortam"]
-    assert set(ortam) == {"HF_TOKEN"}
+    govde = yanit.json()
+    ortam = govde["ortam"]
+    assert set(ortam) == {"HF_TOKEN", "HF_HOME"}
     assert ortam["HF_TOKEN"] == "hf-g***7890"
+    assert ortam["HF_HOME"] == manifest.HF_KONTEYNER_DIZINI
     assert "hf-gizli-jeton-1234567890" not in yanit.text
+    assert govde["birimler"] == [
+        {
+            "kaynak": ayarlar.hf_onbellek_yolu(),
+            "hedef": manifest.HF_KONTEYNER_DIZINI,
+            "mod": "rw",
+        }
+    ]
     # Surucuye giden manifest cozulmus jetonu tasir.
     async with oturum_fabrikasi()() as oturum:
         bdm = await bdm_getir(oturum, bdm_id)
         assert manifest.manifest_uret(bdm)["ortam"]["HF_TOKEN"] == (
             "hf-gizli-jeton-1234567890"
         )
+
+
+async def test_manifest_hf_onbellegini_konteynere_baglar(monkeypatch, tmp_path):
+    """Regresyon (spec §7.5): indirilen snapshot dizini konteynere bağlanır."""
+    onbellek = tmp_path / "hf-onbellek"
+    monkeypatch.setattr(ayarlar, "hf_onbellek", str(onbellek))
+    bdm_id = await bdm_ekle("vllm", upstream_model="mistralai/Mistral-7B-Instruct-v0.3")
+    async with oturum_fabrikasi()() as oturum:
+        bdm = await bdm_getir(oturum, bdm_id)
+        uretilen = manifest.manifest_uret(bdm)
+
+    assert uretilen["birimler"] == [
+        {
+            "kaynak": str(onbellek),
+            "hedef": manifest.HF_KONTEYNER_DIZINI,
+            "mod": "rw",
+        }
+    ]
+    assert pathlib.Path(uretilen["birimler"][0]["kaynak"]) == onbellek
+    assert uretilen["ortam"]["HF_HOME"] == manifest.HF_KONTEYNER_DIZINI
+
+    ollama_id = await bdm_ekle("ollama", upstream_model="llama3")
+    async with oturum_fabrikasi()() as oturum:
+        ollama = await bdm_getir(oturum, ollama_id)
+        uretilen_ollama = manifest.manifest_uret(ollama)
+
+    assert uretilen_ollama["birimler"] == []
+    assert "HF_HOME" not in uretilen_ollama["ortam"]
 
 
 # -- on kontrol -------------------------------------------------------------

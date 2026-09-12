@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import sys
-import types
 
 import sqlalchemy as sa
 
@@ -178,22 +176,34 @@ async def test_kilitsiz_ayni_eposta_500_yerine_cakisma_dondurur(istemci, monkeyp
 
 
 async def test_kurulum_dogrulama_sonucunu_yanita_tasir(istemci, monkeypatch):
-    """Hazırlama ucu hazır olduğunda `dogrula` sonucu sadeleştirilerek döner."""
-    cagrilar: list[tuple[object, object]] = []
+    """`dogrula` sonucu sadeleştirilerek yanıta taşınır; BDM ve oturum aktarılır."""
+    import arkauc.app.api.kurulum as kurulum_uclari
 
-    async def sahte_dogrula(oturum, bdm):  # noqa: ANN001 - sahte imza
-        cagrilar.append((oturum, bdm))
+    cagrilar: list[dict[str, object]] = []
+
+    async def sahte_dogrula(bdm, *, oturum=None):  # noqa: ANN001 - sahte imza
+        cagrilar.append({"bdm": bdm, "oturum": oturum})
         return {"basarili": True, "mesaj": "Model yanıt verdi.", "gecikme_ms": 12}
 
-    paket = types.ModuleType("bdm_hazırlama_ucu")
-    paket.__path__ = []  # type: ignore[attr-defined]
-    modul = types.ModuleType("bdm_hazırlama_ucu.dogrulama")
-    modul.dogrula = sahte_dogrula  # type: ignore[attr-defined]
-    monkeypatch.setitem(sys.modules, "bdm_hazırlama_ucu", paket)
-    monkeypatch.setitem(sys.modules, "bdm_hazırlama_ucu.dogrulama", modul)
+    monkeypatch.setattr(kurulum_uclari, "dogrula", sahte_dogrula)
 
     yanit = await istemci.post("/api/v1/kurulum", json=_govde(dogrula=True))
     assert yanit.status_code == 201
     assert yanit.json()["dogrulama"] == {"basarili": True, "mesaj": "Model yanıt verdi."}
     assert len(cagrilar) == 1
-    assert cagrilar[0][1] is not None
+    assert cagrilar[0]["bdm"] is not None
+    assert cagrilar[0]["oturum"] is not None
+
+
+async def test_kurulum_dogrulama_istenmezse_cagrilmaz(istemci, monkeypatch):
+    """`dogrula=false` iken upstream doğrulaması hiç çalışmaz ve yanıt `null` taşır."""
+    import arkauc.app.api.kurulum as kurulum_uclari
+
+    async def sahte_dogrula(bdm, *, oturum=None):  # noqa: ANN001 - sahte imza
+        raise AssertionError("dogrula çağrılmamalıydı")
+
+    monkeypatch.setattr(kurulum_uclari, "dogrula", sahte_dogrula)
+
+    yanit = await istemci.post("/api/v1/kurulum", json=_govde())
+    assert yanit.status_code == 201
+    assert yanit.json()["dogrulama"] is None

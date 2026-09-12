@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -15,8 +16,8 @@ from arkauc.app.servisler.kota import (
     gun_sonu,
     iso,
     kota_durumu,
-    kota_kontrol,
     kota_kullan,
+    kota_token_ekle,
 )
 from arkauc.testler.sahte_ust import SahteUst
 from bdm_listesi import BdmOlustur, bdm_olustur
@@ -94,7 +95,6 @@ async def test_kota_tanimli_degilse_istek_gecer(yardimci):
     anahtar = await anahtar_ekle(gunluk_istek_siniri=None)
 
     async with oturum_fabrikasi()() as oturum:
-        await kota_kontrol(oturum, kullanici_id=kullanici.id, api_anahtari_id=anahtar.id)
         await kota_kullan(
             oturum, kullanici_id=kullanici.id, api_anahtari_id=anahtar.id, token=500
         )
@@ -115,12 +115,9 @@ async def test_gunluk_istek_asimi(yardimci):
 
     async with oturum_fabrikasi()() as oturum:
         for _ in range(2):
-            await kota_kontrol(oturum, kullanici_id=kullanici.id, api_anahtari_id=None)
             await kota_kullan(oturum, kullanici_id=kullanici.id, api_anahtari_id=None)
         with pytest.raises(KotaAsildi) as yakalanan:
-            await kota_kontrol(
-                oturum, kullanici_id=kullanici.id, api_anahtari_id=None, bdm_id=7
-            )
+            await kota_kullan(oturum, kullanici_id=kullanici.id, api_anahtari_id=None)
         durum = await kota_durumu(
             oturum, kullanici_id=kullanici.id, api_anahtari_id=None
         )
@@ -129,7 +126,6 @@ async def test_gunluk_istek_asimi(yardimci):
     assert yakalanan.value.durum_kodu == 429
     assert yakalanan.value.kod == "kota_asildi"
     assert yakalanan.value.ayrinti["kapsam"] == "kullanici"
-    assert yakalanan.value.ayrinti["bdm_id"] == 7
     assert _coz(yakalanan.value.ayrinti["sifirlanma"]) > datetime.now(timezone.utc)
     assert durum["kullanici"]["kullanilan_gunluk"] == 2
     assert durum["kullanici"]["gunluk_istek"] == 2
@@ -144,12 +140,37 @@ async def test_aylik_token_asimi(yardimci):
             oturum, kullanici_id=kullanici.id, api_anahtari_id=None, token=100
         )
         with pytest.raises(KotaAsildi) as yakalanan:
-            await kota_kontrol(oturum, kullanici_id=kullanici.id, api_anahtari_id=None)
+            await kota_kullan(oturum, kullanici_id=kullanici.id, api_anahtari_id=None)
+        durum = await kota_durumu(
+            oturum, kullanici_id=kullanici.id, api_anahtari_id=None
+        )
         await oturum.commit()
 
     sifirlanma = _coz(yakalanan.value.ayrinti["sifirlanma"])
     assert sifirlanma == ay_sonu()
     assert sifirlanma > datetime.now(timezone.utc)
+    assert durum["kullanici"]["kullanilan_aylik"] == 100
+
+
+async def test_token_ekleme_sayaci_atomik_artirir(yardimci):
+    kullanici = await yardimci.kullanici_ekle()
+    await kota_ekle(KotaKapsami.kullanici, kullanici.id, aylik_token=1000)
+
+    async with oturum_fabrikasi()() as oturum:
+        await kota_kullan(oturum, kullanici_id=kullanici.id, api_anahtari_id=None)
+        await kota_token_ekle(
+            oturum, kullanici_id=kullanici.id, api_anahtari_id=None, token=19
+        )
+        await kota_token_ekle(
+            oturum, kullanici_id=kullanici.id, api_anahtari_id=None, token=0
+        )
+        durum = await kota_durumu(
+            oturum, kullanici_id=kullanici.id, api_anahtari_id=None
+        )
+        await oturum.commit()
+
+    assert durum["kullanici"]["kullanilan_gunluk"] == 1
+    assert durum["kullanici"]["kullanilan_aylik"] == 19
 
 
 async def test_suresi_gecen_sayaclar_sifirlanir(yardimci):
@@ -167,13 +188,13 @@ async def test_suresi_gecen_sayaclar_sifirlanir(yardimci):
     )
 
     async with oturum_fabrikasi()() as oturum:
-        await kota_kontrol(oturum, kullanici_id=kullanici.id, api_anahtari_id=None)
+        await kota_kullan(oturum, kullanici_id=kullanici.id, api_anahtari_id=None)
         durum = await kota_durumu(
             oturum, kullanici_id=kullanici.id, api_anahtari_id=None
         )
         await oturum.commit()
 
-    assert durum["kullanici"]["kullanilan_gunluk"] == 0
+    assert durum["kullanici"]["kullanilan_gunluk"] == 1
     assert durum["kullanici"]["kullanilan_aylik"] == 0
     assert _coz(durum["kullanici"]["gun_sifirlanma"]) == gun_sonu()
     assert _coz(durum["kullanici"]["ay_sifirlanma"]) == ay_sonu()
@@ -183,10 +204,9 @@ async def test_api_anahtari_gunluk_siniri_kapsami():
     anahtar = await anahtar_ekle(gunluk_istek_siniri=1)
 
     async with oturum_fabrikasi()() as oturum:
-        await kota_kontrol(oturum, kullanici_id=None, api_anahtari_id=anahtar.id)
         await kota_kullan(oturum, kullanici_id=None, api_anahtari_id=anahtar.id, token=3)
         with pytest.raises(KotaAsildi) as yakalanan:
-            await kota_kontrol(oturum, kullanici_id=None, api_anahtari_id=anahtar.id)
+            await kota_kullan(oturum, kullanici_id=None, api_anahtari_id=anahtar.id)
         durum = await kota_durumu(oturum, kullanici_id=None, api_anahtari_id=anahtar.id)
         await oturum.commit()
 
@@ -365,3 +385,92 @@ async def test_kisisel_kullanim_anahtar_kapsami_ve_kota(istemci, yardimci, uygul
     assert kota["kullanilan_aylik"] == 19
     assert _coz(kota["gun_sifirlanma"]) > datetime.now(timezone.utc)
     assert _coz(kota["ay_sifirlanma"]) > datetime.now(timezone.utc)
+
+
+async def test_es_zamanli_istekler_kota_sayacini_asamaz(istemci, yardimci, uygulama):
+    bdm = await bdm_ekle()
+    kullanici = await yardimci.kullanici_ekle()
+    await kota_ekle(KotaKapsami.kullanici, kullanici.id, gunluk_istek=1)
+    uygulama.dependency_overrides[sohbet_ucu.ust_saglayici] = SahteUst().saglayici
+    basliklar = yardimci.basliklar(kullanici)
+
+    yanitlar = await asyncio.gather(
+        *(
+            istemci.post(
+                SOHBET,
+                json={"bdm_id": bdm.id, "mesaj": f"eşzamanlı {sira}"},
+                headers=basliklar,
+            )
+            for sira in range(2)
+        )
+    )
+
+    assert sorted(yanit.status_code for yanit in yanitlar) == [200, 429]
+    asan = next(yanit for yanit in yanitlar if yanit.status_code == 429)
+    assert asan.json()["hata"]["kod"] == "kota_asildi"
+
+    async with oturum_fabrikasi()() as oturum:
+        kayit = (
+            await oturum.execute(
+                sa.select(Kota).where(
+                    Kota.kapsam == KotaKapsami.kullanici,
+                    Kota.kapsam_id == kullanici.id,
+                )
+            )
+        ).scalar_one()
+    assert kayit.kullanilan_gunluk == 1
+
+    durumlar = await kullanim_durumlari()
+    assert durumlar.count(KullanimDurumu.basarili) == 1
+    assert durumlar.count(KullanimDurumu.kota_asildi) == 1
+
+
+async def test_es_zamanli_anahtar_istekleri_gunluk_siniri_asamaz(istemci, yardimci, uygulama):
+    bdm = await bdm_ekle()
+    uretilen = guvenlik.api_anahtari_uret()
+    async with oturum_fabrikasi()() as oturum:
+        anahtar = ApiAnahtari(
+            ad="Sınırlı Anahtar",
+            onek=uretilen["onek"],
+            anahtar_hash=uretilen["hash"],
+            son_dort=uretilen["son_dort"],
+            gunluk_istek_siniri=1,
+        )
+        oturum.add(anahtar)
+        await oturum.commit()
+        await oturum.refresh(anahtar)
+    uygulama.dependency_overrides[sohbet_ucu.ust_saglayici] = SahteUst().saglayici
+    basliklar = yardimci.anahtar_basliklari(uretilen["tam"])
+
+    yanitlar = await asyncio.gather(
+        *(
+            istemci.post(
+                SOHBET,
+                json={"bdm_id": bdm.id, "mesaj": f"paralel {sira}"},
+                headers=basliklar,
+            )
+            for sira in range(6)
+        )
+    )
+
+    kodlar = [yanit.status_code for yanit in yanitlar]
+    assert kodlar.count(200) == 1
+    assert kodlar.count(429) == 5
+    for yanit in yanitlar:
+        if yanit.status_code == 429:
+            assert yanit.json()["hata"]["kod"] == "kota_asildi"
+
+    async with oturum_fabrikasi()() as oturum:
+        kota_id = (
+            await oturum.execute(
+                sa.select(Kota.id).where(
+                    Kota.kapsam == KotaKapsami.api_anahtari,
+                    Kota.kapsam_id == anahtar.id,
+                )
+            )
+        ).scalar_one()
+        kayit = await oturum.get(Kota, kota_id)
+    assert kayit.kullanilan_gunluk == 1
+    durumlar = await kullanim_durumlari()
+    assert durumlar.count(KullanimDurumu.basarili) == 1
+    assert durumlar.count(KullanimDurumu.kota_asildi) == 5

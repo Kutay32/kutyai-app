@@ -256,6 +256,110 @@ async def test_loglari_temizle_saklama_gunu_ve_yalniz_yonetici(istemci, yardimci
     assert yanit.json() == {"silinen": 0}
 
 
+async def test_islem_kayitlari_denetim_izini_listeler(istemci, yardimci):
+    yonetici = await yardimci.yonetici()
+    basliklar = yardimci.basliklar(yonetici)
+    anahtar = (
+        await istemci.post(
+            "/api/v1/api-anahtarlari", json={"ad": "Denetim"}, headers=basliklar
+        )
+    ).json()
+    await istemci.post(
+        f"/api/v1/api-anahtarlari/{anahtar['id']}/iptal", headers=basliklar
+    )
+
+    izleyici = await yardimci.kullanici_ekle(rol=Rol.izleyici)
+    yanit = await istemci.get(
+        "/api/v1/islem-kayitlari", headers=yardimci.basliklar(izleyici)
+    )
+    assert yanit.status_code == 200
+    govde = yanit.json()
+    assert (govde["sayfa"], govde["boyut"]) == (1, 25)
+    assert govde["toplam"] == 2
+    assert [kayit["eylem"] for kayit in govde["kayitlar"]] == [
+        "api_anahtari.iptal_edildi",
+        "api_anahtari.olusturuldu",
+    ]
+
+    kayit = govde["kayitlar"][1]
+    assert set(kayit) == {
+        "id",
+        "kullanici_id",
+        "kullanici_eposta",
+        "eylem",
+        "hedef_tur",
+        "hedef_id",
+        "ayrinti",
+        "ip",
+        "olusturulma",
+    }
+    assert kayit["kullanici_id"] == yonetici.id
+    assert kayit["kullanici_eposta"] == yonetici.eposta
+    assert kayit["hedef_tur"] == "api_anahtari"
+    assert kayit["hedef_id"] == str(anahtar["id"])
+    assert kayit["ayrinti"]["ad"] == "Denetim"
+
+    yanit = await istemci.get(
+        "/api/v1/islem-kayitlari?eylem=api_anahtari.iptal_edildi", headers=basliklar
+    )
+    assert yanit.json()["toplam"] == 1
+    assert yanit.json()["kayitlar"][0]["hedef_id"] == str(anahtar["id"])
+
+    yanit = await istemci.get(
+        "/api/v1/islem-kayitlari?eylem=boyle.bir.eylem.yok", headers=basliklar
+    )
+    assert yanit.json() == {"toplam": 0, "sayfa": 1, "boyut": 25, "kayitlar": []}
+
+    yanit = await istemci.get(
+        f"/api/v1/islem-kayitlari?kullanici_id={yonetici.id}", headers=basliklar
+    )
+    assert yanit.json()["toplam"] == 2
+    yanit = await istemci.get("/api/v1/islem-kayitlari?kullanici_id=999999", headers=basliklar)
+    assert yanit.json()["toplam"] == 0
+
+    dun = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat().replace("+00:00", "Z")
+    evvelsi_gun = (
+        (datetime.now(timezone.utc) - timedelta(days=2)).isoformat().replace("+00:00", "Z")
+    )
+    yanit = await istemci.get(f"/api/v1/islem-kayitlari?baslangic={dun}", headers=basliklar)
+    assert yanit.json()["toplam"] == 2
+    yanit = await istemci.get(f"/api/v1/islem-kayitlari?bitis={dun}", headers=basliklar)
+    assert yanit.json()["toplam"] == 0
+    yanit = await istemci.get(
+        f"/api/v1/islem-kayitlari?baslangic={dun}&bitis={evvelsi_gun}", headers=basliklar
+    )
+    assert yanit.status_code == 400
+    assert yanit.json()["hata"]["kod"] == "gecersiz_istek"
+
+    yanit = await istemci.get("/api/v1/islem-kayitlari?boyut=1&sayfa=2", headers=basliklar)
+    govde = yanit.json()
+    assert (govde["toplam"], govde["sayfa"], govde["boyut"]) == (2, 2, 1)
+    assert [kayit["eylem"] for kayit in govde["kayitlar"]] == ["api_anahtari.olusturuldu"]
+
+    for sorgu in ("sayfa=0", "boyut=0", "boyut=201"):
+        yanit = await istemci.get(f"/api/v1/islem-kayitlari?{sorgu}", headers=basliklar)
+        assert yanit.status_code == 400, sorgu
+        assert yanit.json()["hata"]["kod"] == "dogrulama_hatasi", sorgu
+
+    # Sahipsiz kayıtlar (kullanıcı silinmiş/sistem eylemi) yine listelenir.
+    async with oturum_fabrikasi()() as oturum:
+        oturum.add(IslemKaydi(eylem="sistem.bakim", hedef_tur="ayar", hedef_id="7"))
+        await oturum.commit()
+    yanit = await istemci.get(
+        "/api/v1/islem-kayitlari?eylem=sistem.bakim", headers=basliklar
+    )
+    sahipsiz = yanit.json()["kayitlar"][0]
+    assert sahipsiz["kullanici_id"] is None
+    assert sahipsiz["kullanici_eposta"] is None
+    assert sahipsiz["hedef_id"] == "7"
+
+
+async def test_islem_kayitlari_kimlik_ister(istemci):
+    yanit = await istemci.get("/api/v1/islem-kayitlari")
+    assert yanit.status_code == 401
+    assert yanit.json()["hata"]["kod"] == "kimlik_gerekli"
+
+
 async def test_log_uclari_kimlik_ve_yetki_ister(istemci, yardimci):
     son_kullanici = await yardimci.kullanici_ekle(rol=Rol.son_kullanici)
     yanit = await istemci.get(

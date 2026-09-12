@@ -1,0 +1,52 @@
+# KutyAI — arkauc (FastAPI) uretim imaji.
+# Baglam: depo koku (docker-compose.yml -> context: ..), dosya: dagitim/Dockerfile.arkauc
+#
+#   docker build -f dagitim/Dockerfile.arkauc -t kutyai/arkauc:0.1.0 .
+
+FROM python:3.13-slim
+
+# UTF-8 YEREL AYARI ZORUNLU: depoda Turkce karakterli Python paket klasorleri var
+# (bdm_hazırlama_ucu, bdm_yönetim_ucu) ve uygulama bunlari import ediyor. Yerel ayar
+# C/POSIX kalirsa dosya sistemi kodlamasi ASCII'ye duser ve import basarisiz olur.
+# PYTHONUTF8=1 + LANG/LC_ALL=C.UTF-8 birlikte UTF-8 modunu kilitler.
+ENV LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    PYTHONUTF8=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /uygulama
+
+# --- Bagimliliklar (kaynak degismeden onbelleklenen katman) -------------------
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+# PostgreSQL profili icin async surucu. requirements.txt'te yer almaz cunku
+# varsayilan dagitim SQLite'tir; surucu imajda hazir olsun ki profil etkinken
+# KUTYAI_VERITABANI_URL=postgresql+asyncpg://... ek kurulum gerektirmesin.
+RUN pip install --no-cache-dir "asyncpg>=0.30.0"
+
+# --- Kaynak ------------------------------------------------------------------
+COPY pyproject.toml alembic.ini ./
+COPY arkauc ./arkauc
+COPY bdm_veritabani ./bdm_veritabani
+COPY bdm_hazırlama_ucu ./bdm_hazırlama_ucu
+COPY bdm_yönetim_ucu ./bdm_yönetim_ucu
+COPY bdm_listesi ./bdm_listesi
+COPY bdm_konusma_gecmisi ./bdm_konusma_gecmisi
+
+# Varsayilan SQLite yolu (veritabani/bdm_veritabani/kutyai.db) volume ile
+# eslenmisse buraya yazilir; compose bu dizini adlandirilmis volume olarak baglar.
+RUN mkdir -p /veri
+
+EXPOSE 8000
+
+# Sozlesme: GET /api/v1/saglik -> 200 {"durum":"ayakta",...}
+# slim imajda curl yok; urllib kullanilir.
+HEALTHCHECK --interval=10s --timeout=5s --retries=6 --start-period=30s \
+    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/v1/saglik', timeout=5).status == 200 else 1)"
+
+# --proxy-headers: nginx arkasinda dogru sema/host bilgisi icin.
+CMD ["uvicorn", "arkauc.app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]

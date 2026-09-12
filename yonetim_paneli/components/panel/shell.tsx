@@ -40,7 +40,7 @@ export function PanelShell({ kullanici, children }: PanelShellProps) {
         <div className="flex h-14 shrink-0 items-center border-b border-neutral-200 px-4">
           <Link
             href="/"
-            className="rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2"
+            className="rounded-md focus:outline-none focus:border-neutral-900 focus:ring-0"
           >
             <Brand markaAdi={markaAdi} />
           </Link>
@@ -73,7 +73,7 @@ export function PanelShell({ kullanici, children }: PanelShellProps) {
               <button
                 type="button"
                 onClick={() => setCekimceAcik(false)}
-                className="rounded-md px-3 py-1.5 text-sm text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-900"
+                className="rounded-md px-3 py-1.5 text-sm text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus:outline-none focus:border-neutral-900 focus:ring-0"
               >
                 Kapat
               </button>

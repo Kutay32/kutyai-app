@@ -8,10 +8,12 @@ export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 export type ButtonSize = "sm" | "md";
 
 const VARIANT: Record<ButtonVariant, string> = {
-  primary: "border border-neutral-900 bg-neutral-900 text-white hover:bg-neutral-800",
+  primary:
+    "border border-neutral-900 bg-neutral-900 text-white hover:bg-neutral-800 focus:border-neutral-400",
   secondary: "border border-neutral-300 bg-white text-neutral-900 hover:border-neutral-900",
   ghost: "border border-transparent bg-transparent text-neutral-700 hover:bg-neutral-100",
-  danger: "border border-rose-600 bg-rose-600 text-white hover:bg-rose-700",
+  danger:
+    "border border-rose-600 bg-rose-600 text-white hover:bg-rose-700 focus:border-rose-300",
 };
 
 const SIZE: Record<ButtonSize, string> = {
@@ -43,9 +45,9 @@ export function Button({
       aria-busy={loading || undefined}
       className={cn(
         "inline-flex items-center justify-center rounded-md font-medium whitespace-nowrap transition-colors disabled:pointer-events-none disabled:opacity-50",
+        FOCUS_RING,
         VARIANT[variant],
         SIZE[size],
-        FOCUS_RING,
         className,
       )}
       {...kalan}

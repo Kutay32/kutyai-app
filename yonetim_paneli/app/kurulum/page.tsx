@@ -76,6 +76,7 @@ export default function KurulumSayfasi() {
   const [veri, setVeri] = useState<FormVerisi>(BASLANGIC);
   const [hatalar, setHatalar] = useState<Partial<Record<AlanAdi, string>>>({});
   const [genelHata, setGenelHata] = useState<string | null>(null);
+  const [uyari, setUyari] = useState<string | null>(null);
   const [gonderiliyor, setGonderiliyor] = useState(false);
   const [durumKontrol, setDurumKontrol] = useState(true);
 
@@ -169,7 +170,27 @@ export default function KurulumSayfasi() {
     return bulunan;
   }
 
+  /**
+   * Adım 3'te sağlayıcı listesi hazır değilse ilerlemeyi engelleyen görünür gerekçe.
+   * Liste alınamadığında `<select>` hiç render edilmediği için alan hatası görünmez olurdu.
+   */
+  function saglayiciEngeli(): string | null {
+    if (saglayicilar.yukleniyor) return "Sağlayıcı listesi yükleniyor, lütfen bekleyin.";
+    if (saglayicilar.hata) {
+      return "Sağlayıcı listesi alınamadı. “Yeniden dene” ile listeyi yükleyip tekrar deneyin.";
+    }
+    return null;
+  }
+
   function ilerle() {
+    if (adim === 2) {
+      const engel = saglayiciEngeli();
+      if (engel) {
+        setGenelHata(engel);
+        return;
+      }
+    }
+
     const bulunan = adimHatalari(adim);
     setHatalar(bulunan);
     if (Object.keys(bulunan).length > 0) return;
@@ -183,6 +204,14 @@ export default function KurulumSayfasi() {
 
   async function bitir() {
     for (const sira of [0, 1, 2]) {
+      if (sira === 2) {
+        const engel = saglayiciEngeli();
+        if (engel) {
+          setAdim(2);
+          setGenelHata(engel);
+          return;
+        }
+      }
       const bulunan = adimHatalari(sira);
       if (Object.keys(bulunan).length > 0) {
         setHatalar(bulunan);
@@ -194,6 +223,7 @@ export default function KurulumSayfasi() {
 
     setGonderiliyor(true);
     setGenelHata(null);
+    setUyari(null);
     try {
       const govde: KurulumIstegi = {
         marka_adi: veri.marka_adi.trim(),
@@ -214,7 +244,15 @@ export default function KurulumSayfasi() {
         dogrula: true,
       };
 
-      await istek<KurulumYaniti>("/kurulum", { yontem: "POST", govde, jeton: null });
+      const yanit = await istek<KurulumYaniti>("/kurulum", { yontem: "POST", govde, jeton: null });
+      if (yanit.dogrulama && !yanit.dogrulama.basarili) {
+        // Hesap ve model oluşturuldu; bağlantı doğrulanamadı, kullanıcı bilgilendirilir.
+        setUyari(
+          yanit.dogrulama.mesaj.trim() ||
+            "Sağlayıcı adresini, model kimliğini ve varsa API anahtarını denetleyin.",
+        );
+        return;
+      }
       router.replace("/giris?kurulum=tamam");
     } catch (hata) {
       if (hata instanceof ApiHatasi && hata.kod === "kurulum_zaten_tamam") {
@@ -254,6 +292,16 @@ export default function KurulumSayfasi() {
         <AdimGostergesi adimlar={ADIMLAR} aktif={adim} />
 
         {genelHata ? <Alert tone="danger">{genelHata}</Alert> : null}
+
+        {uyari ? (
+          <Alert tone="warning" title="Model bağlantısı doğrulanamadı">
+            <p>{uyari}</p>
+            <p>
+              Yönetici hesabı ve model kaydı oluşturuldu; giriş yapıp model ayarlarını
+              denetleyebilirsiniz.
+            </p>
+          </Alert>
+        ) : null}
 
         <Card className="rounded-2xl">
           <div className="flex flex-col gap-4 p-4">
@@ -478,6 +526,10 @@ export default function KurulumSayfasi() {
             </Button>
             {adim < ADIMLAR.length - 1 ? (
               <Button onClick={ilerle}>İleri</Button>
+            ) : uyari ? (
+              <Button onClick={() => router.replace("/giris?kurulum=tamam")}>
+                Giriş sayfasına git
+              </Button>
             ) : (
               <Button onClick={bitir} loading={gonderiliyor}>
                 Kurulumu tamamla

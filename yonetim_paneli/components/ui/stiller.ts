@@ -1,8 +1,7 @@
 /** Form denetimleri ve odak halkaları için ortak sınıflar. */
 
 /** Kenarlık-odaklı odak göstergesi (tasarım dili: `focus:border-neutral-900 focus:ring-0`). */
-export const FOCUS_RING =
-  "focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-50";
+export const FOCUS_RING = "focus:border-neutral-900 focus:outline-none focus:ring-0";
 
 /** Metin alanları, seçim kutuları ve metin kutuları için ortak gövde. */
 export const FIELD_CONTROL =

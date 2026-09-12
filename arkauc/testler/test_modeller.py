@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from bdm_veritabani.modeller import Bdm, BdmDurumu, Rol
+import sqlalchemy as sa
+
+from bdm_veritabani.modeller import Bdm, BdmDurumu, IslemKaydi, Rol
 from bdm_veritabani.oturum import oturum_fabrikasi
 
 BDM_GOVDESI: dict[str, object] = {
@@ -167,7 +169,7 @@ async def test_bilinmeyen_bdm_404(istemci, yardimci):
 async def test_operator_silemez_ve_kopyalayamaz(istemci, yardimci):
     yonetici = await yardimci.yonetici()
     operator = await yardimci.kullanici_ekle(rol=Rol.operator)
-    olusan = await _bdm_olustur(istemci, yardimci, operator)
+    olusan = await _bdm_olustur(istemci, yardimci, yonetici)
 
     silme = await istemci.delete(
         f"/api/v1/bdm/{olusan['id']}", headers=yardimci.basliklar(operator)
@@ -203,6 +205,126 @@ async def test_yonetici_bdm_kopyalar(istemci, yardimci):
     assert kopya["slug"] == "test-gpt-kopya"
     assert kopya["durum"] == "taslak"
     assert kopya["api_anahtari_maskeli"] == kaynak["api_anahtari_maskeli"]
+
+
+# --- saglayici adresi / upstream anahtari yetkisi (GUV-03) ------------------
+
+
+async def test_operator_saglayici_alanlarini_degistiremez(istemci, yardimci):
+    yonetici = await yardimci.yonetici()
+    operator = await yardimci.kullanici_ekle(rol=Rol.operator)
+    olusan = await _bdm_olustur(istemci, yardimci, yonetici)
+
+    for alan, deger in (
+        ("temel_url", "http://127.0.0.1:9000/v1"),
+        ("api_anahtari", "sk-casus-anahtar"),
+        ("saglayici", "ollama"),
+    ):
+        yanit = await istemci.patch(
+            f"/api/v1/bdm/{olusan['id']}",
+            json={alan: deger},
+            headers=yardimci.basliklar(operator),
+        )
+        assert yanit.status_code == 403, f"{alan}: {yanit.text}"
+        hata = yanit.json()["hata"]
+        assert hata["kod"] == "yetki_yok"
+        assert hata["mesaj"] == (
+            "Sağlayıcı adresi ve API anahtarını yalnız yönetici değiştirebilir."
+        )
+
+    liste = await istemci.get("/api/v1/bdm", headers=yardimci.basliklar(yonetici))
+    kayit = liste.json()[0]
+    assert kayit["temel_url"] == "https://api.openai.com/v1"
+    assert kayit["saglayici"] == "openai"
+    assert kayit["api_anahtari_maskeli"] == "sk-t***cdef"
+
+
+async def test_operator_diger_alanlari_gunceller(istemci, yardimci):
+    yonetici = await yardimci.yonetici()
+    operator = await yardimci.kullanici_ekle(rol=Rol.operator)
+    olusan = await _bdm_olustur(istemci, yardimci, yonetici)
+
+    yanit = await istemci.patch(
+        f"/api/v1/bdm/{olusan['id']}",
+        json={
+            "aciklama": "Operatör güncelledi",
+            "maks_cikti": 1024,
+            "sicaklik_varsayilan": 0.2,
+            "yetenekler": {"akis": True, "gorsel": True, "arac": False},
+        },
+        headers=yardimci.basliklar(operator),
+    )
+    assert yanit.status_code == 200, yanit.text
+    assert yanit.json()["aciklama"] == "Operatör güncelledi"
+    assert yanit.json()["maks_cikti"] == 1024
+    assert yanit.json()["yetenekler"]["gorsel"] is True
+
+
+async def test_yonetici_saglayici_adresini_degistirir(istemci, yardimci):
+    yonetici = await yardimci.yonetici()
+    olusan = await _bdm_olustur(istemci, yardimci, yonetici)
+
+    yanit = await istemci.patch(
+        f"/api/v1/bdm/{olusan['id']}",
+        json={"temel_url": "http://127.0.0.1:9000/v1/", "api_anahtari": "sk-yeni-anahtar-1234"},
+        headers=yardimci.basliklar(yonetici),
+    )
+    assert yanit.status_code == 200, yanit.text
+    assert yanit.json()["temel_url"] == "http://127.0.0.1:9000/v1"
+    assert yanit.json()["api_anahtari_maskeli"] == "sk-y***1234"
+
+
+async def test_operator_anahtar_veremeden_bdm_olusturur(istemci, yardimci):
+    operator = await yardimci.kullanici_ekle(rol=Rol.operator)
+
+    engelli = await istemci.post(
+        "/api/v1/bdm",
+        json={**BDM_GOVDESI, "api_anahtari": "sk-operator-anahtari"},
+        headers=yardimci.basliklar(operator),
+    )
+    assert engelli.status_code == 403
+    assert engelli.json()["hata"]["kod"] == "yetki_yok"
+    assert engelli.json()["hata"]["mesaj"] == (
+        "Sağlayıcı adresi ve API anahtarını yalnız yönetici değiştirebilir."
+    )
+
+    olusan = await _bdm_olustur(
+        istemci,
+        yardimci,
+        operator,
+        gorunen_ad="Operatör Yerel Model",
+        saglayici="ollama",
+        temel_url="http://localhost:11434/v1",
+        api_anahtari="",
+    )
+    assert olusan["slug"] == "operator-yerel-model"
+    assert olusan["api_anahtari_maskeli"] == ""
+
+
+async def test_bdm_yasam_dongusu_denetim_izine_yazilir(istemci, yardimci):
+    yonetici = await yardimci.yonetici()
+    olusan = await _bdm_olustur(istemci, yardimci, yonetici)
+    basliklar = yardimci.basliklar(yonetici)
+
+    await istemci.patch(
+        f"/api/v1/bdm/{olusan['id']}", json={"aciklama": "iz"}, headers=basliklar
+    )
+    await istemci.delete(f"/api/v1/bdm/{olusan['id']}", headers=basliklar)
+
+    async with oturum_fabrikasi()() as oturum:
+        kayitlar = (
+            await oturum.execute(
+                sa.select(IslemKaydi.eylem, IslemKaydi.kullanici_id).where(
+                    IslemKaydi.hedef_tur == "bdm"
+                )
+            )
+        ).all()
+
+    assert {(eylem, kullanici_id) for eylem, kullanici_id in kayitlar} == {
+        ("bdm.olusturuldu", yonetici.id),
+        ("bdm.guncellendi", yonetici.id),
+        ("bdm.silindi", yonetici.id),
+    }
 
 
 async def test_calisan_bdm_silinemez(istemci, yardimci):

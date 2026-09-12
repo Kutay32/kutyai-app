@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import importlib
 import logging
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from collections.abc import AsyncIterator
 
 from fastapi import FastAPI
@@ -13,10 +14,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from arkauc.app.api.sistem import SURUM
 from arkauc.app.cekirdek.ayarlar import ayarlar
 from arkauc.app.cekirdek.hatalar import isleyicileri_kur
-from bdm_veritabani.oturum import motoru_sifirla, tablolari_olustur
+from arkauc.app.cekirdek.oran_siniri import OranSiniriMiddleware
+from bdm_veritabani.oturum import motoru_sifirla, oturum_fabrikasi, tablolari_olustur
 from bdm_veritabani.tohum import tohumla
 
 logger = logging.getLogger("kutyai")
+
+# Saklama zamanlayicisi (spec §11): acilistan sonra ve her 24 saatte bir.
+SAKLAMA_ILK_BEKLEME_SN = 60
+SAKLAMA_ARALIGI_SN = 24 * 60 * 60
 
 # (modul yolu, url oneki, etiket) — DONDURULMUS SOZLESME.
 # Dalga ajanlari yalnizca kendi modul dosyalarini olusturur; bu liste degismez.
@@ -56,16 +62,50 @@ def yonlendiricileri_yukle(uygulama: FastAPI) -> list[str]:
     return yuklenen
 
 
+async def _saklama_dongusu(dur: asyncio.Event) -> None:
+    """`saklama_gun` sonrasini gunluk olarak temizler."""
+    from bdm_konusma_gecmisi.saklama import eski_konusmalari_sil
+
+    try:
+        await asyncio.wait_for(dur.wait(), timeout=SAKLAMA_ILK_BEKLEME_SN)
+        return
+    except asyncio.TimeoutError:
+        pass
+
+    while not dur.is_set():
+        try:
+            async with oturum_fabrikasi()() as oturum:
+                silinen = await eski_konusmalari_sil(oturum)
+                await oturum.commit()
+            if silinen:
+                logger.info("Saklama temizliği: %d konuşma silindi.", silinen)
+        except Exception:  # pragma: no cover - arka plan gorevi
+            logger.exception("Saklama temizliği başarısız oldu.")
+        try:
+            await asyncio.wait_for(dur.wait(), timeout=SAKLAMA_ARALIGI_SN)
+            return
+        except asyncio.TimeoutError:
+            continue
+
+
 @asynccontextmanager
 async def _yasam_dongusu(uygulama: FastAPI) -> AsyncIterator[None]:
     ayarlar.dogrula()
     await tablolari_olustur()
     await tohumla()
-    yuklenen = [y for y, _, _ in YONLENDIRICILER]  # bilgi amacli
-    logger.info("KutyAI %s hazır — %d yönlendirici tanımlı.", SURUM, len(yuklenen))
+
+    dur = asyncio.Event()
+    saklama_gorevi = asyncio.create_task(_saklama_dongusu(dur), name="kutyai-saklama")
+    logger.info(
+        "KutyAI %s hazır — %d yönlendirici tanımlı.", SURUM, len(YONLENDIRICILER)
+    )
     try:
         yield
     finally:
+        dur.set()
+        saklama_gorevi.cancel()
+        with suppress(asyncio.CancelledError):
+            await saklama_gorevi
         await motoru_sifirla()
 
 
@@ -79,6 +119,9 @@ def uygulama_olustur() -> FastAPI:
         redoc_url=None,
         openapi_url="/api/openapi.json",
     )
+    # Oran sinirlayici once eklenir; CORS en dista kalir ki 429 yanitlari da
+    # tarayici tarafinda okunabilir olsun.
+    uygulama.add_middleware(OranSiniriMiddleware)
     uygulama.add_middleware(
         CORSMiddleware,
         allow_origins=ayarlar.cors_listesi,

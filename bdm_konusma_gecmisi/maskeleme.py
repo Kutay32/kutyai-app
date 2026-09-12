@@ -1,4 +1,8 @@
-"""KVKK maskeleme: kayit aninda uygulanir, geri donusturulemez (spec §11)."""
+"""Maskeleme ayarini veritabanindan okur (spec §11).
+
+Panelden `PUT /ayarlar` ile degistirilen `maskeleme_aktif` degeri etkili olmali;
+ortam degiskeni yalnizca veritabani bos oldugunda yedek yol olarak kullanilir.
+"""
 
 from __future__ import annotations
 
@@ -34,11 +38,20 @@ def maskele(metin: str, kurallar: list[Kural]) -> str:
     return sonuc
 
 
+async def maskeleme_etkin(oturum: AsyncSession) -> bool:
+    """Panel ayari oncelikli, ortam degiskeni yedek."""
+    from arkauc.app.cekirdek.ayarlar import ayarlar
+    from arkauc.app.cekirdek.ayarlar_db import ayar_oku
+
+    deger = await ayar_oku(oturum, "maskeleme_aktif", None)
+    if deger is None:
+        return bool(ayarlar.maskeleme_aktif)
+    return bool(deger)
+
+
 async def maskele_metin(oturum: AsyncSession, metin: str) -> str:
     if not metin:
         return metin
-    from arkauc.app.cekirdek.ayarlar import ayarlar
-
-    if not ayarlar.maskeleme_aktif:
+    if not await maskeleme_etkin(oturum):
         return metin
     return maskele(metin, await kurallari_yukle(oturum))

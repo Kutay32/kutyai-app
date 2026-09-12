@@ -1,0 +1,118 @@
+"use client";
+
+import { useState } from "react";
+
+import { hataMesaji } from "@/lib/api";
+import { yonlendirmeGuncelle, type BdmKaydi } from "@/lib/bdm";
+import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Field } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { useToast } from "@/components/ui/toast";
+
+export type SekmeYonlendirmeProps = {
+  bdm: BdmKaydi;
+  /** Güncellenen kaydı üst sayfaya bildirir. */
+  onGuncellendi: (bdm: BdmKaydi) => void;
+};
+
+/** Yönlendirme sekmesi: takma ad ve öncelik (PATCH /bdm/yonetim/{id}/yol). */
+export function SekmeYonlendirme({ bdm, onGuncellendi }: SekmeYonlendirmeProps) {
+  const { showToast } = useToast();
+  const [takmaAd, setTakmaAd] = useState(bdm.konteyner?.yol?.takma_ad ?? "");
+  const [oncelik, setOncelik] = useState(
+    bdm.konteyner?.yol?.oncelik === undefined ? "" : String(bdm.konteyner.yol.oncelik),
+  );
+  const [hatalar, setHatalar] = useState<{ takma_ad?: string; oncelik?: string }>({});
+  const [genelHata, setGenelHata] = useState<string | null>(null);
+  const [gonderiliyor, setGonderiliyor] = useState(false);
+
+  async function kaydet(olay: React.FormEvent) {
+    olay.preventDefault();
+
+    const bulunan: { takma_ad?: string; oncelik?: string } = {};
+    const ad = takmaAd.trim();
+    if (ad.length > 80) bulunan.takma_ad = "Takma ad en fazla 80 karakter olabilir.";
+    const oncelikSayi = oncelik.trim() === "" ? null : Number(oncelik);
+    if (oncelikSayi !== null && (!Number.isInteger(oncelikSayi) || oncelikSayi < 0 || oncelikSayi > 1000)) {
+      bulunan.oncelik = "Öncelik 0 ile 1000 arasında bir tam sayı olmalıdır.";
+    }
+    setHatalar(bulunan);
+    if (Object.keys(bulunan).length > 0) return;
+
+    setGonderiliyor(true);
+    setGenelHata(null);
+    try {
+      const kayit = await yonlendirmeGuncelle(bdm.id, {
+        ...(ad ? { takma_ad: ad } : {}),
+        ...(oncelikSayi === null ? {} : { oncelik: oncelikSayi }),
+      });
+      showToast("Yönlendirme ayarları kaydedildi.", "success");
+      onGuncellendi(kayit);
+    } catch (sebep) {
+      setGenelHata(hataMesaji(sebep));
+    } finally {
+      setGonderiliyor(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Yönlendirme</CardTitle>
+        <CardDescription>
+          Takma ad model için alternatif isimdir; öncelik yönlendirme sırasını belirler.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={kaydet} className="flex flex-col gap-4" noValidate>
+          {genelHata ? <Alert tone="danger">{genelHata}</Alert> : null}
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <Field
+              label="Takma ad"
+              hint="Boş bırakılırsa mevcut takma ad değişmez."
+              error={hatalar.takma_ad}
+            >
+              {(props) => (
+                <Input
+                  {...props}
+                  invalid={props.invalid}
+                  value={takmaAd}
+                  onChange={(olay) => {
+                    setTakmaAd(olay.target.value);
+                    setHatalar((onceki) => ({ ...onceki, takma_ad: undefined }));
+                  }}
+                  placeholder="kutyai-hizli"
+                />
+              )}
+            </Field>
+
+            <Field label="Öncelik" hint="0 – 1000 (küçük değer önce denenir)" error={hatalar.oncelik}>
+              {(props) => (
+                <Input
+                  {...props}
+                  invalid={props.invalid}
+                  type="number"
+                  value={oncelik}
+                  onChange={(olay) => {
+                    setOncelik(olay.target.value);
+                    setHatalar((onceki) => ({ ...onceki, oncelik: undefined }));
+                  }}
+                  placeholder="100"
+                />
+              )}
+            </Field>
+          </div>
+
+          <div>
+            <Button type="submit" loading={gonderiliyor}>
+              Kaydet
+            </Button>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}

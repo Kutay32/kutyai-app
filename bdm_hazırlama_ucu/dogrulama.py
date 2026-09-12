@@ -45,7 +45,8 @@ def varsayilan_tasima() -> httpx.AsyncBaseTransport | None:
     return None
 
 
-def _anahtari_coz(bdm: Bdm) -> str:
+def anahtari_coz(bdm: Bdm) -> str:
+    """BDM'nin sifreli upstream anahtarini cozer; yoksa bos dize doner."""
     if not bdm.api_anahtari_sifreli:
         return ""
     try:
@@ -158,7 +159,7 @@ async def dogrula(
             bdm, oturum, basarili=False, gecikme_ms=0, modeller=[], mesaj=ADRES_MESAJI
         )
 
-    anahtar = _anahtari_coz(bdm)
+    anahtar = anahtari_coz(bdm)
     basliklar = {"Authorization": f"Bearer {anahtar}"} if anahtar else {}
     kendi_istemcisi = istemci is None
     if istemci is None:

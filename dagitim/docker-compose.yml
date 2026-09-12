@@ -1,0 +1,186 @@
+# KutyAI — Docker Compose dagitim dosyasi (tasarim §12, kaynak/KURULUM.md §5).
+#
+# Hizli kullanim:
+#   cd dagitim
+#   cp .env.ornek .env          # ya da sir uretimi icin: ./baslat.sh / .\baslat.ps1
+#   docker compose up -d --build
+#
+# Adresler: arkauc http://localhost:8000/api/v1 · onuc http://localhost:3000
+#           yonetim_paneli http://localhost:3001
+#
+# PostgreSQL profili (varsayilan SQLite yerine):
+#   docker compose --profile postgres up -d --build
+#   .env icinde: KUTYAI_VERITABANI_URL=postgresql+asyncpg://kutyai:kutyai@postgres:5432/kutyai
+#   (baslat.ps1 -Profil postgres / baslat.sh --profil postgres bu degiskeni kendisi verir.)
+#
+# Tek giris noktasi (nginx, opsiyonel): docker compose --profile nginx up -d
+#   -> http://localhost:8080  (bkz. nginx.conf)
+
+name: kutyai
+
+x-ortak: &ortak
+  restart: unless-stopped
+  networks:
+    - kutyai-agi
+
+services:
+  # ---------------------------------------------------------------- arkauc --
+  arkauc:
+    <<: *ortak
+    build:
+      context: ..
+      dockerfile: dagitim/Dockerfile.arkauc
+    image: kutyai/arkauc:0.1.0
+    ports:
+      - "8000:8000"
+    # .env yoksa da `docker compose config` ve gelistirme acilisi calisir
+    # (ayarlar modulu gelistirme ortaminda gecici sirlar uretir).
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Varsayilan veritabani: adlandirilmis volume uzerinde SQLite (/veri).
+      # Postgres profili etkinken KUTYAI_VERITABANI_URL disaridan verilir
+      # (baslat betikleri bunu otomatik yapar); deger .env'den de okunur.
+      KUTYAI_VERITABANI_URL: "${KUTYAI_VERITABANI_URL:-sqlite+aiosqlite:////veri/kutyai.db}"
+    volumes:
+      - kutyai-veri:/veri
+      # BDM konteynerlerini (ollama / vLLM / TGI) baslatip durdurabilmek icin
+      # docker.from_env() soket uzerinden konusur. Soketi paylasmak imaja
+      # root-yetkisi verir; guvenilmeyen is yuku calistirmayin.
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Yerel model onbellegi (KUTYAI_HF_ONBELLEK): manifest bu yolu BDM
+      # konteynerine baglar, yani yol DOCKER HOST uzerinde cozulur. Host'ta
+      # kalici bir dizin kullanacaksaniz ayni yolu buraya da baglayin
+      # (Windows'ta: - C:/kutyai/hf-onbellek:/srv/kutyai/hf-onbellek):
+      # - /srv/kutyai/hf-onbellek:/srv/kutyai/hf-onbellek
+    healthcheck:
+      # Sozlesme: GET /api/v1/saglik -> { "durum": "ayakta", ... }
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/v1/saglik', timeout=5).status == 200 else 1)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    depends_on:
+      # Yalnizca postgres profili etkinken uygulanir; profil kapaliyken yok sayilir.
+      postgres:
+        condition: service_healthy
+        required: false
+
+  # ------------------------------------------------------------------ onuc --
+  onuc:
+    <<: *ortak
+    build:
+      context: ..
+      dockerfile: dagitim/Dockerfile.onuc
+      args:
+        # Tarayicidan gorunen adres; derleme aninda istemci paketine gomulur.
+        NEXT_PUBLIC_API_URL: "${KUTYAI_TARAYICI_API_URL:-http://localhost:8000/api/v1}"
+    image: kutyai/onuc:0.1.0
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: "${KUTYAI_TARAYICI_API_URL:-http://localhost:8000/api/v1}"
+      PORT: "3000"
+    depends_on:
+      arkauc:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # -------------------------------------------------------- yonetim_paneli --
+  yonetim_paneli:
+    <<: *ortak
+    build:
+      context: ..
+      dockerfile: dagitim/Dockerfile.panel
+      args:
+        NEXT_PUBLIC_API_URL: "${KUTYAI_TARAYICI_API_URL:-http://localhost:8000/api/v1}"
+    image: kutyai/yonetim-paneli:0.1.0
+    ports:
+      - "3001:3001"
+    environment:
+      NEXT_PUBLIC_API_URL: "${KUTYAI_TARAYICI_API_URL:-http://localhost:8000/api/v1}"
+      PORT: "3001"
+    depends_on:
+      arkauc:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:'+(process.env.PORT||3001)+'/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # -------------------------------------------------------------- postgres --
+  # Yalnizca `--profile postgres` (ya da COMPOSE_PROFILES=postgres) ile baslar.
+  postgres:
+    <<: *ortak
+    profiles: ["postgres"]
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: "${KUTYAI_POSTGRES_VERITABANI:-kutyai}"
+      POSTGRES_USER: "${KUTYAI_POSTGRES_KULLANICI:-kutyai}"
+      POSTGRES_PASSWORD: "${KUTYAI_POSTGRES_PAROLA:-kutyai}"
+    volumes:
+      - kutyai-pg:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${KUTYAI_POSTGRES_KULLANICI:-kutyai} -d ${KUTYAI_POSTGRES_VERITABANI:-kutyai}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  # ----------------------------------------------------------------- nginx --
+  # Opsiyonel tek giris noktasi. `--profile nginx` ile acilir (bkz. nginx.conf).
+  nginx:
+    <<: *ortak
+    profiles: ["nginx"]
+    image: nginx:1.27-alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      arkauc:
+        condition: service_healthy
+      onuc:
+        condition: service_healthy
+      yonetim_paneli:
+        condition: service_healthy
+
+volumes:
+  # SQLite veritabani (KUTYAI_VERITABANI_URL varsayilani: /veri/kutyai.db).
+  kutyai-veri:
+  # PostgreSQL verisi (postgres profili).
+  kutyai-pg:
+
+networks:
+  kutyai-agi:
+    driver: bridge
