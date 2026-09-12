@@ -92,6 +92,16 @@ docker exec -it kutyai-ollama ollama pull llama3
 
 Panelde `Ollama (yerel)` sağlayıcısıyla BDM ekleyin; **Hazırlama → Doğrula** başarılı olduğunda model `hazir` durumuna geçer.
 
+### Model ön indirme (Hazırlama → Modeli indir)
+
+| Sağlayıcı | Yol | Not |
+|---|---|---|
+| `ollama` | Ollama `POST /api/pull` | SSE ilerleme; model Ollama deposuna iner |
+| `vllm`, `tgi` | HuggingFace `snapshot_download` | `KUTYAI_HF_ONBELLEK` dizinine iner (varsayılan `bdm_veritabani/hf-onbellek`) ve konteynere `/root/.cache/huggingface` olarak bağlanır — indirme bir kez yapılır |
+| `openai`, `azure`, `openrouter` | Desteklenmez | Modeller sağlayıcı tarafında çalışır; `400` + Türkçe gerekçe döner |
+
+`vllm`/`tgi` için HF deposuna erişim gerekir; özel/gated modellerde `HF_TOKEN` ortam değişkenini tanımlayın.
+
 ## 8. GPU'lu vLLM
 
 ```bash
