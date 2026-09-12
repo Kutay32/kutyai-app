@@ -88,6 +88,29 @@ def test_alembic_gocu_semayi_ve_varsayilan_organizasyonu_olusturur(tmp_path):
             if satir[1] == "org_id"
         ][0]
         assert org_kolonu[3] == 1
+
+        # Kullanim/denetim kayitlarinda org_id NULLABLE olmali (model ile ayni):
+        # giris oncesi denetim kaydi organizasyonsuz yazilabilir.
+        for tablo in ("islem_kaydi", "kullanim_kaydi"):
+            kolon = [
+                satir
+                for satir in baglanti.execute(f"PRAGMA table_info({tablo})")
+                if satir[1] == "org_id"
+            ][0]
+            assert kolon[3] == 0, tablo
+
+        # Canli senaryo: organizasyonsuz denetim kaydi yazilabilmeli.
+        baglanti.execute(
+            "INSERT INTO islem_kaydi (org_id, eylem, hedef_tur, hedef_id, ayrinti, ip, olusturulma)"
+            " VALUES (NULL, 'kimlik.giris', 'kullanici', '1', '{}', '127.0.0.1', CURRENT_TIMESTAMP)"
+        )
+        baglanti.commit()
+        assert (
+            baglanti.execute(
+                "SELECT COUNT(*) FROM islem_kaydi WHERE org_id IS NULL"
+            ).fetchone()[0]
+            == 1
+        )
     finally:
         baglanti.close()
 

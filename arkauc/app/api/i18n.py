@@ -18,7 +18,7 @@ router = APIRouter(tags=["i18n"])
 
 
 @router.get("/i18n/diller")
-async def diller() -> list[dict[str, str]]:
+async def diller() -> list[dict[str, object]]:
     """Desteklenen diller ve varsayilan."""
     return dil_listesi()
 

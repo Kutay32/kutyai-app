@@ -25,10 +25,17 @@ down_revision = "0001_ilk_sema"
 branch_labels = None
 depends_on = None
 
+#: `org_id` ZORUNLU tablolar (mevcut satirlar varsayilan organizasyona baglanir).
 ORG_KOLONLU_TABLOLAR: tuple[str, ...] = (
     "bdm",
     "konusma",
     "api_anahtari",
+)
+
+#: `org_id` NULLABLE tablolar: sistem olaylari organizasyon baglami olmadan da
+#: yazilabilir (giris oncesi denetim kaydi, kullanim kaydi gibi). Modelde de
+#: nullable tanimlidir; gocun NOT NULL eklemesi canlida hata verirdi.
+ORG_NULLABLE_TABLOLAR: tuple[str, ...] = (
     "islem_kaydi",
     "kullanim_kaydi",
 )
@@ -129,6 +136,17 @@ def upgrade() -> None:
             ),
         )
 
+    # 3b) NULLABLE org_id kolonlari (model ile birebir)
+    for tablo in ORG_NULLABLE_TABLOLAR:
+        if tablo not in mevcut:
+            continue
+        if "org_id" in _kolonlar(bind, tablo):
+            continue
+        op.add_column(
+            tablo,
+            sa.Column("org_id", sa.Integer(), nullable=True),
+        )
+
 
 def downgrade() -> None:
     bind = op.get_bind()
@@ -136,7 +154,7 @@ def downgrade() -> None:
 
     # SQLite, foreign key taniminda gecen bir kolonu dogrudan DROP COLUMN ile
     # kaldiramaz; batch (tablo yeniden insa) modu her iki lehcede de calisir.
-    for tablo in ORG_KOLONLU_TABLOLAR:
+    for tablo in (*ORG_KOLONLU_TABLOLAR, *ORG_NULLABLE_TABLOLAR):
         if tablo in mevcut and "org_id" in _kolonlar(bind, tablo):
             # Batch reflection indeksleri de kopyalar; kolonu dusurmeden once
             # indeksi kaldirmazsak "no such column" hatasi alinir.
