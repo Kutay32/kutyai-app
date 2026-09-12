@@ -214,14 +214,17 @@ def uc_noktasi_dogrula(uc_noktasi: str) -> str:
     if not temiz:
         raise GecersizIstek("arac_uc_noktasi_zorunlu", {}, ceviriler={})
     try:
+        # v1 `temel_url` denetimi yeniden kullanılır (tek SSRF kural kaynağı).
         guvenli = _adres_dogrula(temiz)
     except ValueError as hata:
+        # Teknik gerekçe yalnızca `ayrinti`ya girer; mesaj katalogdan çevrilir.
         raise GecersizIstek(
-            "arac_uc_noktasi_gecersiz",
-            {"neden": str(hata)},
-            ceviriler={"neden": str(hata)},
+            "arac_uc_noktasi_gecersiz", {"neden": str(hata)}
         ) from hata
-    sema = urlparse(guvenli).scheme.lower()
+    ayrisan = urlparse(guvenli)
+    if not ayrisan.hostname:
+        raise GecersizIstek("arac_uc_noktasi_gecersiz", {"neden": "konak yok"})
+    sema = ayrisan.scheme.lower()
     if sema != "https" and not (sema == "http" and ayarlar.arac_yerel_izin):
         raise GecersizIstek("arac_https_zorunlu", {}, ceviriler={})
     return guvenli
@@ -239,12 +242,12 @@ def imza_hesapla(govde: bytes) -> str:
 # -- argüman denetimi -------------------------------------------------------
 
 
-def _gecersiz(alan: str, neden_anahtari: str, **degiskenler: Any) -> GecersizIstek:
-    neden = mesaj(neden_anahtari, VARSAYILAN_DIL, **degiskenler)
+def _arguman_hatasi(anahtar: str, alan: str, **degiskenler: Any) -> GecersizIstek:
+    """Alan adını ve nedeni katalog anahtarıyla birlikte taşıyan `400`."""
     return GecersizIstek(
-        "arac_arguman_gecersiz",
-        {"alan": alan, "neden": neden},
-        ceviriler={"alan": alan, "neden": neden},
+        anahtar,
+        {"alan": alan, **degiskenler},
+        ceviriler={"alan": alan, **degiskenler},
     )
 
 
@@ -262,31 +265,33 @@ def _deger_dogrula(sema: Any, deger: Any, yol: str) -> None:
         return
     tip = sema.get("type")
     if isinstance(tip, str) and not _tip_uyuyor(deger, tip):
-        raise _gecersiz(yol, "arac_arguman_tur", tur=tip)
+        raise _arguman_hatasi("arac_arguman_tur", yol, tur=tip)
     if deger is not None and "enum" in sema:
         izinli = sema.get("enum") or []
         if deger not in izinli:
-            raise _gecersiz(
-                yol, "arac_arguman_enum", degerler=", ".join(str(x) for x in izinli)
+            raise _arguman_hatasi(
+                "arac_arguman_enum", yol, degerler=", ".join(str(x) for x in izinli)
             )
     if isinstance(deger, (int, float)) and not isinstance(deger, bool):
         if "minimum" in sema and deger < sema["minimum"]:
-            raise _gecersiz(yol, "arac_arguman_minimum", sinir=sema["minimum"])
+            raise _arguman_hatasi("arac_arguman_minimum", yol, sinir=sema["minimum"])
         if "maximum" in sema and deger > sema["maximum"]:
-            raise _gecersiz(yol, "arac_arguman_maksimum", sinir=sema["maximum"])
+            raise _arguman_hatasi("arac_arguman_maksimum", yol, sinir=sema["maximum"])
     if isinstance(deger, dict):
         ozellikler = sema.get("properties") or {}
         for ad in sema.get("required") or []:
             if ad not in deger:
-                raise _gecersiz(f"{yol}.{ad}" if yol else str(ad), "arac_arguman_zorunlu")
+                raise _arguman_hatasi(
+                    "arac_arguman_zorunlu", f"{yol}.{ad}" if yol else str(ad)
+                )
         for ad, alt_sema in ozellikler.items():
             if ad in deger:
                 _deger_dogrula(alt_sema, deger[ad], f"{yol}.{ad}" if yol else str(ad))
         if sema.get("additionalProperties") is False:
             fazla = sorted(set(deger) - set(ozellikler))
             if fazla:
-                raise _gecersiz(
-                    f"{yol}.{fazla[0]}" if yol else str(fazla[0]), "arac_arguman_fazla"
+                raise _arguman_hatasi(
+                    "arac_arguman_fazla", f"{yol}.{fazla[0]}" if yol else str(fazla[0])
                 )
 
 
@@ -299,10 +304,10 @@ def argumanlari_dogrula(arac: Arac, argumanlar: Any) -> dict[str, Any]:
         if argumanlar is None:
             return {}
         if not isinstance(argumanlar, dict):
-            raise _gecersiz("argumanlar", "arac_arguman_tur", tur="object")
+            raise _arguman_hatasi("arac_arguman_tur", "argumanlar", tur="object")
         return dict(argumanlar)
     if not isinstance(argumanlar, dict):
-        raise _gecersiz("argumanlar", "arac_arguman_tur", tur="object")
+        raise _arguman_hatasi("arac_arguman_tur", "argumanlar", tur="object")
     _deger_dogrula(sema, argumanlar, "")
     return dict(argumanlar)
 
@@ -351,9 +356,9 @@ def _sayi_dugumu(dugum: ast.AST) -> float:
 def _hesap_makinesi(argumanlar: dict[str, Any]) -> dict[str, Any]:
     ifade = argumanlar.get("ifade")
     if not isinstance(ifade, str) or not ifade.strip():
-        raise _gecersiz("ifade", "arac_arguman_zorunlu")
+        raise _arguman_hatasi("arac_arguman_zorunlu", "ifade")
     if len(ifade) > _MAKS_IFADE_UZUNLUK:
-        raise _gecersiz("ifade", "arac_arguman_uzunluk", sinir=_MAKS_IFADE_UZUNLUK)
+        raise _arguman_hatasi("arac_arguman_uzunluk", "ifade", sinir=_MAKS_IFADE_UZUNLUK)
     try:
         agac = ast.parse(ifade, mode="eval")
     except SyntaxError as hata:
@@ -418,7 +423,8 @@ async def _webhook_calistir(arac: Arac, argumanlar: dict[str, Any]) -> dict[str,
     except httpx.HTTPError as hata:
         raise CalistirmaHatasi("arac_baglanti_hatasi") from hata
 
-    if durum >= 400:
+    if durum >= 300:
+        # Yönlendirmeler izlenmez (SSRF kaçışı olmasın); 2xx dışı her yanıt hatadır.
         raise CalistirmaHatasi("arac_http_hatasi", durum=durum)
     return _yanit_coz(ham)
 
@@ -475,7 +481,9 @@ async def arac_calistir(
     Yalnızca argüman şema ihlali `GecersizIstek` yükseltir (HTTP 400).
     """
     if arac.org_id != org_id or not arac.etkin:
-        raise Bulunamadi("arac_bulunamadi", {"arac_id": arac.id})
+        raise Bulunamadi(
+            "arac_bulunamadi", {"arac_id": arac.id}, kod="arac_bulunamadi"
+        )
 
     ham = argumanlari_dogrula(arac, argumanlar)
 

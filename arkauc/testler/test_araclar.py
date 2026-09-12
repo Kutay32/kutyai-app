@@ -39,6 +39,15 @@ UC = "/api/v1/araclar"
 # --------------------------------------------------------------------------
 
 
+class SessizSunucu(ThreadingHTTPServer):
+    """İstemci bağlantıyı kestiğinde iz bırakmayan sunucu (test gürültüsü)."""
+
+    daemon_threads = True
+
+    def handle_error(self, request: Any, client_address: Any) -> None:
+        return None
+
+
 class SahteWebhook:
     """Gerçek bir yerel HTTP sunucusu; istekleri kaydeder, yanıtı yapılandırır."""
 
@@ -67,9 +76,13 @@ class SahteWebhook:
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(kayit.yanit_govdesi)))
                 self.end_headers()
-                self.wfile.write(kayit.yanit_govdesi)
+                try:
+                    self.wfile.write(kayit.yanit_govdesi)
+                except (ConnectionError, OSError):
+                    # İstemci (ör. 64 KB sınırında) bağlantıyı kapatmış olabilir.
+                    return None
 
-        self._sunucu = ThreadingHTTPServer(("127.0.0.1", 0), Isleyici)
+        self._sunucu = SessizSunucu(("127.0.0.1", 0), Isleyici)
         self._durdurucu = threading.Thread(target=self._sunucu.serve_forever, daemon=True)
         self._durdurucu.start()
         self.adres = f"http://127.0.0.1:{self._sunucu.server_address[1]}/arac"
@@ -202,6 +215,12 @@ async def test_slug_org_icinde_tekil(istemci, yardimci) -> None:
     )
     assert otomatik["slug"] == "baska-arac"
 
+    # Açıkça verilen slug da işlev adı güvenli biçime normalleşir.
+    kirli = await _olustur(
+        istemci, basliklar, ad="Kirli", slug="Hava Durumu!", uc_noktasi="https://ornek.test/d"
+    )
+    assert kirli["slug"] == "hava-durumu"
+
 
 async def test_org_izolasyonu(istemci, yardimci) -> None:
     a_kullanici = await yardimci.yonetici()
@@ -236,6 +255,16 @@ async def test_yetki_matrisi(istemci, yardimci) -> None:
     izleyici = await yardimci.kullanici_ekle(rol=Rol.izleyici)
     izleyici_basliklar = yardimci.basliklar(izleyici)
     assert (await istemci.get(UC, headers=izleyici_basliklar)).status_code == 200
+
+    yonetici = await yardimci.yonetici()
+    arac = await _olustur(
+        istemci, yardimci.basliklar(yonetici), slug="matris", uc_noktasi="https://ornek.test/m"
+    )
+    assert (
+        await istemci.post(
+            f"{UC}/{arac['id']}/dene", json={"argumanlar": {}}, headers=izleyici_basliklar
+        )
+    ).status_code == 403
 
     yazma = await istemci.post(
         UC,
@@ -315,6 +344,22 @@ async def test_webhook_cagrisi_imza_ve_basliklar(istemci, yardimci, webhook) -> 
         }
 
 
+async def test_dene_kisa_govde(istemci, yardimci, webhook) -> None:
+    """`/dene` gövdesi `argumanlar` sarmadan da kabul edilir."""
+    yonetici = await yardimci.yonetici()
+    basliklar = yardimci.basliklar(yonetici)
+    arac = await _olustur(
+        istemci,
+        basliklar,
+        slug="kisa",
+        uc_noktasi=webhook.adres,
+        json_sema={"type": "object", "properties": {"x": {"type": "integer"}}},
+    )
+    yanit = await istemci.post(f"{UC}/{arac['id']}/dene", json={"x": 7}, headers=basliklar)
+    assert yanit.status_code == 200, yanit.text
+    assert json.loads(webhook.son_istek["govde"])["argumanlar"] == {"x": 7}
+
+
 async def test_webhook_zaman_asimi(istemci, yardimci, webhook, monkeypatch) -> None:
     monkeypatch.setattr(arac_servisi, "ZAMAN_ASIMI_SN", 0.3)
     webhook.gecikme_sn = 1.5
@@ -335,8 +380,9 @@ async def test_webhook_zaman_asimi(istemci, yardimci, webhook, monkeypatch) -> N
     assert "yanıt vermedi" in kayit["hata"]
 
 
-async def test_webhook_500_hatasi(istemci, yardimci, webhook) -> None:
-    webhook.yanit_kodu = 500
+@pytest.mark.parametrize("kod", [500, 404, 302])
+async def test_webhook_hata_yanitlari(istemci, yardimci, webhook, kod) -> None:
+    webhook.yanit_kodu = kod
     webhook.yanit_govdesi = b'{"hata": "patladim"}'
     yonetici = await yardimci.yonetici()
     basliklar = yardimci.basliklar(yonetici)
@@ -346,7 +392,8 @@ async def test_webhook_500_hatasi(istemci, yardimci, webhook) -> None:
         f"{UC}/{arac['id']}/dene", json={"argumanlar": {}}, headers=basliklar
     )
     assert yanit.status_code == 502
-    assert "500" in yanit.json()["hata"]["ayrinti"]["neden"]
+    assert yanit.json()["hata"]["kod"] == "arac_hatasi"
+    assert str(kod) in yanit.json()["hata"]["ayrinti"]["neden"]
 
     log = await istemci.get(f"{UC}/cagrilar", headers=basliklar)
     assert log.json()["kayitlar"][0]["durum"] == "hata"
@@ -371,6 +418,7 @@ async def test_webhook_yanit_boyutu_sinirli(istemci, yardimci, webhook) -> None:
         "ftp://ornek.test/arac",
         "https://169.254.169.254/latest/meta-data",
         "https://metadata.google.internal/computeMetadata/v1",
+        "https:///kayip-konak",
     ],
 )
 async def test_adres_guvenligi_reddeder(istemci, yardimci, adres) -> None:
@@ -676,3 +724,101 @@ async def test_durum_enum_logda(istemci, yardimci, webhook) -> None:
         assert kayit.durum == AracCagrisiDurumu.basarili
         assert kayit.org_id is not None
         assert kayit.arac_id == arac["id"]
+
+
+async def test_webhook_uc_noktasi_zorunlu(istemci, yardimci) -> None:
+    yonetici = await yardimci.yonetici()
+    basliklar = yardimci.basliklar(yonetici)
+    yanit = await istemci.post(UC, json={"ad": "Boş"}, headers=basliklar)
+    assert yanit.status_code == 400
+    assert yanit.json()["hata"]["kod"] == "gecersiz_istek"
+
+
+async def test_patch_tur_gecisi(istemci, yardimci, webhook) -> None:
+    yonetici = await yardimci.yonetici()
+    basliklar = yardimci.basliklar(yonetici)
+    arac = await _olustur(istemci, basliklar, slug="gecis", uc_noktasi=webhook.adres)
+
+    kotu = await istemci.patch(
+        f"{UC}/{arac['id']}", json={"tur": "yerlesik"}, headers=basliklar
+    )
+    assert kotu.status_code == 400
+    assert kotu.json()["hata"]["mesaj"].startswith("Bilinmeyen yerleşik araç")
+
+    iyi = await istemci.patch(
+        f"{UC}/{arac['id']}",
+        json={"tur": "yerlesik", "slug": "hesap_makinesi"},
+        headers=basliklar,
+    )
+    assert iyi.status_code == 200, iyi.text
+    assert iyi.json()["tur"] == "yerlesik"
+    assert iyi.json()["slug"] == "hesap_makinesi"
+    assert iyi.json()["uc_noktasi"] == ""
+
+    # Webhook'a dönüş için uç noktası yeniden zorunlu.
+    eksik = await istemci.patch(
+        f"{UC}/{arac['id']}", json={"tur": "webhook"}, headers=basliklar
+    )
+    assert eksik.status_code == 400
+
+
+async def test_etkin_olmayan_arac_calistirilamaz(istemci, yardimci, webhook) -> None:
+    yonetici = await yardimci.yonetici()
+    basliklar = yardimci.basliklar(yonetici)
+    arac = await istemci.post(
+        UC,
+        json={"ad": "Kapalı", "uc_noktasi": webhook.adres, "etkin": False},
+        headers=basliklar,
+    )
+    assert arac.status_code == 201
+    arac_id = arac.json()["id"]
+
+    yanit = await istemci.post(
+        f"{UC}/{arac_id}/dene", json={"argumanlar": {}}, headers=basliklar
+    )
+    assert yanit.status_code == 404
+    assert yanit.json()["hata"]["kod"] == "arac_bulunamadi"
+    assert webhook.istekler == []
+
+    async with oturum_fabrikasi()() as oturum:
+        kayit = await oturum.get(Arac, arac_id)
+        assert kayit is not None
+        assert await arac_servisi.araclari_getir(oturum, kayit.org_id, None) == []
+
+
+async def test_i18n_hata_mesaji_ingilizce(istemci, yardimci) -> None:
+    yonetici = await yardimci.yonetici()
+    basliklar = {**yardimci.basliklar(yonetici), "Accept-Language": "en"}
+    yanit = await istemci.post(
+        UC, json={"ad": "Kötü", "uc_noktasi": "ftp://ornek.test"}, headers=basliklar
+    )
+    assert yanit.status_code == 400
+    assert yanit.json()["hata"]["mesaj"] == "Invalid tool endpoint."
+
+
+async def test_araclari_getir_suzgecleri(istemci, yardimci, webhook) -> None:
+    yonetici = await yardimci.yonetici()
+    basliklar = yardimci.basliklar(yonetici)
+    birinci = await _olustur(
+        istemci, basliklar, slug="bir", ad="Bir", uc_noktasi=webhook.adres
+    )
+    ikinci = await _olustur(
+        istemci, basliklar, slug="iki", ad="İki", uc_noktasi=webhook.adres
+    )
+    await istemci.patch(f"{UC}/{ikinci['id']}", json={"etkin": False}, headers=basliklar)
+
+    async with oturum_fabrikasi()() as oturum:
+        kayit = await oturum.get(Arac, birinci["id"])
+        assert kayit is not None
+        org_id = kayit.org_id
+        hepsi = await arac_servisi.araclari_getir(oturum, org_id, None)
+        assert [arac.slug for arac in hepsi] == ["bir"]
+
+        tek = await arac_servisi.araclari_getir(
+            oturum, org_id, [birinci["id"], ikinci["id"], 99_999]
+        )
+        assert [arac.slug for arac in tek] == ["bir"]
+
+        assert await arac_servisi.araclari_getir(oturum, org_id, []) == []
+        assert await arac_servisi.araclari_getir(oturum, org_id + 9999, None) == []
+

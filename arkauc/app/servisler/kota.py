@@ -1,8 +1,9 @@
 """Kota denetimi ve sayaclari (spec §4.9, §9).
 
-Iki kapsam desteklenir: `kullanici` ve `api_anahtari`. Gunluk istek sayaci
-`gun_sifirlanma`, aylik token sayaci `ay_sifirlanma` gectiginde sifirlanir.
-Sinir tanimli degilse (`gunluk_istek` ve `aylik_token` bos) kapsam serbesttir.
+Uc kapsam desteklenir: `organizasyon` (plan kotasi; tanimliysa once denetlenir),
+`kullanici` ve `api_anahtari`. Gunluk istek sayaci `gun_sifirlanma`, aylik token
+sayaci `ay_sifirlanma` gectiginde sifirlanir. Sinir tanimli degilse
+(`gunluk_istek` ve `aylik_token` bos) kapsam serbesttir.
 """
 
 from __future__ import annotations
@@ -84,10 +85,20 @@ async def _kapsamlar(
     *,
     kullanici_id: int | None,
     api_anahtari_id: int | None,
+    org_id: int | None = None,
     olustur: bool,
 ) -> list[tuple[Kota | None, int | None, int | None]]:
-    """Etkin kapsamlari `(kayit, gunluk_limit, aylik_limit)` olarak dondurur."""
+    """Etkin kapsamlari `(kayit, gunluk_limit, aylik_limit)` olarak dondurur.
+
+    Organizasyon kapsami (plan kotasi) tanimliysa once o denetlenir; boylece
+    organizasyon limiti kullanici/anahtar limitlerinden once uygulanir.
+    """
     kapsamlar: list[tuple[Kota | None, int | None, int | None]] = []
+
+    if org_id is not None:
+        kayit = await _kayit_getir(oturum, KotaKapsami.organizasyon, org_id)
+        if kayit is not None:
+            kapsamlar.append((kayit, kayit.gunluk_istek, kayit.aylik_token))
 
     if kullanici_id is not None:
         kayit = await _kayit_getir(oturum, KotaKapsami.kullanici, kullanici_id)
@@ -130,6 +141,7 @@ async def kota_kullan(
     *,
     kullanici_id: int | None,
     api_anahtari_id: int | None,
+    org_id: int | None = None,
     bdm_id: int | None = None,
     token: int = 0,
 ) -> None:
@@ -144,6 +156,7 @@ async def kota_kullan(
         oturum,
         kullanici_id=kullanici_id,
         api_anahtari_id=api_anahtari_id,
+        org_id=org_id,
         olustur=True,
     ):
         if kayit is None:
@@ -185,6 +198,7 @@ async def kota_token_ekle(
     *,
     kullanici_id: int | None,
     api_anahtari_id: int | None,
+    org_id: int | None = None,
     token: int,
 ) -> None:
     """Aylik token sayacini tek SQL ifadesiyle atomik artirir (limit denetlemez)."""
@@ -196,6 +210,7 @@ async def kota_token_ekle(
         oturum,
         kullanici_id=kullanici_id,
         api_anahtari_id=api_anahtari_id,
+        org_id=org_id,
         olustur=False,
     ):
         if kayit is None:

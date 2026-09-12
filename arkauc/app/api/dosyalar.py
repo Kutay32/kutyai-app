@@ -10,6 +10,7 @@ sinir asildigi anda `413 dosya_cok_buyuk` ile reddedilir.
 
 from __future__ import annotations
 
+from pathlib import Path
 from urllib.parse import quote
 
 import sqlalchemy as sa
@@ -55,9 +56,14 @@ def _ozet(dosya: Dosya, *, metin: bool = False) -> dict[str, object]:
 
 
 def _icerik_serligi(ad: str) -> str:
-    """Rusya disi karakterleri de tasiyan `Content-Disposition` degeri (RFC 5987)."""
-    yedek = ad.encode("ascii", "ignore").decode("ascii").replace('"', "").strip() or "dosya"
-    return f"attachment; filename=\"{yedek}\"; filename*=UTF-8''{quote(ad, safe='')}"
+    """`Content-Disposition` degeri; kontrol karakterleri ve tırnak ayıklanır.
+
+    Başlık enjeksiyonunu önlemek için ASCII yedek addan CR/LF ve tırnak
+    çıkarılır; asıl ad RFC 5987 (`filename*`) ile yüzde kodlamalı taşınır.
+    """
+    temel = Path(ad).name or "dosya"
+    yedek = "".join(k for k in temel if 32 <= ord(k) < 127 and k not in '"\\').strip()
+    return f"attachment; filename=\"{yedek or 'dosya'}\"; filename*=UTF-8''{quote(temel, safe='')}"
 
 
 async def _icerik_oku(yukleme: UploadFile) -> bytes:
@@ -159,7 +165,7 @@ async def dosya_detayi(
     return _ozet(kayit, metin=True)
 
 
-@router.get("/dosyalar/{dosya_id}/icerik")
+@router.get("/dosyalar/{dosya_id}/icerik", response_class=Response)
 async def dosya_indir(
     dosya_id: int,
     oturum: AsyncSession = Depends(veritabani_oturumu),

@@ -599,3 +599,61 @@ async def test_parcalari_yaz_ikinci_cagride_cogaltmaz(yardimci, uygulama):
 
     parcalar = await _parcalari_oku(belge_id)
     assert [(parca.sira, parca.icerik) for parca in parcalar] == [(0, "elma")]
+
+
+async def test_bdm_id_zorunlu(istemci, yardimci, uygulama):
+    kurulum = await _kur(yardimci, uygulama)
+    yanit = await istemci.post(
+        BELGELER, json={"ad": "Bdmsiz", "metin": "kedi"}, headers=kurulum.basliklar
+    )
+    assert yanit.status_code == 400
+    assert yanit.json()["hata"]["kod"] == "dogrulama_hatasi"
+
+
+async def test_baska_org_dosyasi_referans_edilemez(istemci, yardimci, uygulama, tmp_path):
+    a = await _kur(yardimci, uygulama)
+    b = await _ikinci_kurulum(yardimci, uygulama, a.sahte)
+    yol = Path(tmp_path) / "gizli.txt"
+    yol.write_text("kedi", encoding="utf-8")
+    async with oturum_fabrikasi()() as oturum:
+        dosya = Dosya(
+            org_id=a.org.id,
+            kullanici_id=a.sahip.id,
+            ad="gizli.txt",
+            mime="text/plain",
+            boyut=4,
+            sha256="",
+            yol=str(yol),
+            metin="",
+        )
+        oturum.add(dosya)
+        await oturum.commit()
+        await oturum.refresh(dosya)
+        dosya_id = dosya.id
+
+    yanit = await istemci.post(
+        BELGELER,
+        json={"ad": "Sizinti", "bdm_id": b.bdm.id, "dosya_id": dosya_id},
+        headers=b.basliklar,
+    )
+    assert yanit.status_code == 404
+    assert await _sayilar() == (0, 0)
+
+
+async def test_eksik_gomme_yaniti_hata():
+    bdm = await _bdm_ekle()
+
+    def isleyici(istek: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": [{"index": 0, "embedding": [1.0, 0.0]}]})
+
+    with pytest.raises(RagGommeHatasi) as eksik:
+        await gomme_uret(bdm, ["kedi", "kopek"], tasima=httpx.MockTransport(isleyici))
+    assert eksik.value.kod == "rag_gomme_hatasi"
+    assert eksik.value.ayrinti["neden"] == "gecersiz_vektor"
+
+    def bozuk(istek: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"<html>degil json</html>")
+
+    with pytest.raises(RagGommeHatasi) as bozuk_hata:
+        await gomme_uret(bdm, ["kedi"], tasima=httpx.MockTransport(bozuk))
+    assert bozuk_hata.value.ayrinti["neden"] == "gecersiz_json"

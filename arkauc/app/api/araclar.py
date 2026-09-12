@@ -82,7 +82,20 @@ class AracGuncelle(BaseModel):
 
 
 class DenemeIstegi(BaseModel):
-    argumanlar: dict[str, Any] = Field(default_factory=dict)
+    """Deneme gövdesi.
+
+    Tercih edilen biçim `{"argumanlar": {...}}`; kısa yol olarak gövdenin
+    kendisi de argüman sözlüğü sayılır.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    argumanlar: dict[str, Any] | None = None
+
+    def cozulen(self) -> dict[str, Any]:
+        if self.argumanlar is not None:
+            return self.argumanlar
+        return dict(self.model_extra or {})
 
 
 def _sozluk(arac: Arac) -> dict[str, Any]:
@@ -151,10 +164,19 @@ async def _slug_sec(
     istenen: str | None,
     *,
     haric_id: int | None = None,
+    normalestir: bool = True,
 ) -> str:
-    """Org içinde tekil slug üretir; açıkça istenen slug çakışırsa `409`."""
+    """Org içinde tekil slug üretir; açıkça istenen slug çakışırsa `409`.
+
+    `normalestir=False` yalnız yerleşik araç slug'ları için kullanılır: onlar
+    birebir eşleşmek zorundadır (`hesap_makinesi` gibi).
+    """
     if istenen:
-        return await _slug_dogrula(oturum, org_id, istenen, haric_id=haric_id)
+        aday = istenen
+        if normalestir:
+            # Slug upstream `function.name` olur; yalnız [a-z0-9-] güvenli.
+            aday = (slug_uret(istenen)[:60] or "arac").strip("-") or "arac"
+        return await _slug_dogrula(oturum, org_id, aday, haric_id=haric_id)
     taban = (slug_uret(ad)[:60] or "arac").strip("-") or "arac"
     aday = taban
     sayac = 2
@@ -320,7 +342,12 @@ async def arac_guncelle(
     yeni_slug = arac.slug
     if "slug" in ham and ham["slug"] and ham["slug"] != arac.slug:
         yeni_slug = await _slug_sec(
-            oturum, organizasyon.id, arac.ad, ham["slug"], haric_id=arac.id
+            oturum,
+            organizasyon.id,
+            arac.ad,
+            ham["slug"],
+            haric_id=arac.id,
+            normalestir=yeni_tur != AracTuru.yerlesik,
         )
 
     yeni_uc = ham["uc_noktasi"] if "uc_noktasi" in ham else arac.uc_noktasi
@@ -403,7 +430,7 @@ async def arac_dene(
     """
     arac = await _arac_getir(oturum, organizasyon.id, arac_id)
     sonuc = await arac_servisi.arac_calistir(
-        oturum, org_id=organizasyon.id, arac=arac, argumanlar=veri.argumanlar
+        oturum, org_id=organizasyon.id, arac=arac, argumanlar=veri.cozulen()
     )
     if sonuc["durum"] != AracCagrisiDurumu.basarili.value:
         # Çağrı günlüğü hata yolunda da kalıcı olsun diye önce yaz.

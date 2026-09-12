@@ -1,4 +1,11 @@
-"""Sohbet uclari: tek yanit, SSE akisi ve konusma gecmisi (spec §7.4)."""
+"""Sohbet uclari: tek yanit, SSE akisi ve konusma gecmisi (spec §3-§5, §7.4).
+
+Istek govdesindeki opsiyonel alanlar ek baglami belirler: `dosya_idleri`
+(metni cikarilmis dosyalar), `rag`/`rag_belge_idleri`/`rag_ust_k` (bilgi
+tabani parcalari) ve `arac_sluglari` (arac cagirma). Tum ek baglam sistem
+isteminin sonuna eklenir; BDM, dosya, belge ve araclar yalnizca aktif
+organizasyondan cozulur.
+"""
 
 from __future__ import annotations
 
@@ -29,6 +36,7 @@ from arkauc.app.cekirdek.hatalar import (
     istek_dili,
 )
 from arkauc.app.servisler.akış import (
+    arac_ozetleri,
     araclari_yurut,
     arac_tanimlari,
     sohbet_akisi,
@@ -313,7 +321,7 @@ async def _ek_baglam(
     bdm: Bdm,
     organizasyon: Organizasyon,
 ) -> EkBaglam:
-    """Dosya, RAG ve arac baglâmini cozer (org disi kayit 404 uretir)."""
+    """Dosya, RAG ve arac baglamini cozer (org disi kayit 404 uretir)."""
     await _belgeleri_dogrula(oturum, organizasyon.id, istek.rag_belge_idleri)
     dosyalar = await _dosya_baglami(oturum, organizasyon.id, istek.dosya_idleri)
     rag_metni: str | None = None
@@ -325,7 +333,7 @@ async def _ek_baglam(
             bdm=bdm,
             sorgu=istek.mesaj,
             belge_idleri=istek.rag_belge_idleri,
-            ust_k=istek.rag_ust_k or ayarlar.rag_ust_k,
+            ust_k=max(1, istek.rag_ust_k or ayarlar.rag_ust_k),
         )
     araclar = await _araclari_coz(oturum, istek, bdm, organizasyon.id)
     return EkBaglam(
@@ -340,6 +348,7 @@ async def _kota_denetle(oturum: AsyncSession, bdm: Bdm, kimlik: IstemciKimligi) 
             oturum,
             kullanici_id=kimlik.kullanici_id,
             api_anahtari_id=kimlik.anahtar_id,
+            org_id=bdm.org_id,
             bdm_id=bdm.id,
         )
     except KotaAsildi:
@@ -499,6 +508,7 @@ async def sohbet(
         oturum,
         kullanici_id=kimlik.kullanici_id,
         api_anahtari_id=kimlik.anahtar_id,
+        org_id=bdm.org_id,
         token=girdi + cikti,
     )
     await oturum.commit()
@@ -514,7 +524,7 @@ async def sohbet(
     if ek.kaynaklar:
         govde["kaynaklar"] = ek.kaynaklar
     if ozetler:
-        govde["arac_cagrilari"] = ozetler
+        govde["arac_cagrilari"] = arac_ozetleri(ozetler)
     return govde
 
 

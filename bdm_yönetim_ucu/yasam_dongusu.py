@@ -83,7 +83,6 @@ async def gecisi_kilitle(
     sonuc = await oturum.execute(
         sa.update(Bdm).where(Bdm.id == bdm.id, Bdm.durum.in_(izinli)).values(durum=hedef)
     )
-    _iz(f"gecis id={bdm.id} hedef={hedef.value} rowcount={sonuc.rowcount} oncesi={bdm.durum.value}")
     if int(sonuc.rowcount or 0) != 1:
         await oturum.refresh(bdm)
         gecis_dogrula(bdm, hedef)
@@ -92,18 +91,6 @@ async def gecisi_kilitle(
             {"mevcut": bdm.durum.value, "hedef": hedef.value},
         )
     bdm.durum = hedef
-
-
-import os as _os
-import time as _time
-
-_TRACE = _os.environ.get("KUTYAI_TRACE_YENIDEN")
-
-
-def _iz(mesaj: str) -> None:
-    if _TRACE:
-        with open(_TRACE, "a", encoding="utf-8") as dosya:
-            dosya.write(f"{_time.time():.4f} {mesaj}\n")
 
 
 def _hata_kodu(hata: BaseException) -> str:
@@ -151,14 +138,13 @@ def _konteyner_kaydi(bdm: Bdm, manifest: dict[str, Any], konteyner_id: str) -> d
     }
 
 
-async def _eski_konteyneri_kaldir(bdm: Bdm, surucu: KonteynerSurucusu) -> None:
-    """Varsa önceki konteyneri durdurup siler (en iyi çaba).
+async def _konteyneri_kaldir(surucu: KonteynerSurucusu, kimlik: str | None) -> None:
+    """Varsa konteyneri durdurup siler (en iyi çaba).
 
     Yerel sürücüde durdurma modeli boşaltmak için Ollama'ya istek atar; sunucu
     yanıt vermezse `UstSaglayiciHatasi` yükselir. Bu, yeni başlatmayı engellemez:
     `baslat` zaten sunucu erişilebilirliğini kendi yoklamasıyla denetler.
     """
-    kimlik = konteyner_kimligi(bdm, zorunlu=False)
     if kimlik is None:
         return
     for islem in (surucu.durdur, surucu.sil):
@@ -166,8 +152,14 @@ async def _eski_konteyneri_kaldir(bdm: Bdm, surucu: KonteynerSurucusu) -> None:
             await islem(kimlik)
         except (SurucuYok, UstSaglayiciHatasi) as hata:
             logger.warning(
-                "Eski konteyner kaldırılamadı (%s/%s): %s", islem.__name__, kimlik, hata.mesaj
+                "Konteyner kaldırılamadı (%s/%s): %s", islem.__name__, kimlik, hata.mesaj
             )
+
+
+async def _konteyneri_kur(bdm: Bdm, surucu: KonteynerSurucusu) -> str:
+    """Kayıtlı eski konteyneri (varsa) kaldırıp yenisini başlatır; geçiş uygulamaz."""
+    await _konteyneri_kaldir(surucu, konteyner_kimligi(bdm, zorunlu=False))
+    return await _calistir(bdm, surucu)
 
 
 async def _calistir(bdm: Bdm, surucu: KonteynerSurucusu) -> str:
@@ -209,18 +201,21 @@ async def _basarisiz_baslatma(
     hata: BaseException,
     *,
     eylem: str,
+    kaynaklar: tuple[BdmDurumu, ...],
     kullanici_id: int | None,
     ip: str,
 ) -> None:
     """Başarısız başlatmayı `hata`ya çeker: konteyner kaydı temizlenir, iz bırakılır.
 
     `yol` (rota tercihleri) korunur; yalnızca konteynere ait alanlar silinir.
+    `kaynaklar`, başarısız kurulumun hangi ara durumdan geldiğini belirtir
+    (`baslat` → `calisiyor`, `yeniden-baslat` → `hazir`).
     """
     kalan = {
         anahtar: deger for anahtar, deger in (bdm.konteyner or {}).items() if anahtar == "yol"
     }
     bdm.konteyner = kalan or None
-    await gecisi_kilitle(oturum, bdm, BdmDurumu.hata, kaynaklar=(BdmDurumu.calisiyor,))
+    await gecisi_kilitle(oturum, bdm, BdmDurumu.hata, kaynaklar=kaynaklar)
     await islem_kaydet(
         oturum,
         eylem,
@@ -274,11 +269,17 @@ async def _konteyneri_baslat(
     await oturum.commit()
     surucu = surucu_sec(bdm)
     try:
-        await _eski_konteyneri_kaldir(bdm, surucu)
-        konteyner_id = await _calistir(bdm, surucu)
+        konteyner_id = await _konteyneri_kur(bdm, surucu)
     except Exception as hata:
         await _basarisiz_baslatma(
-            oturum, bdm, surucu, hata, eylem=hata_eylemi, kullanici_id=kullanici_id, ip=ip
+            oturum,
+            bdm,
+            surucu,
+            hata,
+            eylem=hata_eylemi,
+            kaynaklar=(BdmDurumu.calisiyor,),
+            kullanici_id=kullanici_id,
+            ip=ip,
         )
         raise
     await _kaydet(
@@ -357,26 +358,66 @@ async def yeniden_baslat(
     kullanici_id: int | None = None,
     ip: str = "",
 ) -> dict[str, Any]:
-    """Çalışan konteyneri durdurup aynı BDM için yenisini başlatır."""
-    _iz(f"yeniden_giris id={bdm.id} durum={bdm.durum.value}")
-    if bdm.durum is BdmDurumu.calisiyor:
-        # Önce durdurma kilidi: eşzamanlı yeniden başlatmalardan yalnızca biri geçer.
-        await gecisi_kilitle(oturum, bdm, BdmDurumu.durdu, kaynaklar=(BdmDurumu.calisiyor,))
-        await oturum.commit()
-    elif bdm.durum is not BdmDurumu.durdu:
+    """Çalışan konteyneri durdurup aynı BDM için yenisini başlatır.
+
+    Yeniden başlatmanın tamamı tek atomik kritik bölgedir. Bölgeye `calisiyor`/
+    `durdu` durumundan `hazir`a koşullu tek UPDATE ile girilir ve konteyner
+    kurulumu boyunca `hazir` kalır; eşzamanlı bir yeniden başlatma isteği bu ara
+    durumu gördüğünde kaynak kümesinde `hazir` olmadığı için `409 gecersiz_gecis`
+    alır (okuma-zamanlamasından bağımsız: ara durum, geçişi kazanan istek
+    konteyneri kurup `calisiyor`a döndürene kadar görünür kalır). Yalnızca
+    bölgeyi kazanan istek eski konteyneri kaldırıp yenisini başlatır ve bölgeyi
+    `hazir` → `calisiyor` geçişiyle kapatır.
+
+    Kurulum başarısız olursa kayıt `hata`ya çekilir (`baslat` ile aynı yol);
+    süreç çökerse kayıt `hazir` kalır ve `baslat` ile kurtarılabilir. `hata`
+    durumundan kurtarma yolları (durdur/doğrulama) değişmez.
+    """
+    if bdm.durum not in (BdmDurumu.calisiyor, BdmDurumu.durdu):
         raise GecersizGecis(
             f"'{bdm.durum.value}' durumundan '{BdmDurumu.calisiyor.value}' durumuna geçilemez.",
             {"mevcut": bdm.durum.value, "hedef": BdmDurumu.calisiyor.value},
         )
-    return await _konteyneri_baslat(
+    await gecisi_kilitle(
+        oturum, bdm, BdmDurumu.hazir, kaynaklar=(BdmDurumu.calisiyor, BdmDurumu.durdu)
+    )
+    # Kritik bölgeyi hemen görünür kıl: ara durum (`hazir`) konteyner kurulumu
+    # boyunca yazma kilidi tutmadan eşzamanlı istekleri dışarıda bırakır.
+    await oturum.commit()
+    surucu = surucu_sec(bdm)
+    try:
+        konteyner_id = await _konteyneri_kur(bdm, surucu)
+    except Exception as hata:
+        await _basarisiz_baslatma(
+            oturum,
+            bdm,
+            surucu,
+            hata,
+            eylem="bdm.yeniden_baslatilamadi",
+            kaynaklar=(BdmDurumu.hazir,),
+            kullanici_id=kullanici_id,
+            ip=ip,
+        )
+        raise
+    try:
+        await gecisi_kilitle(oturum, bdm, BdmDurumu.calisiyor, kaynaklar=(BdmDurumu.hazir,))
+    except GecersizGecis:
+        # Kritik bölgeyi bu istek kapatamadı (araya giren başka bir geçiş);
+        # kurulan konteyner kayıtsız kalmasın.
+        await oturum.rollback()
+        await _konteyneri_kaldir(surucu, konteyner_id)
+        raise
+    await _kaydet(
         oturum,
+        "bdm.yeniden_baslatildi",
         bdm,
-        kaynaklar=(BdmDurumu.durdu,),
-        basari_eylemi="bdm.yeniden_baslatildi",
-        hata_eylemi="bdm.yeniden_baslatilamadi",
+        surucu,
+        konteyner_id,
         kullanici_id=kullanici_id,
         ip=ip,
     )
+    await oturum.commit()
+    return {"durum": bdm.durum.value, "konteyner_id": konteyner_id}
 
 
 async def saglik_al(bdm: Bdm) -> SaglikDurumu:

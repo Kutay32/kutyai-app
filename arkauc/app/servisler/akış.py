@@ -1,10 +1,12 @@
-"""SSE cerceveleme ve sohbet akisi (spec §7.4, §6).
+"""SSE cerceveleme ve sohbet akisi (spec §4, §7.4).
 
-Olay sirasi: `baslangic` → `parca`* → `kullanim` → `bitti`. Hata durumunda
-`hata` olayi hata zarfini tasir ve ardindan her zaman `bitti` gonderilir.
-Istemci koptugunda upstream istegi iptal edilir ve kismi yanit kaydedilmez;
-gunluk istek kotasi akis baslamadan rezerve edildigi icin rezervasyon kalir,
-yanit sonunda yalnizca token sayaci artar.
+Olay sirasi: `baslangic` → (`arac_cagrisi` → `arac_sonucu`)* → `parca`* →
+`kullanim` → `bitti`. Hata durumunda `hata` olayi hata zarfini tasir ve
+ardindan her zaman `bitti` gonderilir. Istemci koptugunda upstream istegi iptal
+edilir ve kismi yanit kaydedilmez; gunluk istek kotasi akis baslamadan rezerve
+edildigi icin rezervasyon kalir, yanit sonunda yalnizca token sayaci artar.
+Arac cagrilari yalnizca arac tanimliyken calisir ve arac turleri tamamlanana
+kadar icerik parcalari bekletilir (sira bozulmaz).
 """
 
 from __future__ import annotations
@@ -60,6 +62,11 @@ def arac_tanimlari(araclar: list[Arac] | None) -> list[dict[str, Any]] | None:
     return [arac_tanimi(arac) for arac in araclar] if araclar else None
 
 
+def arac_ozetleri(ozetler: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Kullaniciya donen `[{ad, durum}]` ozeti (SSE olayi `ozet`i de tasir)."""
+    return [{"ad": ozet["ad"], "durum": ozet["durum"]} for ozet in ozetler]
+
+
 def _ozet(veri: object) -> str:
     """Araç sonucundan kısa, tek satırlık özet üretir."""
     if isinstance(veri, str):
@@ -80,10 +87,9 @@ async def araclari_yurut(
 ) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
     """Modelin araç çağrılarını çalıştırır.
 
-    Dönen ilk liste modele geri verilecek `assistant`/`tool` mesajlarıdır
-    (konuşma geçmişine yazılan `rol=arac` kaydı bunları içermez; çünkü geçmiş
-    yalnız kullanıcı/asistan mesajlarını taşır). İkincisi kullanıcıya dönen
-    `[{ad, durum}]` özetidir.
+    Dönen ilk liste modele geri verilecek `assistant`/`tool` mesajlarıdır;
+    ayrıca her çağrı sonucu konuşmaya `rol=arac` mesajı olarak yazılır (KVKK
+    maskesi uygulanır). İkinci liste kullanıcıya dönen özetlerdir.
     """
     adlar = {arac.slug: arac for arac in araclar}
     cagri_mesajlari: list[dict[str, Any]] = []
@@ -123,15 +129,18 @@ async def araclari_yurut(
                 }
         basarili = sonuc.get("durum") == "basarili"
         durum = "basarili" if basarili else "hata"
+        ozet_metni = (
+            _ozet(sonuc.get("sonuc"))
+            if basarili
+            else str(sonuc.get("hata") or mesaj("arac_hatasi"))
+        )
+        govde_sozlugu = {"durum": durum, "sonuc": sonuc.get("sonuc"), "hata": sonuc.get("hata")}
+        govde_metni = json.dumps(govde_sozlugu, ensure_ascii=False, default=str)
         await mesaj_ekle(
             oturum,
             konusma=konusma,
             rol=MesajRolu.arac,
-            icerik=json.dumps(
-                {"ad": ad, "durum": durum, "sonuc": sonuc.get("sonuc"), "hata": sonuc.get("hata")},
-                ensure_ascii=False,
-                default=str,
-            ),
+            icerik=json.dumps({"ad": ad, **govde_sozlugu}, ensure_ascii=False, default=str),
         )
         cagri_mesajlari.append(
             {
@@ -144,14 +153,10 @@ async def araclari_yurut(
             {
                 "role": "tool",
                 "tool_call_id": str(cagri.get("id") or f"cagri_{ad}"),
-                "content": json.dumps(
-                    {"durum": durum, "sonuc": sonuc.get("sonuc"), "hata": sonuc.get("hata")},
-                    ensure_ascii=False,
-                    default=str,
-                ),
+                "content": govde_metni,
             }
         )
-        ozetler.append({"ad": ad, "durum": durum})
+        ozetler.append({"ad": ad, "durum": durum, "ozet": ozet_metni})
 
     await oturum.commit()
     modele: list[dict[str, Any]] = []
@@ -313,7 +318,7 @@ async def sohbet_akisi(
     if kaynaklar:
         son["kaynaklar"] = kaynaklar
     if ozetler:
-        son["arac_cagrilari"] = ozetler
+        son["arac_cagrilari"] = arac_ozetleri(ozetler)
     yield sse_olay("bitti", son)
 
 
@@ -363,6 +368,7 @@ async def _tamamla(
         oturum,
         kullanici_id=kullanici_id,
         api_anahtari_id=api_anahtari_id,
+        org_id=bdm.org_id,
         token=girdi + cikti,
     )
     await oturum.commit()

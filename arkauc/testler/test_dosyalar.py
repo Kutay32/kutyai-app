@@ -287,6 +287,28 @@ async def test_indirme_icerik_ve_basliklar(istemci, yardimci):
     assert quote(ad, safe="") in serlik
 
 
+async def test_indirme_basligi_kontrol_karakteri_tasimaz(istemci, yardimci):
+    from arkauc.app.api.dosyalar import _icerik_serligi
+
+    serlik = _icerik_serligi('kotu"\r\nX-Enjekte: 1.txt')
+    assert "\r" not in serlik and "\n" not in serlik
+    assert serlik.startswith('attachment; filename="')
+    yedek = serlik[len('attachment; filename="') : serlik.index('";')]
+    assert '"' not in yedek
+
+    yonetici = await yardimci.yonetici()
+    basliklar = yardimci.basliklar(yonetici)
+    yukle = await _yukle(istemci, basliklar, ad='kotu"\r\nX-Enjekte: 1.txt', icerik=b"x")
+    assert yukle.status_code == 201, yukle.text
+
+    yanit = await istemci.get(f"{UC}/{yukle.json()['id']}/icerik", headers=basliklar)
+    assert yanit.status_code == 200
+    assert yanit.content == b"x"
+    assert "x-enjekte" not in {ad.lower() for ad in yanit.headers}
+    tam = yanit.headers["content-disposition"]
+    assert "\r" not in tam and "\n" not in tam
+
+
 async def test_silme_204_disk_ve_kayit_temizlenir(istemci, yardimci, dosya_koku):
     yonetici = await yardimci.yonetici()
     yukle = await _yukle(istemci, yardimci.basliklar(yonetici), ad="silinecek.txt")

@@ -284,3 +284,55 @@ Yetki kararı `kullanici.rol` değil **üyelik rolü** üzerinden verilir: `sahi
 | 409 | `saml_tekrar_oynatma` |
 | 413 | `dosya_cok_buyuk` |
 | 502 | `arac_hatasi`, `rag_gomme_hatasi`, `webhook_imzasi_gecersiz` |
+
+---
+
+## 18. Dosyalar (`/dosyalar`, personel)
+
+| Yöntem | Yol | Not |
+|---|---|---|
+| POST | `/dosyalar` | multipart: `dosya` (zorunlu), `ad?` → `201 {id, ad, mime, boyut, sha256, metin_uzunluk, olusturulma}` |
+| GET | `/dosyalar?arama=&sayfa=&boyut=` | `Sayfa<{id, ad, mime, boyut, olusturulma}>` (en yeni önce) |
+| GET | `/dosyalar/{id}` | meta (metin maskeli) |
+| GET | `/dosyalar/{id}/icerik` | ham baytlar, `Content-Disposition: attachment` + RFC 5987 `filename*` |
+| DELETE | `/dosyalar/{id}` | `204`, diskten de siler |
+
+Sınırlar: `KUTYAI_DOSYA_MAKS_MB` (413 `dosya_cok_buyuk`), izinli MIME listesi (400 `dosya_tur_desteklenmiyor`). Çıkarılan metin `dosya.metin`'e **maskelenmiş** yazılır. PDF çıkarımı `pypdf` ile.
+
+## 19. Araçlar (`/araclar`)
+
+| Yöntem | Yol | Yetki |
+|---|---|---|
+| GET | `/araclar?etkin=` | personel (izleyici okur) |
+| POST | `/araclar` | yönetici/operatör |
+| PATCH | `/araclar/{id}` | yönetici/operatör |
+| DELETE | `/araclar/{id}` | yönetici/operatör → `204` |
+| POST | `/araclar/{id}/dene` | yönetici/operatör → `{durum, sonuc, gecikme_ms}` |
+| GET | `/araclar/cagrilar?arac_id=&durum=&sayfa=&boyut=` | `Sayfa<{id, ad, argumanlar, sonuc, durum, gecikme_ms, hata, olusturulma}>` |
+
+`POST /araclar` gövdesi: `{ad, slug?, aciklama?, json_sema?, tur: "webhook"|"yerlesik", uc_noktasi?, basliklar?, etkin?}`. Yerleşik türler: `hesap_makinesi`, `zaman`. Webhook: HTTPS zorunlu (`KUTYAI_ARAC_YEREL_IZIN=true` ile yerel HTTP), `X-Kutyai-Imza: sha256=<hmac>` başlığı, 10 sn zaman aşımı, 64 KB yanıt sınırı, metadata adresleri reddedilir.
+
+Sohbette kullanım: `arac_sluglari` alanı; SSE olayları `arac_cagrisi` / `arac_sonucu`; yanıtta `arac_cagrilari`.
+
+## 20. Bilgi tabanı / RAG (`/rag`)
+
+| Yöntem | Yol | Yetki | Not |
+|---|---|---|---|
+| GET | `/rag/belgeler` | personel | `[{id, ad, kaynak, parca_sayisi, olusturulma}]` |
+| POST | `/rag/belgeler` | yönetici/operatör | `{ad, bdm_id, metin? \| dosya_id?, meta?}` → `201` |
+| GET | `/rag/belgeler/{id}` | personel | parçalarla birlikte |
+| DELETE | `/rag/belgeler/{id}` | yönetici/operatör | `204` |
+| POST | `/rag/ara` | personel | `{sorgu, bdm_id?, ust_k?, belge_idleri?}` → `{sonuclar: [{belge_id, belge_ad, sira, icerik, skor}], ayrinti: {yol, ust_k}}` |
+| POST | `/rag/belgeler/{id}/yeniden-gom` | yönetici/operatör | parçaları yeni gömme modeliyle tazeler |
+
+Gömme: `POST {bdm.temel_url}/embeddings`, model `bdm.gomme_modeli`. Arama taşınabilir (Python kosinüs); Postgres + `pgvector` varsa SQL yolu, `ayrinti.yol` bunu bildirir. Sohbette `rag: true` + `rag_belge_idleri`; yanıtta `kaynaklar`.
+
+## 21. Medya (`/medya`)
+
+| Yöntem | Yol | Gövde | Yetki |
+|---|---|---|---|
+| POST | `/medya/gorsel` | `{bdm_id, istem, boyut?, adet?}` | yönetici/operatör → `[{dosya_id, ad, mime, boyut}]` |
+| POST | `/medya/ses` | `{bdm_id, metin, ses?, bicim?}` | yönetici/operatör → `{dosya_id}` |
+| POST | `/medya/coz` | `{bdm_id, dosya_id}` | yönetici/operatör → `{metin}` |
+
+Model yeteneği kapalıysa `400 medya_desteklenmiyor`. Üretilenler `dosya` tablosuna yazılır, `kullanim_kaydi` işlenir.

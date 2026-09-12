@@ -390,7 +390,7 @@ async def test_coz_ucu_metin_dondurur(istemci, yardimci, sahte):
 # -- yetenek ve yetki -------------------------------------------------------
 
 
-async def test_yetenek_kapali_gorsel_400(istemci, yardimci):
+async def test_yetenek_kapali_gorsel_400(istemci, yardimci, sahte):
     bdm = await bdm_ekle(gorsel=False)
     yonetici = await yardimci.yonetici()
     yanit = await istemci.post(
@@ -407,9 +407,11 @@ async def test_yetenek_kapali_gorsel_400(istemci, yardimci):
     kullanim = await kullanimlari_getir()
     assert len(kullanim) == 1
     assert kullanim[0].durum == KullanimDurumu.hata
+    # Yetenek kapaliyken saglayiciya hic gidilmez.
+    assert sahte.yollar == []
 
 
-async def test_yetenek_kapali_ses_400_ingilizce_mesaj(istemci, yardimci):
+async def test_yetenek_kapali_ses_400_ingilizce_mesaj(istemci, yardimci, sahte):
     bdm = await bdm_ekle(ses=False)
     yonetici = await yardimci.yonetici()
     yanit = await istemci.post(
@@ -421,6 +423,7 @@ async def test_yetenek_kapali_ses_400_ingilizce_mesaj(istemci, yardimci):
     hata = yanit.json()["hata"]
     assert hata["kod"] == "medya_desteklenmiyor"
     assert hata["mesaj"] == "This generation type is disabled in the model capabilities."
+    assert sahte.yollar == []
 
 
 @pytest.mark.parametrize(

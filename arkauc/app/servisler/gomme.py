@@ -117,14 +117,14 @@ async def gomme_uret(
         )
 
     adres = f"{(bdm.temel_url or '').rstrip('/')}{GOMME_YOLU}"
-    basliklar_ = basliklar(bdm)
+    istek_basliklari = basliklar(bdm)
     vektorler: list[list[float]] = []
     async with httpx.AsyncClient(transport=tasima, timeout=ZAMAN_ASIMI) as istemci:
         for baslangic in range(0, len(girdiler), TOPLU_BOYUT):
             yigin = girdiler[baslangic : baslangic + TOPLU_BOYUT]
             try:
                 yanit = await istemci.post(
-                    adres, headers=basliklar_, json={"model": model, "input": yigin}
+                    adres, headers=istek_basliklari, json={"model": model, "input": yigin}
                 )
             except httpx.HTTPError as hata:
                 raise _tasima_hatasi(bdm, hata) from hata
@@ -136,6 +136,6 @@ async def gomme_uret(
                 raise _hata(bdm, yanit.status_code, yanit.text, neden="gecersiz_json") from None
             cikan = _vektorleri_ayikla(paket, len(yigin))
             if not cikan:
-                raise _hata(bdm, yanit.status_code, yanit.text, neden="eksik_vektor")
+                raise _hata(bdm, yanit.status_code, yanit.text, neden="gecersiz_vektor")
             vektorler.extend(cikan)
     return vektorler
