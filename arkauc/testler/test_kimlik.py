@@ -7,7 +7,9 @@ parola sifirlama akisi.
 
 from __future__ import annotations
 
+import asyncio
 import socket
+import time
 from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qs, urlsplit
 
@@ -581,7 +583,7 @@ async def test_yonetici_kullanici_olusturur_gunceller_pasiflestirir(istemci, yar
         f"/api/v1/kullanicilar/{yonetici.id}", headers=basliklar
     )
     assert kendini.status_code == 409
-    assert kendini.json()["hata"]["kod"] == "cakisma"
+    assert kendini.json()["hata"]["kod"] == "gecersiz_gecis"
 
     yok = await istemci.delete("/api/v1/kullanicilar/999999", headers=basliklar)
     assert yok.status_code == 404
@@ -727,3 +729,260 @@ async def test_panel_smtp_ayari_gelistirme_baglantisini_kapatir(istemci):
     assert "gelistirme_baglantisi" not in yanit.json()
     async with oturum_fabrikasi()() as oturum:
         assert await ayar_oku(oturum, "son_dogrulama_baglantisi") is None
+
+
+# --------------------------------------------------------------------------
+# Eszamanlilik (tek kullanimlik jetonlar, eszamanli kayit)
+# --------------------------------------------------------------------------
+
+
+async def _giris_jetonlari(istemci, eposta: str) -> dict[str, str]:
+    giris = await istemci.post(
+        "/api/v1/kimlik/giris", json={"eposta": eposta, "parola": PAROLA}
+    )
+    assert giris.status_code == 200
+    return giris.json()
+
+
+async def test_eszamanli_yenileme_tek_kullanimlik(istemci, yardimci):
+    kullanici = await yardimci.kullanici_ekle(eposta="yaris.yenile@kutyai.local")
+    jetonlar = await _giris_jetonlari(istemci, kullanici.eposta)
+    yenileme_jetonu = jetonlar["yenileme_jetonu"]
+
+    yanitlar = await asyncio.gather(
+        *[
+            istemci.post(
+                "/api/v1/kimlik/yenile",
+                json={"yenileme_jetonu": yenileme_jetonu},
+            )
+            for _ in range(5)
+        ]
+    )
+
+    kodlar = [y.status_code for y in yanitlar]
+    assert kodlar.count(200) == 1
+    assert kodlar.count(401) == 4
+    assert all(
+        y.json()["hata"]["kod"] == "jeton_gecersiz"
+        for y in yanitlar
+        if y.status_code == 401
+    )
+
+    async with oturum_fabrikasi()() as oturum:
+        acik = (
+            await oturum.execute(
+                sa.select(sa.func.count())
+                .select_from(Oturum)
+                .where(
+                    Oturum.kullanici_id == kullanici.id, Oturum.iptal.is_(False)
+                )
+            )
+        ).scalar_one()
+    assert acik == 1
+
+    # Rotasyonu kazanan jeton gercekten kullanilabilir olmali.
+    kazanan = next(y for y in yanitlar if y.status_code == 200).json()
+    devam = await istemci.post(
+        "/api/v1/kimlik/yenile",
+        json={"yenileme_jetonu": kazanan["yenileme_jetonu"]},
+    )
+    assert devam.status_code == 200
+
+
+async def test_eszamanli_kayit_409_dondurur(istemci):
+    yanitlar = await asyncio.gather(
+        *[_kayit(istemci, "yaris.kayit@kutyai.local") for _ in range(2)]
+    )
+
+    assert sorted(y.status_code for y in yanitlar) == [201, 409]
+    cakisan = next(y for y in yanitlar if y.status_code == 409)
+    assert cakisan.json()["hata"]["kod"] == "cakisma"
+
+    async with oturum_fabrikasi()() as oturum:
+        adet = (
+            await oturum.execute(
+                sa.select(sa.func.count())
+                .select_from(Kullanici)
+                .where(Kullanici.eposta == "yaris.kayit@kutyai.local")
+            )
+        ).scalar_one()
+    assert adet == 1
+
+
+async def test_eszamanli_kullanici_olusturma_409_dondurur(istemci, yardimci):
+    yonetici = await yardimci.yonetici()
+    basliklar = yardimci.basliklar(yonetici)
+    govde = {
+        "eposta": "yaris.personel@kutyai.local",
+        "parola": PAROLA,
+        "rol": "izleyici",
+    }
+
+    yanitlar = await asyncio.gather(
+        *[
+            istemci.post("/api/v1/kullanicilar", json=govde, headers=basliklar)
+            for _ in range(2)
+        ]
+    )
+
+    assert sorted(y.status_code for y in yanitlar) == [201, 409]
+    cakisan = next(y for y in yanitlar if y.status_code == 409)
+    assert cakisan.json()["hata"]["kod"] == "cakisma"
+
+
+async def test_eszamanli_dogrulama_tek_kullanimlik(istemci):
+    kayit = await _kayit(istemci, "yaris.dogrula@kutyai.local")
+    jeton = _jeton_coz(kayit.json()["gelistirme_baglantisi"])
+
+    yanitlar = await asyncio.gather(
+        *[
+            istemci.post("/api/v1/kimlik/dogrula", json={"jeton": jeton})
+            for _ in range(5)
+        ]
+    )
+
+    kodlar = [y.status_code for y in yanitlar]
+    assert kodlar.count(200) == 1
+    assert kodlar.count(400) == 4
+
+    async with oturum_fabrikasi()() as oturum:
+        kayit_satiri = (
+            await oturum.execute(
+                sa.select(DogrulamaJetonu).where(
+                    DogrulamaJetonu.jeton_hash == guvenlik.ozet(jeton)
+                )
+            )
+        ).scalar_one()
+        assert kayit_satiri.kullanildi is True
+
+
+async def test_eszamanli_sifre_sifirlama_tek_kullanimlik(istemci, yardimci):
+    kullanici = await yardimci.kullanici_ekle(eposta="yaris.sifirla@kutyai.local")
+    istek = await istemci.post(
+        "/api/v1/kimlik/sifre-sifirlama-iste", json={"eposta": kullanici.eposta}
+    )
+    jeton = _jeton_coz(istek.json()["gelistirme_baglantisi"])
+
+    yanitlar = await asyncio.gather(
+        *[
+            istemci.post(
+                "/api/v1/kimlik/sifre-sifirla",
+                json={"jeton": jeton, "yeni_parola": YENI_PAROLA},
+            )
+            for _ in range(5)
+        ]
+    )
+
+    kodlar = [y.status_code for y in yanitlar]
+    assert kodlar.count(200) == 1
+    assert kodlar.count(400) == 4
+
+    # Kazanan sifirlama kalici olmali: yeni parola ile giris, eski parola ile 401.
+    yeni = await istemci.post(
+        "/api/v1/kimlik/giris",
+        json={"eposta": kullanici.eposta, "parola": YENI_PAROLA},
+    )
+    assert yeni.status_code == 200
+    eski = await istemci.post(
+        "/api/v1/kimlik/giris",
+        json={"eposta": kullanici.eposta, "parola": PAROLA},
+    )
+    assert eski.status_code == 401
+
+
+# --------------------------------------------------------------------------
+# Hesap numaralandirma zamanlamasi ve kendini kilitleme korumasi
+# --------------------------------------------------------------------------
+
+
+async def test_sifre_sifirlama_iste_ayni_maliyetli_dogrulama(
+    istemci, yardimci, monkeypatch
+):
+    from arkauc.app.cekirdek import guvenlik as guvenlik_modulu
+
+    bilinen_eposta = "zamanlama@kutyai.local"
+    await yardimci.kullanici_ekle(eposta=bilinen_eposta)
+
+    gercek_dogrula = guvenlik_modulu.sifre_dogrula
+    cagrilar: list[tuple[float, str]] = []
+
+    def sayan(sifre_hash: str, sifre: str):
+        cagrilar.append((time.perf_counter(), sifre_hash))
+        return gercek_dogrula(sifre_hash, sifre)
+
+    monkeypatch.setattr(guvenlik_modulu, "sifre_dogrula", sayan)
+
+    sureler: dict[str, list[float]] = {"bilinen": [], "bilinmeyen": []}
+    for eposta, etiket in (
+        (bilinen_eposta, "bilinen"),
+        ("yok@kutyai.local", "bilinmeyen"),
+    ):
+        for _ in range(5):
+            baslangic = time.perf_counter()
+            yanit = await istemci.post(
+                "/api/v1/kimlik/sifre-sifirlama-iste", json={"eposta": eposta}
+            )
+            sureler[etiket].append((time.perf_counter() - baslangic) * 1000)
+            assert yanit.status_code == 200
+            assert yanit.json()["mesaj"] == (
+                "E-posta adresiniz kayıtlıysa parola sıfırlama bağlantısı gönderildi."
+            )
+
+    print(
+        "sifre-sifirlama-iste zamanlama (ms): "
+        f"bilinen={sorted(round(s, 1) for s in sureler['bilinen'])} "
+        f"bilinmeyen={sorted(round(s, 1) for s in sureler['bilinmeyen'])}"
+    )
+
+    # Sabit maliyet: iki durumda da istek basina tam olarak bir argon2 dogrulamasi.
+    assert len(cagrilar) == 10
+    assert len({ozet for _, ozet in cagrilar}) == 1
+
+
+async def test_yonetici_kendi_hesabini_kilitleyemez(istemci, yardimci):
+    yonetici = await yardimci.yonetici(eposta="kilit@kutyai.local")
+    basliklar = yardimci.basliklar(yonetici)
+
+    rol = await istemci.patch(
+        f"/api/v1/kullanicilar/{yonetici.id}",
+        json={"rol": "izleyici"},
+        headers=basliklar,
+    )
+    assert rol.status_code == 409
+    assert rol.json()["hata"]["kod"] == "gecersiz_gecis"
+
+    durum = await istemci.patch(
+        f"/api/v1/kullanicilar/{yonetici.id}",
+        json={"durum": "pasif"},
+        headers=basliklar,
+    )
+    assert durum.status_code == 409
+    assert durum.json()["hata"]["kod"] == "gecersiz_gecis"
+
+    sil = await istemci.delete(
+        f"/api/v1/kullanicilar/{yonetici.id}", headers=basliklar
+    )
+    assert sil.status_code == 409
+    assert sil.json()["hata"]["kod"] == "gecersiz_gecis"
+
+    # Ayni degerleri yeniden gondermek ya da ad degistirmek serbest.
+    ayni = await istemci.patch(
+        f"/api/v1/kullanicilar/{yonetici.id}",
+        json={"rol": "yonetici", "durum": "aktif"},
+        headers=basliklar,
+    )
+    assert ayni.status_code == 200
+    ad = await istemci.patch(
+        f"/api/v1/kullanicilar/{yonetici.id}",
+        json={"ad_soyad": "Kilitli Yönetici"},
+        headers=basliklar,
+    )
+    assert ad.status_code == 200
+    assert ad.json()["ad_soyad"] == "Kilitli Yönetici"
+    assert (await istemci.get("/api/v1/kullanicilar", headers=basliklar)).status_code == 200
+
+    async with oturum_fabrikasi()() as oturum:
+        satir = await oturum.get(Kullanici, yonetici.id)
+        assert satir.rol == Rol.yonetici
+        assert satir.durum == KullaniciDurumu.aktif
+

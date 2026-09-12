@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import sys
 import types
 
@@ -108,6 +109,72 @@ async def test_kurulum_ayni_epostayi_409_ile_reddeder(istemci, yardimci):
     yanit = await istemci.post("/api/v1/kurulum", json=_govde())
     assert yanit.status_code == 409
     assert yanit.json()["hata"]["kod"] == "cakisma"
+
+
+async def test_es_zamanli_kurulum_tek_yonetici_ve_tek_bdm_olusturur(istemci):
+    """İki eşzamanlı kurulumdan yalnız biri geçer; marka ayarları ezilmez (API §4)."""
+    yanitlar = await asyncio.gather(
+        istemci.post("/api/v1/kurulum", json=_govde(eposta="yaris-1@acme.com")),
+        istemci.post("/api/v1/kurulum", json=_govde(eposta="yaris-2@acme.com")),
+    )
+
+    assert sorted(yanit.status_code for yanit in yanitlar) == [201, 409]
+    basarili = next(y for y in yanitlar if y.status_code == 201).json()
+    reddedilen = next(y for y in yanitlar if y.status_code == 409).json()
+    assert reddedilen["hata"]["kod"] == "kurulum_zaten_tamam"
+
+    async with oturum_fabrikasi()() as oturum:
+        kullanici_sayisi = (
+            await oturum.execute(sa.select(sa.func.count()).select_from(Kullanici))
+        ).scalar_one()
+        bdm_sayisi = (
+            await oturum.execute(sa.select(sa.func.count()).select_from(Bdm))
+        ).scalar_one()
+        assert (kullanici_sayisi, bdm_sayisi) == (1, 1)
+        assert await ayar_oku(oturum, "kurulum_tamam") is True
+        assert await ayar_oku(oturum, "marka_adi") == "Acme AI"
+        assert await ayar_oku(oturum, "varsayilan_bdm_slug") == basarili["bdm"]["slug"]
+
+
+async def test_es_zamanli_ayni_eposta_409_dondurur_500_degil(istemci):
+    """Aynı e-postayla yarışan kurulum tekil kısıt yerine 409 üretir."""
+    yanitlar = await asyncio.gather(
+        istemci.post("/api/v1/kurulum", json=_govde()),
+        istemci.post("/api/v1/kurulum", json=_govde()),
+    )
+
+    assert sorted(yanit.status_code for yanit in yanitlar) == [201, 409]
+    reddedilen = next(y for y in yanitlar if y.status_code == 409).json()
+    assert reddedilen["hata"]["kod"] in {"kurulum_zaten_tamam", "cakisma"}
+
+    async with oturum_fabrikasi()() as oturum:
+        kullanici_sayisi = (
+            await oturum.execute(sa.select(sa.func.count()).select_from(Kullanici))
+        ).scalar_one()
+        assert kullanici_sayisi == 1
+
+
+async def test_kilitsiz_ayni_eposta_500_yerine_cakisma_dondurur(istemci, monkeypatch):
+    """Ortak kilit yokken (çok işçili kurulum) tekil kısıt 500 değil 409 üretir."""
+    import arkauc.app.api.kurulum as kurulum_uclari
+
+    # Her çağrıda yeni kilit: işçiler arası paylaşımsız kurulumu taklit eder.
+    monkeypatch.setattr(kurulum_uclari, "_kilit", asyncio.Lock, raising=False)
+
+    yanitlar = await asyncio.gather(
+        istemci.post("/api/v1/kurulum", json=_govde()),
+        istemci.post("/api/v1/kurulum", json=_govde()),
+    )
+
+    assert sorted(yanit.status_code for yanit in yanitlar) == [201, 409]
+    reddedilen = next(y for y in yanitlar if y.status_code == 409).json()
+    assert reddedilen["hata"]["kod"] == "cakisma"
+
+    async with oturum_fabrikasi()() as oturum:
+        kullanici_sayisi = (
+            await oturum.execute(sa.select(sa.func.count()).select_from(Kullanici))
+        ).scalar_one()
+        assert kullanici_sayisi == 1
 
 
 async def test_kurulum_dogrulama_sonucunu_yanita_tasir(istemci, monkeypatch):

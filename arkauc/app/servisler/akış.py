@@ -1,8 +1,8 @@
 """SSE cerceveleme ve sohbet akisi (spec §7.4, §6).
 
 Olay sirasi: `baslangic` → `parca`* → `kullanim` → `bitti`. Hata durumunda
-`hata` olayi hata zarfini tasir. Istemci koptugunda upstream istegi iptal
-edilir ve kismi yanit kaydedilmez.
+`hata` olayi hata zarfini tasir ve ardindan her zaman `bitti` gonderilir.
+Istemci koptugunda upstream istegi iptal edilir ve kismi yanit kaydedilmez.
 """
 
 from __future__ import annotations
@@ -88,6 +88,7 @@ async def sohbet_akisi(
             gecikme_ms=_gecen_ms(baslangic),
         )
         yield sse_olay("hata", hata.govde())
+        yield sse_olay("bitti", {})
         return
     except Exception as hata:  # pragma: no cover - beklenmeyen altyapi hatasi
         logger.exception("Sohbet akışı beklenmedik hata verdi: %s", hata)
@@ -100,6 +101,7 @@ async def sohbet_akisi(
             gecikme_ms=_gecen_ms(baslangic),
         )
         yield sse_olay("hata", SunucuHatasi().govde())
+        yield sse_olay("bitti", {})
         return
     finally:
         await akis.aclose()
@@ -130,6 +132,7 @@ async def sohbet_akisi(
     except Exception as hata:  # pragma: no cover - kalici kayit arizasi
         logger.exception("Sohbet kaydı yazılamadı: %s", hata)
         yield sse_olay("hata", SunucuHatasi().govde())
+        yield sse_olay("bitti", {})
         return
 
     yield sse_olay("bitti", {})

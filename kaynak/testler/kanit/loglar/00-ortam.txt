@@ -1,0 +1,16 @@
+=== Sunucu başlatma (hub op:start) ===
+application: ./.venv/Scripts/python.exe
+args: ["-m","uvicorn","arkauc.app.main:app","--port","8106","--log-level","info"]
+env: KUTYAI_VERITABANI_URL=sqlite+aiosqlite:///E:/kutyai-app/kaynak/testler/gecici/goz_loglar.db
+     KUTYAI_GIZLI_ANAHTAR=gozlem-gizli-anahtar
+     KUTYAI_SIFRELEME_ANAHTARI=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+     KUTYAI_ORTAM=gelistirme
+Hazır sinyali: 'Uvicorn running' + port 8106 (hub ready)
+
+=== curl http://127.0.0.1:8106/api/v1/saglik ===
+{"durum":"ayakta","surum":"0.1.0","ortam":"gelistirme","zaman":"2026-09-12T19:45:05.007489+00:00"}
+HTTP 200
+
+=== curl http://127.0.0.1:8106/api/v1/saglik/kurulum ===
+{"kurulum_tamam":true,"marka_adi":"Gözlem A.Ş.","surum":"0.1.0"}
+HTTP 200

@@ -277,3 +277,91 @@ async def test_kullanim_ozeti_ve_zaman_serisi(istemci, yardimci, uygulama):
     assert kotu.json()["hata"]["kod"] == "gecersiz_istek"
     assert (await istemci.get("/api/v1/kullanim/ozet", headers=yardimci.basliklar(kullanici))).status_code == 403
     assert (await istemci.get("/api/v1/kullanim/ozet")).status_code == 401
+
+
+async def test_kisisel_kullanim_yalniz_kendi_kayitlarini_dondurur(istemci, yardimci, uygulama):
+    bdm = await bdm_ekle()
+    a = await yardimci.kullanici_ekle()
+    b = await yardimci.kullanici_ekle()
+    uygulama.dependency_overrides[sohbet_ucu.ust_saglayici] = SahteUst().saglayici
+    for kullanici in (a, b):
+        yanit = await istemci.post(
+            SOHBET,
+            json={"bdm_id": bdm.id, "mesaj": "selam"},
+            headers=yardimci.basliklar(kullanici),
+        )
+        assert yanit.status_code == 200
+
+    yanit = await istemci.get("/api/v1/kullanim/benim", headers=yardimci.basliklar(a))
+    assert yanit.status_code == 200
+    govde = yanit.json()
+    assert set(govde) == {
+        "gun",
+        "toplam_istek",
+        "toplam_token",
+        "girdi_token",
+        "cikti_token",
+        "ortalama_gecikme_ms",
+        "kota",
+        "seri",
+    }
+    assert govde["gun"] == 30
+    assert govde["toplam_istek"] == 1
+    assert (govde["girdi_token"], govde["cikti_token"]) == (12, 7)
+    assert govde["toplam_token"] == 19
+    assert govde["ortalama_gecikme_ms"] > 0
+    assert govde["kota"] is None
+    assert govde["seri"] == [
+        {"tarih": datetime.now(timezone.utc).date().isoformat(), "token": 19}
+    ]
+
+    b_govdesi = (
+        await istemci.get("/api/v1/kullanim/benim", headers=yardimci.basliklar(b))
+    ).json()
+    assert b_govdesi["toplam_istek"] == 1
+    assert b_govdesi["toplam_token"] == 19
+    assert (await istemci.get("/api/v1/kullanim/benim")).status_code == 401
+
+
+async def test_kisisel_kullanim_anahtar_kapsami_ve_kota(istemci, yardimci, uygulama):
+    bdm = await bdm_ekle()
+    uretilen = guvenlik.api_anahtari_uret()
+    async with oturum_fabrikasi()() as oturum:
+        anahtar = ApiAnahtari(
+            ad="Kişisel Anahtar",
+            onek=uretilen["onek"],
+            anahtar_hash=uretilen["hash"],
+            son_dort=uretilen["son_dort"],
+        )
+        oturum.add(anahtar)
+        await oturum.commit()
+        await oturum.refresh(anahtar)
+    await kota_ekle(
+        KotaKapsami.api_anahtari, anahtar.id, gunluk_istek=5, aylik_token=1000
+    )
+    anahtar_basliklari = yardimci.anahtar_basliklari(uretilen["tam"])
+    uygulama.dependency_overrides[sohbet_ucu.ust_saglayici] = SahteUst().saglayici
+
+    anahtar_yaniti = await istemci.post(
+        SOHBET, json={"bdm_id": bdm.id, "mesaj": "selam"}, headers=anahtar_basliklari
+    )
+    assert anahtar_yaniti.status_code == 200
+    yabanci = await yardimci.kullanici_ekle()
+    await istemci.post(
+        SOHBET,
+        json={"bdm_id": bdm.id, "mesaj": "baskasi"},
+        headers=yardimci.basliklar(yabanci),
+    )
+
+    govde = (
+        await istemci.get("/api/v1/kullanim/benim", headers=anahtar_basliklari)
+    ).json()
+    assert govde["toplam_istek"] == 1
+    assert govde["toplam_token"] == 19
+    kota = govde["kota"]
+    assert kota["gunluk_istek"] == 5
+    assert kota["kullanilan_gunluk"] == 1
+    assert kota["aylik_token"] == 1000
+    assert kota["kullanilan_aylik"] == 19
+    assert _coz(kota["gun_sifirlanma"]) > datetime.now(timezone.utc)
+    assert _coz(kota["ay_sifirlanma"]) > datetime.now(timezone.utc)

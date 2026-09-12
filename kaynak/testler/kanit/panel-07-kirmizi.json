@@ -1,0 +1,40 @@
+{
+  "girisSonrasi": {
+    "url": "http://localhost:3001/",
+    "anahtarlar": [
+      "kutyai.panel.yenileme",
+      "kutyai.panel.kullanici",
+      "kutyai.panel.erisim"
+    ]
+  },
+  "yenileSayisi": 5,
+  "cevaplar": [
+    "200 /bdm/yonetim/surucu/durum",
+    "200 /kullanim/ozet?gun=30",
+    "200 /loglar/konusmalar?boyut=5",
+    "200 /bdm/yonetim/surucu/durum",
+    "200 /kullanim/ozet?gun=30",
+    "200 /loglar/konusmalar?boyut=5",
+    "200 /saglik",
+    "200 /saglik",
+    "401 /bdm/yonetim/surucu/durum",
+    "401 /kullanim/ozet?gun=30",
+    "401 /loglar/konusmalar?boyut=5",
+    "401 /kimlik/yenile",
+    "401 /kimlik/yenile",
+    "401 /bdm/yonetim/surucu/durum",
+    "401 /kimlik/yenile",
+    "401 /kullanim/ozet?gun=30",
+    "401 /loglar/konusmalar?boyut=5",
+    "200 /saglik/kurulum",
+    "200 /saglik/kurulum",
+    "200 /saglik/kurulum",
+    "200 /saglik/kurulum",
+    "200 /kimlik/yenile"
+  ],
+  "son": {
+    "url": "http://localhost:3001/giris",
+    "anahtarlar": [],
+    "metin": "KutyAI |  | Yönetim paneline giriş yapın |  | E-posta* | Parola* | Giriş yap"
+  }
+}

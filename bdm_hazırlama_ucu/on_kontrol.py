@@ -1,7 +1,9 @@
 """On kontrol: Docker, GPU, disk ve imaj hazirligi (spec §7.5, §10).
 
 GPU gerektiren saglayicida (vllm, tgi) GPU yoksa `uygun=False` ve spec §10'daki
-Turkce yonlendirme mesaji `uyarilar` listesine eklenir.
+Turkce yonlendirme mesaji `uyarilar` listesine eklenir. Docker/imaj uyarilari
+yalnizca konteyner olarak calistirilan saglayicilar (vllm, tgi) icin uretilir;
+Ollama host sunucusu, uzak saglayicilar ise dis servistir.
 """
 
 from __future__ import annotations
@@ -25,8 +27,10 @@ GPU_UYARI_MESAJI = (
     "veya GPU çalışma zamanını kurun."
 )
 DOCKER_UYARI_MESAJI = "Docker bulunamadı; konteyner tabanlı hazırlama yapılamaz."
-# Docker gerektiren yerel saglayicilar: GPU olmadan da imaj calistirilamaz.
-DOCKER_ZORUNLU_SAGLAYICILAR = frozenset({"vllm", "tgi"})
+# Konteyner olarak calistirilan saglayicilar (spec §10). Ollama host uzerinde
+# calisan bir sunucudur, uzak saglayicilar (openai, azure, openrouter, ozel) ise
+# dis servistir; ikisinde de Docker/imaj on kosulu aranmaz.
+KONTEYNER_SAGLAYICILAR = frozenset({"vllm", "tgi"})
 
 
 def _kok_dizini() -> pathlib.Path:
@@ -66,17 +70,17 @@ async def on_kontrol(bdm: Bdm) -> dict[str, Any]:
         uygun = False
         uyarilar.append(GPU_UYARI_MESAJI)
 
-    if bilgi.konteyner_image is not None and not durum.docker_var:
-        if bilgi.ad in DOCKER_ZORUNLU_SAGLAYICILAR:
+    image_var = False
+    if bilgi.ad in KONTEYNER_SAGLAYICILAR:
+        if not durum.docker_var:
             uygun = False
-        uyarilar.append(DOCKER_UYARI_MESAJI)
-
-    image = bilgi.konteyner_image
-    image_var = bool(image and image in (durum.image_onbellek or []))
-    if image is not None and not image_var:
-        uyarilar.append(
-            f"'{image}' imajı yerel önbellekte yok; ilk çalıştırmada indirilecek."
-        )
+            uyarilar.append(DOCKER_UYARI_MESAJI)
+        image = bilgi.konteyner_image
+        image_var = bool(image and image in (durum.image_onbellek or []))
+        if image is not None and not image_var:
+            uyarilar.append(
+                f"'{image}' imajı yerel önbellekte yok; ilk çalıştırmada indirilecek."
+            )
 
     gereken_gb = bellek_tahmini(bdm)
     if disk_gb and disk_gb < gereken_gb:

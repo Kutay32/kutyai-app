@@ -1,0 +1,153 @@
+{
+  "tur": "yonetim_paneli dalga 1 düzeltme turu — PanelFix",
+  "tarih": "2026-09-12",
+  "ortam": {
+    "api": "http://localhost:8108/api/v1 (uvicorn arkauc.app.main:app, sqlite gecici/panel.db)",
+    "panel": "http://localhost:3001 (next dev, NEXT_PUBLIC_API_URL=http://localhost:8108/api/v1)",
+    "tarayici": "OMP browser (Chromium, gerçek fare/klavye)"
+  },
+  "BLOCKER_yenileme_tekillestirme": {
+    "bulgu": "yonetim_paneli/lib/api.ts:108-161 — yenilemeSozu yazılıyor ama okunmuyor; 401 başına ayrı yenileme POST'u → jeton rotasyonu yarışı → geçerli oturum siliniyor",
+    "duzeltme": "lib/api.ts — tekilleştirilmiş (single-flight) yenileme + bayat jeton denetimi + üç durumlu sonuç (basarili/gecersiz/ulasilamadi); oturum yalnız 'gecersiz'de temizlenir",
+    "KIRMIZI": {
+      "betik": "aynı senaryo, düzeltme öncesi kod",
+      "yenilePost": 5,
+      "yenileCevaplari": "1 × 200 + 4 × 401 (jeton_gecersiz benzetimi)",
+      "son": {
+        "url": "http://localhost:3001/giris",
+        "anahtarlar": []
+      },
+      "kanit_dosyalari": [
+        "kanit/panel-07-kirmizi.json",
+        "kanit/panel-07-yenileme-yarisi-once.png"
+      ]
+    },
+    "YESIL_S1": {
+      "senaryo": "erişim jetonu bozuk + 6 eşzamanlı korumalı istek; yenileme yanıtı 400 ms geciktirildi, yinelenen yenilemeler 401 dönecek şekilde benzetildi",
+      "yenilePost": 1,
+      "cevaplar": "6 × 401 → tek paylaşılan yenileme (POST → 200) → 6 × 200 tekrar deneme; ek 200'ler (saglik/kurulum ×2) saglik uçlarına ait",
+      "son": {
+        "url": "http://localhost:3001/",
+        "anahtarlar": [
+          "kutyai.panel.yenileme",
+          "kutyai.panel.kullanici",
+          "kutyai.panel.erisim"
+        ]
+      },
+      "kanit_dosyalari": [
+        "kanit/panel-08-yesil.json",
+        "kanit/panel-08-yenileme-tek-kez.png"
+      ]
+    },
+    "S2_gercekten_gecersiz": {
+      "senaryo": "/kimlik/cikis ile yenileme jetonu SUNUCUDA iptal edildi (200), erişim jetonu bozuldu → 401 dalgası",
+      "yenileCevaplari": [
+        401
+      ],
+      "son": {
+        "url": "http://localhost:3001/giris",
+        "anahtarlar": []
+      },
+      "sonuc": "gerçekten ölü oturumda oturum temizleniyor ve /giris'e dönülüyor (davranış korunmuş)",
+      "kanit_dosya": "kanit/panel-09-yenileme-gecersiz-cikis.png"
+    },
+    "S3_ag_hatasi": {
+      "senaryo": "yenileme isteği ağ düzeyinde düşürüldü (req.abort)",
+      "yenilePost": 1,
+      "son": {
+        "url": "http://localhost:3001/",
+        "anahtarlar": [
+          "kutyai.panel.yenileme",
+          "kutyai.panel.kullanici",
+          "kutyai.panel.erisim"
+        ]
+      },
+      "sonuc": "ağ hatasında oturum KORUNUYOR"
+    },
+    "kanit_ozet_dosyasi": "kanit/panel-08-dogrulama.json"
+  },
+  "S4_eksik_kullanici_kaydi": {
+    "bulgu": "app/(panel)/layout.tsx:19-29 — erişim jetonu varken kullanıcı kaydı yoksa sonsuz 'Oturum kontrol ediliyor…'",
+    "duzeltme": "layout.tsx — jeton varken kayıt yok/bozuksa oturumTemizle() + /giris yönlendirmesi",
+    "olcum": {
+      "once": [
+        "kutyai.panel.yenileme",
+        "kutyai.panel.kullanici",
+        "kutyai.panel.erisim"
+      ],
+      "sonra": {
+        "url": "http://localhost:3001/giris",
+        "anahtarlar": [],
+        "metin": "KutyAI | Yönetim paneline giriş yapın | E-posta* | Parola* | Giriş yap"
+      }
+    }
+  },
+  "S5_saglayici_listesi_yok": {
+    "bulgu": "app/kurulum/page.tsx:160,363-380 — liste alınamazken <select> render edilmiyor, 'Sağlayıcı seçimi zorunludur.' hatası görünmüyor",
+    "duzeltme": "kurulum/page.tsx — saglayiciEngeli() ile ilerle()/bitir() görünür gerekçeyle engelleniyor",
+    "olcum": {
+      "ilerlemeOncesi": "… Sağlayıcı listesi alınamadı | Sağlayıcı listesi alınamadı. Sunucu ayakta mı? | Yeniden dene | Görünen ad* | Temel adres* | Upstream model* | Geri | İleri",
+      "ilerlemeSonrasi": "… Sağlayıcı listesi alınamadı. “Yeniden dene” ile listeyi yükleyip tekrar deneyin. | … (adım değişmedi)"
+    },
+    "kanit_dosya": "kanit/panel-10-saglayici-yok-ilerle.png"
+  },
+  "S6_dogrulama_uyarisi": {
+    "bulgu": "app/kurulum/page.tsx:217-218 — POST /kurulum yanıtındaki dogrulama alanı okunmuyor",
+    "duzeltme": "kurulum/page.tsx — dogrulama.basarili=false ise dogrulama.mesaj uyarı bandında gösteriliyor, sonuç ekranında 'Giriş sayfasına git' düğmesi çıkıyor",
+    "benzetim_govdesi": "API.md §4 ve arkauc/app/api/kurulum.py:179-185 ile aynı biçim: {yonetici, bdm, dogrulama:{basarili:false,mesaj}, kurulum_tamam:true}",
+    "olcum": {
+      "uyari_metni": "Model bağlantısı doğrulanamadı | Model bağlantısı doğrulanamadı: ollama sunucusuna ulaşılamadı (http://localhost:11434/v1). | Yönetici hesabı ve model kaydı oluşturuldu; giriş yapıp model ayarlarını denetleyebilirsiniz.",
+      "dugmeler": [
+        "Geri",
+        "Giriş sayfasına git"
+      ],
+      "gecis_sonrasi": {
+        "url": "http://localhost:3001/giris?kurulum=tamam",
+        "metin": "Kurulum tamamlandı | Yönetici hesabınızla giriş yapabilirsiniz."
+      }
+    },
+    "kanit_dosyalari": [
+      "kanit/panel-11-dogrulama.json",
+      "kanit/panel-11-dogrulama-uyarisi.png",
+      "kanit/panel-12-dogrulama-sonrasi-giris.png"
+    ]
+  },
+  "S7_odak_gostergesi": {
+    "bulgu": "components/ui/stiller.ts:5 + ~12 kullanım — focus-visible:ring-2 (spec §12.3 kenarlık-odaklı ister)",
+    "duzeltme": "FOCUS_RING ve tüm satır içi kullanımlar focus:border-neutral-900 focus:ring-0; koyu zeminli birincil/tehlike düğmeleri ile sidebar aktif öğesi ve switch açık durumu focus:border-neutral-400 / focus:border-rose-300",
+    "olcum": {
+      "klavye_odagi_birincil": {
+        "oncesi": "oklch(0.205 0 none)",
+        "sonrasi": "oklch(0.708 0 none)"
+      },
+      "ikincil_dugme_siniflari": "focus:border-neutral-900 focus:outline-none focus:ring-0 border border-neutral-300 …",
+      "derlenmis_css": {
+        "dosya": ".next/static/css/acdb6718cf5ea367.css (22883 bayt)",
+        "ring-2": 0,
+        "ring-offset-2": 0,
+        "linear-gradient": 0,
+        "radial-gradient": 0,
+        "backdrop-filter": 0,
+        "purple": 0,
+        "violet": 0,
+        "indigo": 0,
+        "40rem": 0,
+        ".focus\\:border-neutral-900:focus": 1,
+        ".focus\\:border-neutral-400:focus": 1
+      }
+    },
+    "kanit_dosyalari": [
+      "kanit/panel-13-odak-kenarlik.png",
+      "kanit/panel-14-odak-ikincil.png"
+    ]
+  },
+  "S8_eposta_dogrulanmadi_dali": {
+    "bulgu": "app/giris/page.tsx:84-86 — dal ulaşılamaz (panel-giris'te rol kontrolü önce)",
+    "karar": "KimlikFix (IRC): panel-giris kapısında 'önce rol, sonra doğrulama' bilinçli; arka uç değişmeyecek → panel tarafındaki ulaşılamaz dal kaldırıldı",
+    "sonuc": "Doğrulanmamış ve doğrulanmış son_kullanıcı aynı Türkçe mesajı görür; hata kodu yine gelirse arka ucun mesajı genel dala düşer"
+  },
+  "kabul_kriterleri": {
+    "tsc": "TSC_EXIT=0",
+    "build": "BUILD_EXIT=0 (Next.js 15.5.25, 6/6 statik sayfa)"
+  }
+}

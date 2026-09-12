@@ -95,17 +95,33 @@ class UstSaglayici:
         return httpx.AsyncClient(transport=self.tasima, timeout=ZAMAN_ASIMI)
 
     @staticmethod
-    def _hata(durum: int, govde: str) -> UstSaglayiciHatasi:
+    def _hata(bdm: Bdm, durum: int, govde: str) -> UstSaglayiciHatasi:
+        """Ayrıntıya yalnız durum ve sağlayıcı adı girer; tam gövde günlüğe yazılır."""
+        logger.error(
+            "Upstream %s yanıtı (BDM %s, sağlayıcı %s): %s",
+            durum,
+            getattr(bdm, "id", None),
+            _saglayici_adi(bdm),
+            _kirp(govde, 2000),
+        )
         return UstSaglayiciHatasi(
             "Model sağlayıcısı isteği yanıtlayamadı.",
-            {"durum": durum, "govde": _kirp(govde)},
+            {"durum": durum, "saglayici": _saglayici_adi(bdm)},
         )
 
     @staticmethod
-    def _tasima_hatasi(hata: Exception) -> UstSaglayiciHatasi:
+    def _tasima_hatasi(bdm: Bdm, hata: Exception) -> UstSaglayiciHatasi:
+        """Taşıma istisnası metni istemciye dönmez; sunucu günlüğüne yazılır."""
+        logger.error(
+            "Upstream taşıma hatası (BDM %s, sağlayıcı %s): %s: %s",
+            getattr(bdm, "id", None),
+            _saglayici_adi(bdm),
+            type(hata).__name__,
+            _kirp(str(hata), 400),
+        )
         return UstSaglayiciHatasi(
             "Model sağlayıcısına bağlanılamadı.",
-            {"durum": 0, "govde": f"{type(hata).__name__}: {_kirp(str(hata), 200)}"},
+            {"durum": 0, "saglayici": _saglayici_adi(bdm)},
         )
 
     @staticmethod
@@ -139,7 +155,7 @@ class UstSaglayici:
                 ) as yanit:
                     if yanit.status_code >= 400:
                         ham = (await yanit.aread()).decode("utf-8", "replace")
-                        raise self._hata(yanit.status_code, ham)
+                        raise self._hata(bdm, yanit.status_code, ham)
                     async for satir in yanit.aiter_lines():
                         temiz = satir.strip()
                         if not temiz.startswith("data:"):
@@ -159,7 +175,7 @@ class UstSaglayici:
         except UstSaglayiciHatasi:
             raise
         except httpx.HTTPError as hata:
-            raise self._tasima_hatasi(hata) from hata
+            raise self._tasima_hatasi(bdm, hata) from hata
 
     # -- tek yanit -----------------------------------------------------------
 
@@ -179,20 +195,17 @@ class UstSaglayici:
                     self.adres(bdm), json=govde, headers=self.basliklar(bdm)
                 )
         except httpx.HTTPError as hata:
-            raise self._tasima_hatasi(hata) from hata
+            raise self._tasima_hatasi(bdm, hata) from hata
         if yanit.status_code >= 400:
-            raise self._hata(yanit.status_code, yanit.text)
+            raise self._hata(bdm, yanit.status_code, yanit.text)
         try:
             paket = yanit.json()
         except ValueError as hata:
-            raise self._hata(yanit.status_code, yanit.text) from hata
+            raise self._hata(bdm, yanit.status_code, yanit.text) from hata
         if not isinstance(paket, dict):
-            raise self._hata(yanit.status_code, yanit.text)
+            raise self._hata(bdm, yanit.status_code, yanit.text)
         secimler = paket.get("choices") or []
         if not secimler:
-            raise UstSaglayiciHatasi(
-                "Model sağlayıcısı boş yanıt döndürdü.",
-                {"durum": yanit.status_code, "govde": _kirp(yanit.text, 600)},
-            )
+            raise self._hata(bdm, yanit.status_code, yanit.text)
         icerik = (secimler[0].get("message") or {}).get("content") or ""
         return {"icerik": str(icerik), "kullanim": kullanim_sozlugu(paket.get("usage"))}

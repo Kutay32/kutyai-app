@@ -31,6 +31,8 @@ class DockerSurucusu:
 
     def __init__(self) -> None:
         self._istemci: Any = None
+        # konteyner kimliği → manifest'teki sağlık adresi (etiket yoksa yedek)
+        self._saglik_adresleri: dict[str, str] = {}
 
     # -- altyapi -------------------------------------------------------------
 
@@ -173,7 +175,11 @@ class DockerSurucusu:
             logger.warning("Aynı adlı konteyner kaldırılıp yeniden oluşturuluyor: %s", ayarlar["name"])
             self._ad_cakismasini_gider(istemci, ayarlar["name"])
             konteyner = istemci.containers.run(image, **ayarlar)
-        return str(konteyner.id)
+        kimlik = str(konteyner.id)
+        saglik_url = str(manifest.get("saglik_url") or "")
+        if saglik_url:
+            self._saglik_adresleri[kimlik] = saglik_url
+        return kimlik
 
     async def durdur(self, konteyner_id: str) -> None:
         await asyncio.to_thread(self._durdur, konteyner_id)
@@ -192,6 +198,7 @@ class DockerSurucusu:
         await asyncio.to_thread(self._sil, konteyner_id)
 
     def _sil(self, konteyner_id: str) -> None:
+        self._saglik_adresleri.pop(konteyner_id, None)
         konteyner = self._konteyner(konteyner_id, zorunlu=False)
         if konteyner is None:
             return
@@ -225,10 +232,19 @@ class DockerSurucusu:
         calisiyor = durum == "running"
         ayrinti: dict[str, Any] = {"konteyner_id": konteyner_id, "durum": durum}
         saglik_url = str((getattr(konteyner, "labels", None) or {}).get("kutyai.saglik_url", "") or "")
+        if not saglik_url:
+            # Eski ya da etiketsiz konteynerler için manifest'ten hatırlanan adres.
+            saglik_url = self._saglik_adresleri.get(konteyner_id, "")
+        if saglik_url:
+            ayrinti["saglik_url"] = saglik_url
         if saglik_url and calisiyor:
             hazir, mesaj = self._http_sondasi(saglik_url)
-            ayrinti["saglik_url"] = saglik_url
+            ayrinti["saglik_kaynagi"] = "saglik_url"
             return SaglikDurumu(calisiyor=calisiyor, hazir=hazir, mesaj=mesaj, ayrinti=ayrinti)
+        # Sağlık adresi yoksa `hazir` yalnızca konteyner durumundan türetilir.
+        ayrinti["saglik_kaynagi"] = "konteyner_durumu"
+        if not saglik_url:
+            ayrinti["saglik_url_yok"] = True
         return SaglikDurumu(
             calisiyor=calisiyor,
             hazir=calisiyor,

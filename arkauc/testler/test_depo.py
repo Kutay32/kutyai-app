@@ -186,7 +186,7 @@ async def test_ust_saglayici_mesajlari_sirayi_korur():
 
         mesajlar = await ust_saglayici_mesajlari(oturum, konusma)
         assert [m["content"] for m in mesajlar] == ["bir", "iki", "üç"]
-        assert [m["role"] for m in mesajlar] == ["kullanici", "asistan", "kullanici"]
+        assert [m["role"] for m in mesajlar] == ["user", "assistant", "user"]
 
 
 async def test_konusma_listesi_filtre_ve_sayfalama():

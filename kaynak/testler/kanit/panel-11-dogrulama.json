@@ -1,0 +1,18 @@
+{
+  "istekler": [
+    "POST /kurulum -> 201 (benzetim)"
+  ],
+  "ucuncuAdim": "KutyAI | Kurulum Sihirbazı | Dört adımda platformu çalışır hâle getirin. | Şirket Bilgisi | Yönetici Hesabı | 3 | İlk BDM | 4 | Özet | Platformun ilk modelini tanımlayın. Kurulum sonunda bağlantı doğrulanır. | Sağlayıcı* | OpenAI | Azure OpenAI | OpenRouter | ",
+  "sonrasi": {
+    "url": "http://localhost:3001/kurulum",
+    "metin": "KutyAI | Kurulum Sihirbazı | Dört adımda platformu çalışır hâle getirin. | Şirket Bilgisi | Yönetici Hesabı | İlk BDM | 4 | Özet | Model bağlantısı doğrulanamadı | Model bağlantısı doğrulanamadı: ollama sunucusuna ulaşılamadı (http://localhost:11434/v1). | Yönetici hesabı ve model kaydı oluşturuldu; giriş yapıp model ayarlarını denetleyebilirsiniz. | Bilgileri kontrol edin. Onayladığınızda yönetici hesabı ve ilk model oluşturulur, ardından model bağlantısı doğrulanır. | Marka adı | Acme AI | Yönetici | Ayse Yilmaz | E-posta | admin@acme.com | Sağlayıcı | Ollama (yerel) | Model adı | Yerel Llama 3 | Temel adres | http://localhost:11434/v1 | Upstream model | llama3 | API anahtarı | Gerekmiyor ",
+    "dugmeler": [
+      "Geri",
+      "Giriş sayfasına git"
+    ]
+  },
+  "gecisSonrasi": {
+    "url": "http://localhost:3001/kurulum",
+    "metin": "KutyAI | Kurulum Sihirbazı | Dört adımda platformu çalışır hâle getirin. | 1 | Şirket Bilgisi | 2 | Yönetici Hesabı | 3 | İlk BDM | 4 | Özet | Panelde ve kullanıcı arayüzünde görünecek marka adını gir"
+  }
+}

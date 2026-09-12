@@ -1,0 +1,126 @@
+ek konuşmalar eklendi: 5 (mesajsız), 6 (kaçış)
+
+=== disa-aktar konusma=5 bicim=json ===
+HTTP 200
+content-disposition=attachment; filename="konusma-5.json"
+bytes=359
+--- içerik ---
+{
+  "id": 5,
+  "baslik": "Mesajsız konuşma",
+  "bdm_id": 1,
+  "bdm_ad": "Yaris Model 1",
+  "kullanici_id": 1,
+  "kullanici_eposta": "goz-yonetici-1@gozlem.example.com",
+  "api_anahtari_id": null,
+  "sistem_istemi": "",
+  "token_girdi": 0,
+  "token_cikti": 0,
+  "olusturulma": "2026-09-12T08:00:00",
+  "guncellenme": "2026-09-12T08:00:00",
+  "mesajlar": []
+}
+
+=== disa-aktar konusma=5 bicim=md ===
+HTTP 200
+content-disposition=attachment; filename="konusma-5.md"
+bytes=152
+--- içerik ---
+# Mesajsız konuşma
+
+- Konuşma no: 5
+- Model: Yaris Model 1
+- Kullanıcı: goz-yonetici-1@gozlem.example.com
+- Oluşturulma: 2026-09-12T08:00:00
+
+---
+
+
+=== disa-aktar konusma=5 bicim=csv ===
+HTTP 200
+content-disposition=attachment; filename="konusma-5.csv"
+bytes=49
+--- içerik ---
+mesaj_id,rol,icerik,token,gecikme_ms,olusturulma
+
+
+=== disa-aktar konusma=6 bicim=json ===
+HTTP 200
+content-disposition=attachment; filename="konusma-6.json"
+bytes=869
+--- içerik ---
+{
+  "id": 6,
+  "baslik": "Kaçış testi",
+  "bdm_id": 1,
+  "bdm_ad": "Yaris Model 1",
+  "kullanici_id": 1,
+  "kullanici_eposta": "goz-yonetici-1@gozlem.example.com",
+  "api_anahtari_id": null,
+  "sistem_istemi": "",
+  "token_girdi": 1,
+  "token_cikti": 1,
+  "olusturulma": "2026-09-12T08:05:00",
+  "guncellenme": "2026-09-12T08:05:00",
+  "mesajlar": [
+    {
+      "id": 8,
+      "rol": "kullanici",
+      "icerik": "=HYPERLINK(\"http://kotu.example\",\"tıkla\")",
+      "token_sayisi": 1,
+      "gecikme_ms": 0,
+      "model": "llama3",
+      "hata": null,
+      "olusturulma": "2026-09-12T08:05:00"
+    },
+    {
+      "id": 9,
+      "rol": "asistan",
+      "icerik": "İki satır;\nvirgüllü, \"alıntılı\" yanıt",
+      "token_sayisi": 1,
+      "gecikme_ms": 0,
+      "model": "llama3",
+      "hata": null,
+      "olusturulma": "2026-09-12T08:05:01"
+    }
+  ]
+}
+
+=== disa-aktar konusma=6 bicim=md ===
+HTTP 200
+content-disposition=attachment; filename="konusma-6.md"
+bytes=267
+--- içerik ---
+# Kaçış testi
+
+- Konuşma no: 6
+- Model: Yaris Model 1
+- Kullanıcı: goz-yonetici-1@gozlem.example.com
+- Oluşturulma: 2026-09-12T08:05:00
+
+---
+
+## Kullanıcı
+
+=HYPERLINK("http://kotu.example","tıkla")
+
+## Asistan
+
+İki satır;
+virgüllü, "alıntılı" yanıt
+
+
+=== disa-aktar konusma=6 bicim=csv ===
+HTTP 200
+content-disposition=attachment; filename="konusma-6.csv"
+bytes=218
+--- içerik ---
+mesaj_id,rol,icerik,token,gecikme_ms,olusturulma
+8,kullanici,"=HYPERLINK(""http://kotu.example"",""tıkla"")",1,0,2026-09-12T08:05:00
+9,asistan,"İki satır;
+virgüllü, ""alıntılı"" yanıt",1,0,2026-09-12T08:05:01
+
+
+=== disa-aktar olmayan konuşma ===
+HTTP 404 application/json
+{"hata":{"kod":"bulunamadi","mesaj":"Konuşma bulunamadı.","ayrinti":{"konusma_id":999}}}

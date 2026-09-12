@@ -1,0 +1,2 @@
+konusma: [(1, 'Öğle yemeği planı çığöşü', '2026-09-01 09:00:00.000000'), (2, 'Sunucu kurulum notları', '2026-09-05 10:30:00.000000'), (3, 'API anahtarıyla sohbet', '2026-09-11 23:00:00.000000'), (4, 'Saklama süresi dolmuş eski kayıt', '2026-06-01 08:00:00.000000')]
+mesaj sayısı: (6,)

@@ -1,12 +1,17 @@
 """Konuşma logları uçları (API §12).
 
 Liste, detay, dışa aktarma, silme ve saklama temizliği; hepsi personel içindir.
-Temizleme yalnızca yöneticiye açıktır.
+Silme ve temizleme yazma yetkisi ister: silme `yonetici`/`operator`, temizleme
+yalnız `yonetici`. `izleyici` salt okunur kalır.
+
+Sayfalama sınırları: `sayfa >= 1`, `1 <= boyut <= 200`; aralık dışı değerler
+kırpılmak yerine `400 dogrulama_hatasi` ile reddedilir. `baslangic > bitis`
+tutarsız bir aralıktır ve `400 gecersiz_istek` döner.
 """
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query, Response
 from pydantic import BaseModel, Field
@@ -14,20 +19,28 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from arkauc.app.cekirdek.bagimliliklar import gecerli_personel, veritabani_oturumu
 from arkauc.app.cekirdek.denetim import islem_kaydet
-from arkauc.app.cekirdek.hatalar import Bulunamadi
+from arkauc.app.cekirdek.hatalar import Bulunamadi, GecersizIstek
 from bdm_konusma_gecmisi import (
     disa_aktar,
     eski_konusmalari_sil,
     konusma_detayi,
     konusmalari_listele,
 )
+from bdm_konusma_gecmisi.sorgu import EN_BUYUK_SAYFA_BOYUTU
 from bdm_veritabani.modeller import Konusma, Kullanici, Rol
 
 router = APIRouter()
 
+YAZMA_ROLLERI = (Rol.yonetici, Rol.operator)
+
 
 class TemizleIstegi(BaseModel):
     gun: int | None = Field(default=None, ge=1, le=3650)
+
+
+def _kiyaslanabilir(an: datetime) -> datetime:
+    """Bilinçsiz damgayı UTC kabul ederek karşılaştırmayı güvenli kılar."""
+    return an if an.tzinfo is not None else an.replace(tzinfo=timezone.utc)
 
 
 async def _konusma_getir(oturum: AsyncSession, konusma_id: int) -> Konusma:
@@ -44,12 +57,20 @@ async def konusma_loglari(
     baslangic: datetime | None = Query(default=None),
     bitis: datetime | None = Query(default=None),
     arama: str | None = Query(default=None),
-    sayfa: int = Query(default=1),
-    boyut: int = Query(default=25),
+    sayfa: int = Query(default=1, ge=1),
+    boyut: int = Query(default=25, ge=1, le=EN_BUYUK_SAYFA_BOYUTU),
     oturum: AsyncSession = Depends(veritabani_oturumu),
     _personel: Kullanici = Depends(gecerli_personel()),
 ) -> dict[str, object]:
     """Filtrelenebilir ve sayfalanabilir konuşma listesi."""
+    if (
+        baslangic is not None
+        and bitis is not None
+        and _kiyaslanabilir(baslangic) > _kiyaslanabilir(bitis)
+    ):
+        raise GecersizIstek(
+            "Başlangıç tarihi bitiş tarihinden sonra olamaz.", {"alan": "baslangic"}
+        )
     return await konusmalari_listele(
         oturum,
         kullanici_id=kullanici_id,
@@ -95,9 +116,9 @@ async def konusma_disa_aktar(
 async def konusma_sil(
     konusma_id: int,
     oturum: AsyncSession = Depends(veritabani_oturumu),
-    personel: Kullanici = Depends(gecerli_personel()),
+    personel: Kullanici = Depends(gecerli_personel(YAZMA_ROLLERI)),
 ) -> None:
-    """Konuşmayı mesajlarıyla birlikte kalıcı olarak siler."""
+    """Konuşmayı mesajlarıyla birlikte kalıcı olarak siler (yönetici/operatör)."""
     konusma = await _konusma_getir(oturum, konusma_id)
     await oturum.delete(konusma)
     await oturum.flush()

@@ -19,6 +19,14 @@ from bdm_veritabani.modeller import (
 
 BASLIK_UZUNLUGU = 60
 
+# Veritabani rol degerlerinin OpenAI uyumlu karsiliklari.
+UST_ROL_ADLARI: dict[MesajRolu, str] = {
+    MesajRolu.kullanici: "user",
+    MesajRolu.asistan: "assistant",
+    MesajRolu.sistem: "system",
+    MesajRolu.arac: "tool",
+}
+
 
 def baslik_uret(metin: str) -> str:
     """Ilk mesajdan konusma basligi turetir."""
@@ -119,9 +127,11 @@ async def kullanim_yaz(
 async def ust_saglayici_mesajlari(
     oturum: AsyncSession, konusma: Konusma, *, limit: int = 40
 ) -> list[dict[str, str]]:
-    """Upstream'e gonderilecek mesaj listesi (eskiden yeniye)."""
-    from bdm_veritabani.modeller import Mesaj
+    """Upstream'e gonderilecek mesaj listesi (eskiden yeniye).
 
+    Rol adlari OpenAI sozlesmesine cevrilir (`user`/`assistant`); veritabani
+    degerleri Turkce oldugu icin ham deger gonderilirse saglayicilar 400 doner.
+    """
     mesajlar = (
         await oturum.execute(
             sa.select(Mesaj)
@@ -134,7 +144,7 @@ async def ust_saglayici_mesajlari(
         )
     ).scalars().all()
     return [
-        {"role": mesaj.rol.value, "content": mesaj.icerik}
+        {"role": UST_ROL_ADLARI[mesaj.rol], "content": mesaj.icerik}
         for mesaj in reversed(mesajlar)
         if mesaj.icerik
     ]

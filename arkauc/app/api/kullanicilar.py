@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from arkauc.app.cekirdek.bagimliliklar import gecerli_personel, veritabani_oturumu
 from arkauc.app.cekirdek.denetim import islem_kaydet
-from arkauc.app.cekirdek.hatalar import Bulunamadi, Cakisma
+from arkauc.app.cekirdek.hatalar import Bulunamadi, GecersizGecis
 from arkauc.app.servisler import kimlik as kimlik_servisi
 from bdm_veritabani.modeller import Kullanici, KullaniciDurumu, Rol
 
@@ -97,6 +97,12 @@ async def kullanici_guncelle(
     degisenler = veri.model_dump(exclude_unset=True)
     if not degisenler:
         return kimlik_servisi.kullanici_sozlugu(kullanici)
+    # Yonetici kendi hesabini kilitleyemez (DELETE ile ayni kural).
+    if kullanici.id == yonetici.id:
+        if veri.durum == KullaniciDurumu.pasif:
+            raise GecersizGecis("Kendi hesabınızı pasifleştiremezsiniz.")
+        if veri.rol is not None and veri.rol != kullanici.rol:
+            raise GecersizGecis("Kendi rolünüzü değiştiremezsiniz.")
 
     await kimlik_servisi.kullanici_guncelle(
         oturum,
@@ -129,7 +135,7 @@ async def kullanici_pasiflestir(
 ) -> None:
     """Kullaniciyi silmez, pasiflestirir."""
     if kullanici_id == yonetici.id:
-        raise Cakisma("Kendi hesabınızı pasifleştiremezsiniz.")
+        raise GecersizGecis("Kendi hesabınızı pasifleştiremezsiniz.")
     kullanici = await _kullanici_getir(oturum, kullanici_id)
     await kimlik_servisi.kullanici_pasiflestir(oturum, kullanici)
     await islem_kaydet(

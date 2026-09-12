@@ -10,6 +10,7 @@ from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from arkauc.app.cekirdek.ayarlar_db import ayar_oku
 from arkauc.app.cekirdek.bagimliliklar import (
     IstemciKimligi,
     gecerli_istemci,
@@ -31,6 +32,7 @@ from bdm_konusma_gecmisi import (
     konusma_sahibi_mi,
     konusmalari_listele,
     kullanim_yaz,
+    maskele_metin,
     mesaj_ekle,
     ust_saglayici_mesajlari,
 )
@@ -83,6 +85,21 @@ def ust_saglayici() -> UstSaglayici:
     return UstSaglayici()
 
 
+async def _bakim_denetimi(oturum: AsyncSession) -> None:
+    """Bakım modu açıkken sohbet uçlarını kapatır (API §9)."""
+    if await ayar_oku(oturum, "bakim_modu", False):
+        raise BdmHazirDegil("Sistem bakımda.", {"bakim_modu": True})
+
+
+async def _sistem_istemini_maskele(
+    oturum: AsyncSession, sistem_istemi: str | None
+) -> str | None:
+    """Sistem istemini kayıt ve upstream aynı maskeli metni görecek şekilde maskeler."""
+    if not sistem_istemi:
+        return sistem_istemi
+    return await maskele_metin(oturum, sistem_istemi)
+
+
 async def _bdm_coz(oturum: AsyncSession, istek: SohbetIstegi, kimlik: IstemciKimligi) -> Bdm:
     if istek.bdm_id is None and not istek.bdm_slug:
         raise GecersizIstek("bdm_id veya bdm_slug zorunludur.", {"alan": "bdm_id"})
@@ -110,7 +127,9 @@ async def _konusma_coz(
             bdm_id=bdm.id,
             kullanici_id=kimlik.kullanici_id,
             api_anahtari_id=kimlik.anahtar_id,
-            sistem_istemi=istek.sistem_istemi or bdm.sistem_istemi,
+            sistem_istemi=await _sistem_istemini_maskele(
+                oturum, istek.sistem_istemi or bdm.sistem_istemi
+            ),
         )
     konusma = await oturum.get(Konusma, istek.konusma_id)
     if konusma is None or not await konusma_sahibi_mi(
@@ -196,6 +215,7 @@ async def _mesajlari_hazirla(
     oturum: AsyncSession, konusma: Konusma, sistem_istemi: str | None
 ) -> list[dict[str, str]]:
     sistem = sistem_istemi if sistem_istemi is not None else konusma.sistem_istemi
+    sistem = await _sistem_istemini_maskele(oturum, sistem)
     mesajlar = await ust_saglayici_mesajlari(oturum, konusma)
     return ([{"role": "system", "content": sistem}] if sistem else []) + mesajlar
 
@@ -220,6 +240,7 @@ async def sohbet(
     ust: UstSaglayici = Depends(ust_saglayici),
 ) -> dict[str, object]:
     """Tek yanitli sohbet; upstream hatasi 502 `ust_saglayici_hatasi` dondurur."""
+    await _bakim_denetimi(oturum)
     bdm = await _bdm_coz(oturum, istek, kimlik)
     await _kota_denetle(oturum, bdm, kimlik)
     konusma = await _konusma_coz(oturum, istek, bdm, kimlik)
@@ -296,6 +317,7 @@ async def sohbet_akis(
     ust: UstSaglayici = Depends(ust_saglayici),
 ) -> Response:
     """SSE akisi: `baslangic`, `parca`*, `kullanim`, `hata`?, `bitti`."""
+    await _bakim_denetimi(oturum)
     bdm = await _bdm_coz(oturum, istek, kimlik)
     await _kota_denetle(oturum, bdm, kimlik)
     konusma = await _konusma_coz(oturum, istek, bdm, kimlik)

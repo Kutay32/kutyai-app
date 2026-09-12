@@ -142,6 +142,11 @@ class SahteSurucu:
 
 AKTIF_SURUCU: KonteynerSurucusu | None = None
 
+# Suruculer durum tutar (yerel surucu hangi BDM'nin calistigini hatirlar).
+# Istek basina yeni ornek uretilirse bu durum kaybolur; bu yuzden surec
+# omru boyunca ayni ornek yeniden kullanilir.
+_SURUCU_ONBELLEK: dict[tuple[str, bool], KonteynerSurucusu] = {}
+
 
 def surucu_ata(surucu: KonteynerSurucusu | None) -> None:
     """Testlerin ve onizlemenin surucuyu gecici olarak gecersiz kilmasini saglar."""
@@ -151,21 +156,29 @@ def surucu_ata(surucu: KonteynerSurucusu | None) -> None:
 
 def surucu_temizle() -> None:
     surucu_ata(None)
+    _SURUCU_ONBELLEK.clear()
 
 
 def surucu_al(saglayici: str, yerel_mi: bool) -> KonteynerSurucusu:
-    """Saglayiciya uygun surucuyu secer."""
+    """Saglayiciya uygun surucuyu secer (orneklenen suruculer onbelleklenir)."""
     if AKTIF_SURUCU is not None:
         return AKTIF_SURUCU
+    anahtar = (str(saglayici), bool(yerel_mi))
+    mevcut = _SURUCU_ONBELLEK.get(anahtar)
+    if mevcut is not None:
+        return mevcut
     try:
         if saglayici == "ollama" or not yerel_mi:
             from arkauc.app.servisler.konteyner_yerel import YerelSurucusu
 
-            return YerelSurucusu()
-        from arkauc.app.servisler.konteyner_docker import DockerSurucusu
+            surucu: KonteynerSurucusu = YerelSurucusu()
+        else:
+            from arkauc.app.servisler.konteyner_docker import DockerSurucusu
 
-        return DockerSurucusu()
+            surucu = DockerSurucusu()
     except ImportError as hata:
         raise SurucuYok(
             "Konteyner çalışma zamanı bulunamadı. Docker kurulu ve çalışır durumda olmalıdır."
         ) from hata
+    _SURUCU_ONBELLEK[anahtar] = surucu
+    return surucu

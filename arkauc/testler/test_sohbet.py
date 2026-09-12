@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import logging
 
 import httpx
 import sqlalchemy as sa
 
 from arkauc.app.api import sohbet as sohbet_ucu
+from arkauc.app.cekirdek.ayarlar_db import ayar_yaz
 from arkauc.app.servisler.akış import sohbet_akisi
 from arkauc.testler.sahte_ust import SahteUst, YavasAkis
 from bdm_konusma_gecmisi import konusma_olustur, mesaj_ekle, ust_saglayici_mesajlari
@@ -105,7 +107,7 @@ async def test_akis_olay_sirasi(istemci, yardimci, uygulama):
     assert kullanim["gecikme_ms"] >= 0
     assert olaylar[-1][1] == {}
     assert sahte.son_govde["stream"] is True
-    assert sahte.son_govde["messages"] == [{"role": "kullanici", "content": "Merhaba"}]
+    assert sahte.son_govde["messages"] == [{"role": "user", "content": "Merhaba"}]
 
 
 async def test_mesaj_ve_kullanim_maskelenerek_yazilir(istemci, yardimci, uygulama):
@@ -262,7 +264,7 @@ async def test_upstream_500_502_dondurur(istemci, yardimci, uygulama):
     akis = await istemci.post(AKIS, json={"bdm_id": bdm.id, "mesaj": "selam"}, headers=basliklar)
     assert akis.status_code == 200
     olaylar = olaylari_coz(akis.text)
-    assert [ad for ad, _ in olaylar] == ["baslangic", "hata"]
+    assert [ad for ad, _ in olaylar] == ["baslangic", "hata", "bitti"]
     assert olaylar[1][1]["hata"]["kod"] == "ust_saglayici_hatasi"
 
     _, kayitlar, _ = await kayitlari_oku()
@@ -365,9 +367,9 @@ async def test_konusma_devami_ve_slug_ile_istek(istemci, yardimci, uygulama):
     assert devam.status_code == 200
     assert devam.json()["konusma_id"] == ilk.json()["konusma_id"]
     assert sahte.son_govde["messages"] == [
-        {"role": "kullanici", "content": "ilk"},
-        {"role": "asistan", "content": "yanıt"},
-        {"role": "kullanici", "content": "ikinci"},
+        {"role": "user", "content": "ilk"},
+        {"role": "assistant", "content": "yanıt"},
+        {"role": "user", "content": "ikinci"},
     ]
     assert sahte.son_govde["model"] == bdm.upstream_model
 
@@ -491,3 +493,97 @@ async def test_istemci_koptugunda_kismi_yanit_kaydedilmez():
     assert [mesaj.rol for mesaj in mesajlar_db] == [MesajRolu.kullanici]
     assert kayitlar == []
     assert yavas.kapandi is True
+
+
+async def test_sistem_istemi_maskelenerek_kaydedilir_ve_gonderilir(istemci, yardimci, uygulama):
+    bdm = await bdm_ekle()
+    kullanici = await yardimci.kullanici_ekle()
+    sahte = SahteUst()
+    sahte_bagla(uygulama, sahte)
+    telefon = "0532 999 88 77"
+
+    yanit = await istemci.post(
+        SOHBET,
+        json={
+            "bdm_id": bdm.id,
+            "mesaj": "selam",
+            "sistem_istemi": f"Kullanıcının e-postası {EPOSTA}, telefonu {telefon}",
+        },
+        headers=yardimci.basliklar(kullanici),
+    )
+
+    assert yanit.status_code == 200
+    sistem_mesaji = sahte.son_govde["messages"][0]
+    assert sistem_mesaji["role"] == "system"
+    assert EPOSTA not in sistem_mesaji["content"]
+    assert telefon not in sistem_mesaji["content"]
+    assert "[MASKELENDI:eposta]" in sistem_mesaji["content"]
+
+    _, _, konusmalar = await kayitlari_oku()
+    sistem_istemi = konusmalar[-1].sistem_istemi or ""
+    assert EPOSTA not in sistem_istemi
+    assert telefon not in sistem_istemi
+    assert "[MASKELENDI:eposta]" in sistem_istemi
+
+
+async def test_upstream_hata_govdesi_istemciye_donmez(istemci, yardimci, uygulama, caplog):
+    bdm = await bdm_ekle()
+    kullanici = await yardimci.kullanici_ekle()
+    sahte_bagla(uygulama, SahteUst(durum=500))
+    basliklar = yardimci.basliklar(kullanici)
+
+    with caplog.at_level(logging.ERROR, logger="kutyai.upstream"):
+        tek = await istemci.post(
+            SOHBET, json={"bdm_id": bdm.id, "mesaj": "selam"}, headers=basliklar
+        )
+
+    assert tek.status_code == 502
+    ayrinti = tek.json()["hata"]["ayrinti"]
+    assert ayrinti == {"durum": 500, "saglayici": "ollama"}
+    assert "sahte sağlayıcı hatası" not in tek.text
+    assert "sahte sağlayıcı hatası" in caplog.text
+
+    akis = await istemci.post(AKIS, json={"bdm_id": bdm.id, "mesaj": "selam"}, headers=basliklar)
+    olaylar = olaylari_coz(akis.text)
+    assert [ad for ad, _ in olaylar] == ["baslangic", "hata", "bitti"]
+    assert olaylar[2][1] == {}
+    akis_ayrinti = olaylar[1][1]["hata"]["ayrinti"]
+    assert akis_ayrinti == {"durum": 500, "saglayici": "ollama"}
+    assert "sahte sağlayıcı hatası" not in akis.text
+
+
+async def test_hata_sonrasi_bitti_gonderilir(istemci, yardimci, uygulama):
+    bdm = await bdm_ekle()
+    kullanici = await yardimci.kullanici_ekle()
+    sahte_bagla(uygulama, SahteUst(hata=httpx.ConnectError("bağlantı kurulamadı")))
+    basliklar = yardimci.basliklar(kullanici)
+
+    akis = await istemci.post(AKIS, json={"bdm_id": bdm.id, "mesaj": "selam"}, headers=basliklar)
+
+    olaylar = olaylari_coz(akis.text)
+    assert [ad for ad, _ in olaylar] == ["baslangic", "hata", "bitti"]
+    assert olaylar[1][1]["hata"]["kod"] == "ust_saglayici_hatasi"
+    assert olaylar[1][1]["hata"]["ayrinti"] == {"durum": 0, "saglayici": "ollama"}
+    assert olaylar[-1][1] == {}
+
+
+async def test_bakim_modu_sohbet_uclarini_kapatir(istemci, yardimci, uygulama):
+    bdm = await bdm_ekle()
+    kullanici = await yardimci.kullanici_ekle()
+    sahte = SahteUst()
+    sahte_bagla(uygulama, sahte)
+    async with oturum_fabrikasi()() as oturum:
+        await ayar_yaz(oturum, "bakim_modu", True)
+        await oturum.commit()
+    basliklar = yardimci.basliklar(kullanici)
+
+    tek = await istemci.post(SOHBET, json={"bdm_id": bdm.id, "mesaj": "selam"}, headers=basliklar)
+    assert tek.status_code == 503
+    assert tek.json()["hata"]["kod"] == "bdm_hazir_degil"
+    assert tek.json()["hata"]["mesaj"] == "Sistem bakımda."
+
+    akis = await istemci.post(AKIS, json={"bdm_id": bdm.id, "mesaj": "selam"}, headers=basliklar)
+    assert akis.status_code == 503
+    assert akis.json()["hata"]["kod"] == "bdm_hazir_degil"
+    assert akis.json()["hata"]["mesaj"] == "Sistem bakımda."
+    assert sahte.istekler == []

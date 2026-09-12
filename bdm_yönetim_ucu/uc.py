@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from arkauc.app.cekirdek.bagimliliklar import gecerli_personel, veritabani_oturumu
+from arkauc.app.cekirdek.denetim import islem_kaydet
 from bdm_listesi import bdm_getir, bdm_sozlugu
 from bdm_veritabani.modeller import Kullanici
 
@@ -108,8 +109,9 @@ async def gunluk_akisi(
     bdm = await bdm_getir(oturum, bdm_id)
     konteyner_id = yasam_dongusu.konteyner_kimligi(bdm)
     surucu = yasam_dongusu.surucu_sec(bdm)
+    akis = await gunlukler.akis(surucu, konteyner_id, satir)
     return StreamingResponse(
-        gunlukler.akis(surucu, konteyner_id, satir),
+        akis,
         media_type="text/event-stream",
         headers=gunlukler.SSE_BASLIKLARI,
     )
@@ -119,6 +121,7 @@ async def gunluk_akisi(
 async def yol_guncelle(
     bdm_id: int,
     govde: YolGuncelle,
+    istek: Request,
     oturum: AsyncSession = Depends(veritabani_oturumu),
     kullanici: Kullanici = Depends(gecerli_personel()),
 ) -> dict[str, object]:
@@ -132,5 +135,14 @@ async def yol_guncelle(
         yol["takma_ad"] = govde.takma_ad
     konteyner["yol"] = yol
     bdm.konteyner = konteyner
+    await islem_kaydet(
+        oturum,
+        "bdm.yol_guncellendi",
+        kullanici_id=kullanici.id,
+        hedef_tur="bdm",
+        hedef_id=bdm.id,
+        ayrinti={"yol": yol},
+        ip=_ip(istek),
+    )
     await oturum.flush()
     return bdm_sozlugu(bdm)

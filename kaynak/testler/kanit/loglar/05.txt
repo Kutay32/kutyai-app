@@ -1,0 +1,17 @@
+
+=== PATCH /kullanicilar/3 {rol: operator} ===
+HTTP 200 application/json
+{"id":3,"eposta":"goz-operator@gozlem.example.com","ad_soyad":"Goz operator","rol":"operator","durum":"aktif","eposta_dogrulandi":true,"olusturulma":"2026-09-12T19:43:48.857200","son_giris":"2026-09-12T19:43:50.549842"}
+
+=== DELETE /kullanicilar/3 ===
+HTTP 204 gövde=''
+
+=== PATCH /api-anahtarlari/3 (yok olan yöntem) ===
+HTTP 404 application/json
+{"hata":{"kod":"bulunamadi","mesaj":"Kayıt bulunamadı.","ayrinti":{}}}
+
+=== SQL: kullanıcı/rol denetim kayıtları ===
+id=7 eylem=kullanici.olustur kullanici_id=1 hedef=kullanici:3 ayrinti={"rol": "operator"}
+id=8 eylem=kullanici.olustur kullanici_id=1 hedef=kullanici:4 ayrinti={"rol": "izleyici"}
+id=34 eylem=kullanici.guncelle kullanici_id=1 hedef=kullanici:3 ayrinti={"rol": "operator"}
+id=35 eylem=kullanici.pasiflestir kullanici_id=1 hedef=kullanici:3 ayrinti={}

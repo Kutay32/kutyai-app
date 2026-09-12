@@ -7,10 +7,11 @@ import pathlib
 import unicodedata
 
 import sqlalchemy as sa
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from arkauc.app.cekirdek import guvenlik
-from arkauc.app.cekirdek.hatalar import Bulunamadi, Cakisma, GecersizIstek
+from arkauc.app.cekirdek.hatalar import Bulunamadi, Cakisma, GecersizGecis, GecersizIstek
 from bdm_listesi.saglayicilar import (
     GPU_GEREKEN_SAGLAYICILAR,
     YEREL_SAGLAYICILAR,
@@ -200,8 +201,37 @@ async def bdm_listele(
 
 
 async def bdm_sil(oturum: AsyncSession, bdm: Bdm) -> None:
+    """BDM'i siler; bagli konusma/kullanim kaydi varsa 409 firlatir."""
+    from bdm_veritabani.modeller import KullanimKaydi, Konusma
+
+    konusma_sayisi = (
+        await oturum.execute(
+            sa.select(sa.func.count()).select_from(Konusma).where(Konusma.bdm_id == bdm.id)
+        )
+    ).scalar_one()
+    if konusma_sayisi:
+        raise GecersizGecis(
+            f"Bu modelin {int(konusma_sayisi)} konuşma kaydı var. Önce kayıtları silin; "
+            "modeli kullanımdan kaldırmak için durdurun.",
+            {"konusma_sayisi": int(konusma_sayisi)},
+        )
+    kullanim_sayisi = (
+        await oturum.execute(
+            sa.select(sa.func.count())
+            .select_from(KullanimKaydi)
+            .where(KullanimKaydi.bdm_id == bdm.id)
+        )
+    ).scalar_one()
+    if kullanim_sayisi:
+        raise GecersizGecis(
+            f"Bu modelin {int(kullanim_sayisi)} kullanım kaydı var; silinemez.",
+            {"kullanim_kaydi": int(kullanim_sayisi)},
+        )
     await oturum.delete(bdm)
-    await oturum.flush()
+    try:
+        await oturum.flush()
+    except IntegrityError as hata:
+        raise GecersizGecis("Bu modele bağlı kayıtlar olduğu için silinemedi.") from hata
 
 
 async def bdm_kopyala(oturum: AsyncSession, bdm: Bdm, yeni_ad: str, yeni_slug: str | None) -> Bdm:

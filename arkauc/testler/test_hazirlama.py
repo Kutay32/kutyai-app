@@ -15,7 +15,11 @@ import sqlalchemy as sa
 from arkauc.app.cekirdek.hatalar import GecersizIstek
 from arkauc.app.servisler.konteyner import SahteSurucu, surucu_ata, surucu_temizle
 from bdm_hazırlama_ucu import cekim, dogrulama, manifest
-from bdm_hazırlama_ucu.on_kontrol import GPU_UYARI_MESAJI, on_kontrol
+from bdm_hazırlama_ucu.on_kontrol import (
+    DOCKER_UYARI_MESAJI,
+    GPU_UYARI_MESAJI,
+    on_kontrol,
+)
 from bdm_listesi import BdmOlustur, bdm_getir, bdm_olustur, saglayici_bilgisi
 from bdm_veritabani.modeller import Bdm, BdmDurumu, IslemKaydi, Rol, Saglayici
 from bdm_veritabani.oturum import oturum_fabrikasi
@@ -43,7 +47,11 @@ def surucu_kur():
 
 
 async def bdm_ekle(
-    saglayici: str, *, upstream_model: str = "llama3", api_anahtari: str = ""
+    saglayici: str,
+    *,
+    upstream_model: str = "llama3",
+    api_anahtari: str = "",
+    temel_url: str = "",
 ) -> int:
     """Test icin BDM kaydi olusturur ve kimligini dondurur."""
     async with oturum_fabrikasi()() as oturum:
@@ -53,6 +61,7 @@ async def bdm_ekle(
                 gorunen_ad=f"{saglayici_bilgisi(saglayici).gorunen_ad} Test",
                 saglayici=Saglayici(saglayici),
                 upstream_model=upstream_model,
+                temel_url=temel_url,
                 api_anahtari=api_anahtari,
             ),
         )
@@ -141,6 +150,67 @@ async def test_dogrula_baglanti_hatasi_hata_yazar():
     assert "bağlanılamadı" in sonuc["mesaj"].lower()
     assert bdm.durum == BdmDurumu.hata
     assert await bdm_durumu(bdm_id) == BdmDurumu.hata
+
+
+async def test_dogrula_calisiyor_durumunu_korur():
+    """Regresyon (BULGU-2): çalışan BDM'in durumu doğrulama sonucuyla değişmez.
+
+    `calisiyor` durumundan `hazir`/`hata` geçişi durum makinesinde yoktur; yazılırsa
+    konteyner ayakta kalırken BDM durdurulamaz hale gelir.
+    """
+    bdm_id = await bdm_ekle("ollama", upstream_model="llama3")
+    async with oturum_fabrikasi()() as oturum:
+        bdm = await bdm_getir(oturum, bdm_id)
+        bdm.durum = BdmDurumu.calisiyor
+        await oturum.commit()
+
+    def kopuk(istek: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("bağlantı kurulamadı")
+
+    async with oturum_fabrikasi()() as oturum:
+        bdm = await bdm_getir(oturum, bdm_id)
+        basarisiz = await dogrulama.dogrula(
+            bdm, oturum=oturum, tasima=httpx.MockTransport(kopuk)
+        )
+        await oturum.commit()
+
+    assert basarisiz["basarili"] is False
+    assert "bağlanılamadı" in basarisiz["mesaj"].lower()
+    assert await bdm_durumu(bdm_id) == BdmDurumu.calisiyor
+
+    async with oturum_fabrikasi()() as oturum:
+        bdm = await bdm_getir(oturum, bdm_id)
+        basarili = await dogrulama.dogrula(
+            bdm,
+            oturum=oturum,
+            tasima=httpx.MockTransport(
+                lambda istek: httpx.Response(200, json={"data": [{"id": "llama3"}]})
+            ),
+        )
+        await oturum.commit()
+
+    assert basarili["basarili"] is True
+    assert await bdm_durumu(bdm_id) == BdmDurumu.calisiyor
+
+
+async def test_dogrula_gecersiz_adres_500_yerine_turkce_sonuc(istemci, yardimci):
+    """Regresyon (BULGU-3): çözülemeyen/bozuk adres 500 değil, Türkçe sonuç döner."""
+    yonetici = await yardimci.yonetici()
+    basliklar = yardimci.basliklar(yonetici)
+
+    for temel_url in ("http://\u2603.com/v1", "http://[::1/v1"):
+        bdm_id = await bdm_ekle(
+            "ozel", upstream_model="gpt-4o-mini", temel_url=temel_url
+        )
+        yanit = await istemci.post(
+            f"{HAZIRLAMA}/{bdm_id}/dogrula", headers=basliklar
+        )
+
+        assert yanit.status_code == 200, temel_url
+        govde = yanit.json()
+        assert govde["basarili"] is False
+        assert govde["mesaj"] == dogrulama.ADRES_GECERSIZ_MESAJI
+        assert await bdm_durumu(bdm_id) == BdmDurumu.hata
 
 
 async def test_dogrula_basarisiz_kod_turkce_mesaj_dondurur():
@@ -322,6 +392,85 @@ async def test_cek_ucu_hata_olayini_akittir(istemci, yardimci, monkeypatch):
     assert metin.rstrip().endswith("event: bitti\ndata: {}")
 
 
+async def test_cek_ucu_upstream_kapali_sse_cercevesi_akitir(istemci, yardimci, monkeypatch):
+    """Regresyon (BULGU-1): kapalı upstream'de akış gövdesiz kapanmaz.
+
+    Taşıma hatası yakalanmazsa yanıt `200 text/event-stream` olarak başladığı için
+    hata işleyicisi 500 gönderemez ve istemci `RemoteProtocolError` alır.
+    """
+    yonetici = await yardimci.yonetici()
+    bdm_id = await bdm_ekle("ollama", upstream_model="llama3")
+
+    def kopuk(istek: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("bağlantı kurulamadı")
+
+    monkeypatch.setattr(cekim, "varsayilan_tasima", lambda: httpx.MockTransport(kopuk))
+
+    yanit = await istemci.post(
+        f"{HAZIRLAMA}/{bdm_id}/cek", headers=yardimci.basliklar(yonetici)
+    )
+
+    assert yanit.status_code == 200
+    assert yanit.headers["content-type"].startswith("text/event-stream")
+    metin = yanit.text
+    assert "event: hata" in metin
+    assert "ust_saglayici_hatasi" in metin
+    assert "bağlanılamadı" in metin
+    assert metin.rstrip().endswith("event: bitti\ndata: {}")
+
+
+async def test_cek_ucu_akis_ortasinda_kopan_baglanti(istemci, yardimci, monkeypatch):
+    """Regresyon (BULGU-1): akış ortasında kopan bağlantı da çerçeveye çevrilir."""
+    yonetici = await yardimci.yonetici()
+    bdm_id = await bdm_ekle("ollama", upstream_model="llama3")
+
+    class _KopanAkis(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            yield (
+                json.dumps({"status": "downloading", "total": 100, "completed": 40})
+                + "\n"
+            ).encode("utf-8")
+            raise httpx.ReadError("akış koptu")
+
+    monkeypatch.setattr(
+        cekim,
+        "varsayilan_tasima",
+        lambda: httpx.MockTransport(lambda istek: httpx.Response(200, stream=_KopanAkis())),
+    )
+
+    yanit = await istemci.post(
+        f"{HAZIRLAMA}/{bdm_id}/cek", headers=yardimci.basliklar(yonetici)
+    )
+
+    assert yanit.status_code == 200
+    metin = yanit.text
+    assert 'event: ilerleme\ndata: {"yuzde": 40' in metin
+    assert "event: hata" in metin
+    assert "ust_saglayici_hatasi" in metin
+    assert metin.rstrip().endswith("event: bitti\ndata: {}")
+
+
+async def test_cek_ucu_kapali_porta_karsi_gercek_tasima(istemci, yardimci):
+    """Regresyon (BULGU-1): gözlemcinin canlı senaryosu — kapalı porta gerçek httpx taşıması."""
+    yonetici = await yardimci.yonetici()
+    bdm_id = await bdm_ekle(
+        "ollama",
+        upstream_model="llama3",
+        temel_url="http://127.0.0.1:8198/v1",
+    )
+
+    yanit = await istemci.post(
+        f"{HAZIRLAMA}/{bdm_id}/cek", headers=yardimci.basliklar(yonetici)
+    )
+
+    assert yanit.status_code == 200
+    assert yanit.headers["content-type"].startswith("text/event-stream")
+    metin = yanit.text
+    assert "event: hata" in metin
+    assert "ust_saglayici_hatasi" in metin
+    assert metin.rstrip().endswith("event: bitti\ndata: {}")
+
+
 async def test_cek_ucu_kimlik_gerekli(istemci):
     bdm_id = await bdm_ekle("ollama")
     yanit = await istemci.post(f"{HAZIRLAMA}/{bdm_id}/cek")
@@ -362,7 +511,7 @@ async def test_gpu_var_vllm_manifest_uretir(istemci, yardimci, surucu_kur):
 
 
 @pytest.mark.parametrize(
-    ("saglayici", "model", "beklenen_komut", "port", "gpu", "bellek_gb"),
+    ("saglayici", "model", "beklenen_komut", "port", "gpu", "bellek_gb", "saglik"),
     [
         (
             "vllm",
@@ -377,6 +526,7 @@ async def test_gpu_var_vllm_manifest_uretir(istemci, yardimci, surucu_kur):
             8000,
             True,
             14.0,
+            "http://localhost:8000/health",
         ),
         (
             "tgi",
@@ -391,12 +541,21 @@ async def test_gpu_var_vllm_manifest_uretir(istemci, yardimci, surucu_kur):
             8080,
             True,
             16.0,
+            "http://localhost:8080/health",
         ),
-        ("ollama", "llama3", ["ollama", "serve"], 11434, False, 4.0),
+        (
+            "ollama",
+            "llama3",
+            ["ollama", "serve"],
+            11434,
+            False,
+            4.0,
+            "http://localhost:11434/api/tags",
+        ),
     ],
 )
 async def test_manifest_saglayiciya_gore_komut_uretir(
-    saglayici, model, beklenen_komut, port, gpu, bellek_gb
+    saglayici, model, beklenen_komut, port, gpu, bellek_gb, saglik
 ):
     bdm_id = await bdm_ekle(saglayici, upstream_model=model)
     async with oturum_fabrikasi()() as oturum:
@@ -409,6 +568,8 @@ async def test_manifest_saglayiciya_gore_komut_uretir(
     assert uretilen["image"] == saglayici_bilgisi(saglayici).konteyner_image
     assert uretilen["bellek_gb"] == pytest.approx(bellek_gb)
     assert isinstance(uretilen["ortam"], dict)
+    # Regresyon (BULGU-4): Docker sürücüsünün HTTP sağlık sondası bu adresi kullanır.
+    assert uretilen["saglik_url"] == saglik
 
 
 async def test_manifest_uzak_saglayici_icin_uretilmez():
@@ -492,3 +653,53 @@ async def test_on_kontrol_ucu_uyari_dondurur(istemci, yardimci, surucu_kur):
     govde = yanit.json()
     assert govde["uygun"] is False
     assert GPU_UYARI_MESAJI in govde["uyarilar"]
+
+
+@pytest.mark.parametrize(
+    ("saglayici", "temel_url"),
+    [
+        ("openai", "https://api.openai.com/v1"),
+        ("azure", "https://ornek.openai.azure.com/v1"),
+        ("openrouter", "https://openrouter.ai/api/v1"),
+        ("ozel", "http://127.0.0.1:1234/v1"),
+    ],
+)
+async def test_on_kontrol_uzak_saglayicida_konteyner_uyarisi_uretmez(
+    saglayici, temel_url, surucu_kur
+):
+    """Regresyon (BULGU-5): uzak sağlayıcıda Docker/imaj uyarısı yanıltıcıdır."""
+    surucu_kur(docker_var=False, gpu_var=False, image_onbellek=[])
+    bdm_id = await bdm_ekle(
+        saglayici, upstream_model="gpt-4o-mini", temel_url=temel_url
+    )
+    async with oturum_fabrikasi()() as oturum:
+        bdm = await bdm_getir(oturum, bdm_id)
+        sonuc = await on_kontrol(bdm)
+
+    assert sonuc["uygun"] is True
+    assert sonuc["uyarilar"] == []
+
+
+async def test_on_kontrol_ollama_sunucusunda_konteyner_uyarisi_uretmez(surucu_kur):
+    """Regresyon (BULGU-5): Ollama host üzerinde çalışan sunucudur, imaj gerektirmez."""
+    surucu_kur(docker_var=False, gpu_var=False, image_onbellek=[])
+    bdm_id = await bdm_ekle("ollama", upstream_model="llama3")
+    async with oturum_fabrikasi()() as oturum:
+        bdm = await bdm_getir(oturum, bdm_id)
+        sonuc = await on_kontrol(bdm)
+
+    assert sonuc["uygun"] is True
+    assert sonuc["uyarilar"] == []
+
+
+async def test_on_kontrol_konteyner_saglayicisinda_docker_uyarisi_kalir(surucu_kur):
+    """Konteyner sağlayıcılarında (vllm/tgi) Docker/imaj uyarıları korunur."""
+    surucu_kur(docker_var=False, gpu_var=True, image_onbellek=[])
+    bdm_id = await bdm_ekle("vllm", upstream_model="mistralai/Mistral-7B-Instruct-v0.3")
+    async with oturum_fabrikasi()() as oturum:
+        bdm = await bdm_getir(oturum, bdm_id)
+        sonuc = await on_kontrol(bdm)
+
+    assert sonuc["uygun"] is False
+    assert DOCKER_UYARI_MESAJI in sonuc["uyarilar"]
+    assert any("vllm/vllm-openai:latest" in uyari for uyari in sonuc["uyarilar"])

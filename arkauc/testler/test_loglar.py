@@ -269,6 +269,54 @@ async def test_log_uclari_kimlik_ve_yetki_ister(istemci, yardimci):
     assert yanit.json()["hata"]["kod"] == "kimlik_gerekli"
 
 
+async def test_konusma_silme_izleyiciye_kapali_operator_ve_yoneticiye_acik(istemci, yardimci):
+    bdm_id = await _bdm_olustur()
+    konusma_id = await _konusma_ekle(bdm_id, baslik="İzleyici denemesi")
+    izleyici = await yardimci.kullanici_ekle(rol=Rol.izleyici)
+    izleyici_basliklari = yardimci.basliklar(izleyici)
+
+    yanit = await istemci.delete(
+        f"/api/v1/loglar/konusmalar/{konusma_id}", headers=izleyici_basliklari
+    )
+    assert yanit.status_code == 403
+    assert yanit.json()["hata"]["kod"] == "yetki_yok"
+    assert "konusma.silindi" not in await _islem_eylemleri()
+
+    # İzleyici okumaya devam eder; silme yalnızca yazma yetkisini kısıtlar.
+    yanit = await istemci.get(
+        f"/api/v1/loglar/konusmalar/{konusma_id}", headers=izleyici_basliklari
+    )
+    assert yanit.status_code == 200
+
+    operator = await yardimci.kullanici_ekle(rol=Rol.operator)
+    yanit = await istemci.delete(
+        f"/api/v1/loglar/konusmalar/{konusma_id}", headers=yardimci.basliklar(operator)
+    )
+    assert yanit.status_code == 204
+    assert "konusma.silindi" in await _islem_eylemleri()
+
+
+async def test_log_sayfalama_sinirlari_dogrulanir(istemci, yardimci):
+    basliklar = yardimci.basliklar(await yardimci.yonetici())
+
+    yanit = await istemci.get(
+        "/api/v1/loglar/konusmalar"
+        "?baslangic=2026-09-06T00:00:00Z&bitis=2026-09-04T00:00:00Z",
+        headers=basliklar,
+    )
+    assert yanit.status_code == 400
+    assert yanit.json()["hata"]["kod"] == "gecersiz_istek"
+
+    for sorgu in ("boyut=-5", "boyut=0", "boyut=201", "boyut=10000", "sayfa=0", "sayfa=-3"):
+        yanit = await istemci.get(f"/api/v1/loglar/konusmalar?{sorgu}", headers=basliklar)
+        assert yanit.status_code == 400, sorgu
+        assert yanit.json()["hata"]["kod"] == "dogrulama_hatasi", sorgu
+
+    yanit = await istemci.get("/api/v1/loglar/konusmalar?boyut=200", headers=basliklar)
+    assert yanit.status_code == 200
+    assert yanit.json()["boyut"] == 200
+
+
 # --------------------------------------------------------------------------
 # API anahtarları
 # --------------------------------------------------------------------------
@@ -335,6 +383,45 @@ async def test_api_anahtari_iptali_kalicidir_ve_denetlenir(istemci, yardimci):
     )
     assert yanit.status_code == 404
     assert "api_anahtari.iptal_edildi" in await _islem_eylemleri()
+
+
+async def test_api_anahtari_uclari_izleyiciye_kapali_operator_ve_yoneticiye_acik(
+    istemci, yardimci
+):
+    izleyici = await yardimci.kullanici_ekle(rol=Rol.izleyici)
+    izleyici_basliklari = yardimci.basliklar(izleyici)
+
+    assert (
+        await istemci.get("/api/v1/api-anahtarlari", headers=izleyici_basliklari)
+    ).status_code == 403
+    yanit = await istemci.post(
+        "/api/v1/api-anahtarlari", json={"ad": "İzleyici Anahtarı"},
+        headers=izleyici_basliklari,
+    )
+    assert yanit.status_code == 403
+    assert yanit.json()["hata"]["kod"] == "yetki_yok"
+    yanit = await istemci.post(
+        "/api/v1/api-anahtarlari/1/iptal", headers=izleyici_basliklari
+    )
+    assert yanit.status_code == 403
+    assert "api_anahtari.olusturuldu" not in await _islem_eylemleri()
+
+    operator = await yardimci.kullanici_ekle(rol=Rol.operator)
+    operator_basliklari = yardimci.basliklar(operator)
+    yanit = await istemci.post(
+        "/api/v1/api-anahtarlari", json={"ad": "Operatör Anahtarı"},
+        headers=operator_basliklari,
+    )
+    assert yanit.status_code == 201
+    anahtar_id = yanit.json()["id"]
+    assert (
+        await istemci.get("/api/v1/api-anahtarlari", headers=operator_basliklari)
+    ).status_code == 200
+    yanit = await istemci.post(
+        f"/api/v1/api-anahtarlari/{anahtar_id}/iptal", headers=operator_basliklari
+    )
+    assert yanit.status_code == 200
+    assert yanit.json() == {"durum": "iptal"}
 
 
 async def test_api_anahtari_bilinmeyen_modeli_reddeder(istemci, yardimci):

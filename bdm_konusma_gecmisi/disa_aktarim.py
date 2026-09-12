@@ -50,6 +50,17 @@ def markdown_disa_aktar(konusma: Konusma, detay: dict[str, object]) -> str:
     return "\n".join(satirlar)
 
 
+_FORMUL_ONEKLERI = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _hucre(deger: object) -> str:
+    """CSV formül enjeksiyonunu etkisizleştirir (Excel/Sheets)."""
+    metin = "" if deger is None else str(deger)
+    if metin.startswith(_FORMUL_ONEKLERI):
+        return "'" + metin
+    return metin
+
+
 def csv_disa_aktar(konusma: Konusma, detay: dict[str, object]) -> str:
     tampon = io.StringIO()
     yazici = csv.writer(tampon, lineterminator="\n")
@@ -57,12 +68,12 @@ def csv_disa_aktar(konusma: Konusma, detay: dict[str, object]) -> str:
     for mesaj in detay.get("mesajlar", []):  # type: ignore[union-attr]
         yazici.writerow(
             [
-                mesaj["id"],
-                mesaj["rol"],
-                mesaj["icerik"],
-                mesaj["token_sayisi"],
-                mesaj["gecikme_ms"],
-                mesaj["olusturulma"],
+                _hucre(mesaj["id"]),
+                _hucre(mesaj["rol"]),
+                _hucre(mesaj["icerik"]),
+                _hucre(mesaj["token_sayisi"]),
+                _hucre(mesaj["gecikme_ms"]),
+                _hucre(mesaj["olusturulma"]),
             ]
         )
     return tampon.getvalue()

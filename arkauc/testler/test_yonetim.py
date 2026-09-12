@@ -4,16 +4,21 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import json
 import os
 import socket
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 import sqlalchemy as sa
 
+from arkauc.app.cekirdek.hatalar import SurucuYok, UstSaglayiciHatasi
 from arkauc.app.servisler.konteyner import SahteSurucu, surucu_ata, surucu_temizle
 from bdm_veritabani.modeller import Bdm, BdmDurumu, IslemKaydi, Saglayici
 from bdm_veritabani.oturum import oturum_fabrikasi
 
+gunlukler = importlib.import_module("bdm_yönetim_ucu.gunlukler")
 yasam_dongusu = importlib.import_module("bdm_yönetim_ucu.yasam_dongusu")
 
 UC = "/api/v1/bdm/yonetim"
@@ -33,17 +38,26 @@ async def _manifest(bdm: Bdm) -> dict[str, object]:
     return dict(SAHTE_MANIFEST)
 
 
-async def _bdm_ekle(saglayici: str = "vllm", durum: BdmDurumu = BdmDurumu.taslak) -> int:
+async def _bdm_ekle(
+    saglayici: str = "vllm",
+    durum: BdmDurumu = BdmDurumu.taslak,
+    *,
+    slug: str | None = None,
+    temel_url: str = "http://localhost:8000/v1",
+    upstream_model: str = "mistralai/Mistral-7B-Instruct-v0.2",
+    konteyner: dict[str, object] | None = None,
+) -> int:
     async with oturum_fabrikasi()() as oturum:
         bdm = Bdm(
-            slug=f"{saglayici}-test",
+            slug=slug or f"{saglayici}-test",
             gorunen_ad=f"{saglayici} test modeli",
             saglayici=Saglayici(saglayici),
-            temel_url="http://localhost:8000/v1",
-            upstream_model="mistralai/Mistral-7B-Instruct-v0.2",
+            temel_url=temel_url,
+            upstream_model=upstream_model,
             durum=durum,
             yerel_mi=True,
             yetenekler={"akis": True, "gorsel": False, "arac": False},
+            konteyner=konteyner,
         )
         oturum.add(bdm)
         await oturum.commit()
@@ -98,6 +112,144 @@ def surucu_gpusuz():
 def manifest(monkeypatch):
     monkeypatch.setattr(yasam_dongusu, "manifest_al", _manifest)
     return SAHTE_MANIFEST
+
+
+class _SahteSunucu:
+    """Testler için sahte HTTP sunucusu (127.0.0.1, rastgele port).
+
+    - `GET /api/tags` → `{"models": [{"name": "llama3"}]}` (Ollama yoklaması)
+    - `POST /api/generate` → gövdesi `istekler` listesine yazılır, `yanit_kodu` döner
+    - `GET /saglik` → `saglik_kodu` ile yanıtlanır (Docker sağlık sondası)
+    """
+
+    def __init__(self) -> None:
+        self.istekler: list[tuple[str, dict[str, object]]] = []
+        self.yanit_kodu = 200
+        self.saglik_kodu = 200
+        kayit = self
+
+        class Isleyici(BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
+            def log_message(self, *args: object) -> None:  # test çıktısını kirletme
+                return None
+
+            def _gonder(self, kod: int, govde: dict[str, object]) -> None:
+                ham = json.dumps(govde).encode("utf-8")
+                self.send_response(kod)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(ham)))
+                self.end_headers()
+                self.wfile.write(ham)
+
+            def do_GET(self) -> None:
+                if self.path.startswith("/api/tags"):
+                    kayit.istekler.append(("GET /api/tags", {}))
+                    self._gonder(200, {"models": [{"name": "llama3"}]})
+                elif self.path.startswith("/saglik"):
+                    kayit.istekler.append(("GET /saglik", {}))
+                    self._gonder(kayit.saglik_kodu, {})
+                else:
+                    self._gonder(404, {})
+
+            def do_POST(self) -> None:
+                uzunluk = int(self.headers.get("Content-Length") or 0)
+                ham = self.rfile.read(uzunluk).decode("utf-8") if uzunluk else ""
+                try:
+                    govde: dict[str, object] = json.loads(ham) if ham else {}
+                except json.JSONDecodeError:
+                    govde = {"ham": ham}
+                kayit.istekler.append((f"POST {self.path}", govde))
+                self._gonder(kayit.yanit_kodu, {"done": True})
+
+        self._sunucu = ThreadingHTTPServer(("127.0.0.1", 0), Isleyici)
+        self._durdurucu = threading.Thread(target=self._sunucu.serve_forever, daemon=True)
+        self._durdurucu.start()
+        self.temel_url = f"http://127.0.0.1:{self._sunucu.server_address[1]}"
+
+    def kapat(self) -> None:
+        self._sunucu.shutdown()
+        self._sunucu.server_close()
+
+    def uretim_govdeleri(self) -> list[dict[str, object]]:
+        return [govde for ad, govde in self.istekler if ad == "POST /api/generate"]
+
+
+@pytest.fixture
+def sahte_sunucu() -> _SahteSunucu:
+    sunucu = _SahteSunucu()
+    yield sunucu
+    sunucu.kapat()
+
+
+class _KopanSurucu(SahteSurucu):
+    """Akış ortasında sürücü hatası veren sürücü."""
+
+    async def gunlukler(self, konteyner_id: str, satir: int = 200):  # type: ignore[override]
+        yield "ilk satır"
+        raise SurucuYok("Konteyner akışı koptu.")
+
+
+class _AsiliSurucu(SahteSurucu):
+    """Satır üretmeyen, test serbest bırakana kadar askıda kalan sürücü (nabız ölçümü)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.devam = asyncio.Event()
+
+    async def gunlukler(self, konteyner_id: str, satir: int = 200):  # type: ignore[override]
+        await self.devam.wait()
+        yield "geç kalan satır"
+
+
+class _DurdurmaHatasiSurucusu(SahteSurucu):
+    """`durdur` çağrısında çalışma zamanı hatası veren sürücü."""
+
+    async def durdur(self, konteyner_id: str) -> None:
+        raise UstSaglayiciHatasi("Model boşaltılamadı (sahte).")
+
+
+class _SahteKonteyner:
+    """`docker` SDK konteyner nesnesinin sağlık sondası için gereken yüzü."""
+
+    def __init__(self, *, etiketler: dict[str, str] | None = None, durum: str = "running") -> None:
+        self.labels = etiketler if etiketler is not None else {}
+        self.status = durum
+        self.id = "sahte-konteyner"
+
+    def reload(self) -> None:
+        return None
+
+
+class _SahteKonteynerler:
+    def __init__(self, konteyner: _SahteKonteyner) -> None:
+        self._konteyner = konteyner
+
+    def get(self, ad: str) -> _SahteKonteyner:
+        if ad != self._konteyner.id:
+            raise RuntimeError("no such container")
+        return self._konteyner
+
+    def run(self, image: str, **ayarlar: object) -> _SahteKonteyner:
+        etiketler = ayarlar.get("labels") or {}
+        self._konteyner.labels = dict(etiketler)  # type: ignore[arg-type]
+        return self._konteyner
+
+
+class _SahteImajlar:
+    def get(self, image: str) -> object:
+        return object()
+
+    def pull(self, image: str) -> object:
+        return object()
+
+
+class _SahteDockerIstemcisi:
+    """`docker.from_env()` yerine geçen istemci (Docker'sız sağlık sondası ölçümü)."""
+
+    def __init__(self, konteyner: _SahteKonteyner) -> None:
+        self.containers = _SahteKonteynerler(konteyner)
+        self.images = _SahteImajlar()
 
 
 @pytest.fixture
@@ -330,3 +482,244 @@ async def test_docker_surucusu_gercek_konteyner():
         await surucu.sil(konteyner_id)
 
     assert (await surucu.saglik(konteyner_id)).calisiyor is False
+
+
+# -- Dalga 1 gözlem bulguları: regresyon testleri ---------------------------
+
+
+async def test_yerel_durdur_modeli_bosaltir(istemci, personel, manifest, sahte_sunucu):
+    """`POST /{id}/durdur` gerçekten Ollama'ya `keep_alive: 0` isteği gönderir."""
+    from arkauc.app.servisler.konteyner_yerel import YerelSurucusu
+
+    surucu_ata(YerelSurucusu(temel_url=sahte_sunucu.temel_url))
+    try:
+        bdm_id = await _bdm_ekle(
+            "ollama",
+            BdmDurumu.hazir,
+            temel_url=f"{sahte_sunucu.temel_url}/v1",
+            upstream_model="llama3",
+        )
+        yanit = await istemci.post(f"{UC}/{bdm_id}/baslat", headers=personel)
+        assert yanit.status_code == 200
+
+        yanit = await istemci.post(f"{UC}/{bdm_id}/durdur", headers=personel)
+        assert yanit.status_code == 200
+        assert yanit.json() == {"durum": "durdu"}
+
+        assert sahte_sunucu.uretim_govdeleri() == [
+            {"model": "llama3", "keep_alive": 0, "prompt": ""}
+        ]
+        assert (await _bdm_oku(bdm_id)).durum == BdmDurumu.durdu
+    finally:
+        surucu_temizle()
+
+
+async def test_yerel_durdur_kayit_yoksa_hata_verir():
+    from arkauc.app.servisler.konteyner_yerel import YerelSurucusu
+
+    with pytest.raises(SurucuYok):
+        await YerelSurucusu().durdur("yerel:bilinmeyen")
+
+
+async def test_yerel_durdur_basarisiz_istekte_ust_saglayici_hatasi(sahte_sunucu):
+    from arkauc.app.servisler.konteyner_yerel import YerelSurucusu
+
+    surucu = YerelSurucusu()
+    await surucu.baslat(
+        {
+            "slug": "bozuk",
+            "temel_url": f"{sahte_sunucu.temel_url}/v1",
+            "upstream_model": "llama3",
+        },
+        {},
+    )
+    sahte_sunucu.yanit_kodu = 500
+    with pytest.raises(UstSaglayiciHatasi):
+        await surucu.durdur("yerel:bozuk")
+
+
+async def test_yerel_saglik_ve_gunlukler_bdm_adresini_kullanir(
+    istemci, personel, manifest, sahte_sunucu
+):
+    """Sağlık ve günlükler varsayılan 11434'e değil BDM'nin adresine bakar."""
+    from arkauc.app.servisler.konteyner_yerel import YerelSurucusu
+
+    surucu_ata(YerelSurucusu(temel_url=sahte_sunucu.temel_url))
+    try:
+        bdm_id = await _bdm_ekle(
+            "ollama",
+            BdmDurumu.hazir,
+            temel_url=f"{sahte_sunucu.temel_url}/v1",
+            upstream_model="llama3",
+        )
+        assert (await istemci.post(f"{UC}/{bdm_id}/baslat", headers=personel)).status_code == 200
+
+        saglik = (await istemci.get(f"{UC}/{bdm_id}/saglik", headers=personel)).json()
+        assert (saglik["calisiyor"], saglik["hazir"]) == (True, True)
+        assert saglik["ayrinti"]["temel_url"] == sahte_sunucu.temel_url
+        assert saglik["ayrinti"]["adres_kaynagi"] == "bellek"
+        assert saglik["ayrinti"]["modeller"] == ["llama3"]
+
+        govde = (await istemci.get(f"{UC}/{bdm_id}/gunlukler", headers=personel)).text
+        assert sahte_sunucu.temel_url in govde
+        assert "11434" not in govde
+    finally:
+        surucu_temizle()
+
+
+async def test_gunlukler_konteyner_yokken_hata_zarfi(istemci, personel, surucu):
+    """Konteyner kaydı var ama konteyner yoksa SSE başlamaz: 503 hata zarfı."""
+    bdm_id = await _bdm_ekle(
+        "vllm", BdmDurumu.hazir, konteyner={"konteyner_id": "boyle-bir-konteyner-yok"}
+    )
+
+    yanit = await istemci.get(f"{UC}/{bdm_id}/gunlukler", headers=personel)
+    assert yanit.status_code == 503
+    assert yanit.json()["hata"]["kod"] == "surucu_yok"
+    assert yanit.headers["content-type"].startswith("application/json")
+
+
+async def test_gunlukler_akis_ortasinda_hata_cercevesi(istemci, personel):
+    """Akış ortasında kopan sürücü `event: hata` + hata zarfı üretir."""
+    surucu_ata(_KopanSurucu())
+    try:
+        bdm_id = await _bdm_ekle("vllm", BdmDurumu.hazir, konteyner={"konteyner_id": "kopan-1"})
+        async with istemci.stream("GET", f"{UC}/{bdm_id}/gunlukler", headers=personel) as akis:
+            assert akis.status_code == 200
+            govde = "".join([parca async for parca in akis.aiter_text()])
+    finally:
+        surucu_temizle()
+
+    assert '"metin": "ilk satır"' in govde
+    assert "event: hata" in govde
+    assert '"hata"' in govde and '"kod": "surucu_yok"' in govde
+
+
+async def test_gunlukler_nabiz_gonderir(monkeypatch):
+    """Satır üretmeyen konteynerde akış askıda kalmaz, `: nabız` gönderilir."""
+    monkeypatch.setattr(gunlukler, "ILK_SATIR_ZAMAN_ASIMI", 0.02)
+    monkeypatch.setattr(gunlukler, "NABIZ_SANIYE", 0.02)
+    asili = _AsiliSurucu()
+
+    akis = await gunlukler.akis(asili, "asili-1", 200)
+    try:
+        parca = await asyncio.wait_for(anext(akis), timeout=2)
+        assert ": nabız" in parca
+    finally:
+        # İstemci bağlantıyı bıraktığında akış askıda kalmadan kapanmalı.
+        await asyncio.wait_for(akis.aclose(), timeout=2)
+        asili.devam.set()
+
+    assert ": nabız" in parca
+
+
+async def test_hata_durumundan_durdur_ile_kurtarma(istemci, personel, manifest, surucu):
+    """`hata` durumundan `durdur` 200; `baslat` 409 kalır."""
+    bdm_id = await _bdm_ekle("vllm", BdmDurumu.hazir)
+    assert (await istemci.post(f"{UC}/{bdm_id}/baslat", headers=personel)).status_code == 200
+    await _durum_yaz(bdm_id, BdmDurumu.hata)
+
+    yanit = await istemci.post(f"{UC}/{bdm_id}/baslat", headers=personel)
+    assert yanit.status_code == 409
+    assert yanit.json()["hata"]["kod"] == "gecersiz_gecis"
+
+    yanit = await istemci.post(f"{UC}/{bdm_id}/durdur", headers=personel)
+    assert yanit.status_code == 200
+    assert yanit.json() == {"durum": "durdu"}
+    assert (await _bdm_oku(bdm_id)).durum == BdmDurumu.durdu
+    assert "bdm.durduruldu" in await _eylemler(bdm_id)
+
+    assert (await istemci.post(f"{UC}/{bdm_id}/baslat", headers=personel)).status_code == 200
+
+
+async def test_hata_kurtarmasi_calisma_zamani_hatasinda_kilitlenmez(istemci, personel):
+    """Konteyner kaydı yoksa ya da sürücü hata verirse `hata`dan çıkış yine mümkün."""
+    surucu_ata(_DurdurmaHatasiSurucusu())
+    try:
+        kimliksiz = await _bdm_ekle("vllm", BdmDurumu.hata, slug="hata-kimliksiz")
+        yanit = await istemci.post(f"{UC}/{kimliksiz}/durdur", headers=personel)
+        assert yanit.status_code == 200
+        assert (await _bdm_oku(kimliksiz)).durum == BdmDurumu.durdu
+
+        kayitli = await _bdm_ekle(
+            "vllm", BdmDurumu.hata, slug="hata-kayitli", konteyner={"konteyner_id": "kopan-9"}
+        )
+        yanit = await istemci.post(f"{UC}/{kayitli}/durdur", headers=personel)
+        assert yanit.status_code == 200
+        assert (await _bdm_oku(kayitli)).durum == BdmDurumu.durdu
+    finally:
+        surucu_temizle()
+
+
+async def test_calisirken_durdurma_hatasi_yutulmaz(istemci, personel):
+    """`calisiyor`dan çıkışta sürücü hatası 502 olarak bildirilir, durum değişmez."""
+    surucu_ata(_DurdurmaHatasiSurucusu())
+    try:
+        bdm_id = await _bdm_ekle(
+            "vllm", BdmDurumu.calisiyor, konteyner={"konteyner_id": "kopan-10"}
+        )
+        yanit = await istemci.post(f"{UC}/{bdm_id}/durdur", headers=personel)
+        assert yanit.status_code == 502
+        assert yanit.json()["hata"]["kod"] == "ust_saglayici_hatasi"
+        assert (await _bdm_oku(bdm_id)).durum == BdmDurumu.calisiyor
+    finally:
+        surucu_temizle()
+
+
+async def test_yol_guncelleme_denetim_izine_yazilir(istemci, personel, surucu):
+    bdm_id = await _bdm_ekle("vllm", BdmDurumu.hazir)
+
+    yanit = await istemci.patch(
+        f"{UC}/{bdm_id}/yol",
+        headers=personel,
+        json={"oncelik": 7, "takma_ad": "hizli"},
+    )
+    assert yanit.status_code == 200
+
+    async with oturum_fabrikasi()() as oturum:
+        satir = (
+            (
+                await oturum.execute(
+                    sa.select(IslemKaydi).where(
+                        IslemKaydi.hedef_tur == "bdm",
+                        IslemKaydi.hedef_id == str(bdm_id),
+                        IslemKaydi.eylem == "bdm.yol_guncellendi",
+                    )
+                )
+            )
+            .scalars()
+            .one()
+        )
+    assert satir.ayrinti["yol"] == {"oncelik": 7, "takma_ad": "hizli"}
+
+
+async def test_docker_saglik_sondasi_manifest_adresini_kullanir(monkeypatch, sahte_sunucu):
+    """Manifest `saglik_url` üretiyorsa hazır bilgisi HTTP sondasından gelir."""
+    from arkauc.app.servisler.konteyner_docker import DockerSurucusu
+
+    konteyner = _SahteKonteyner()
+    surucu = DockerSurucusu()
+    monkeypatch.setattr(surucu, "istemci", lambda: _SahteDockerIstemcisi(konteyner))
+    saglik_url = f"{sahte_sunucu.temel_url}/saglik"
+
+    konteyner_id = await surucu.baslat(
+        {"slug": "docker-test"},
+        {"image": "nginx:alpine", "komut": [], "saglik_url": saglik_url},
+    )
+    saglik = await surucu.saglik(konteyner_id)
+    assert (saglik.calisiyor, saglik.hazir) == (True, True)
+    assert saglik.ayrinti["saglik_url"] == saglik_url
+    assert saglik.ayrinti["saglik_kaynagi"] == "saglik_url"
+
+    sahte_sunucu.saglik_kodu = 503
+    saglik = await surucu.saglik(konteyner_id)
+    assert (saglik.calisiyor, saglik.hazir) == (True, False)
+
+    etiketsiz = _SahteKonteyner()
+    etiketsiz_surucu = DockerSurucusu()
+    monkeypatch.setattr(etiketsiz_surucu, "istemci", lambda: _SahteDockerIstemcisi(etiketsiz))
+    kimlik = await etiketsiz_surucu.baslat({"slug": "etiketsiz"}, {"image": "nginx:alpine"})
+    saglik = await etiketsiz_surucu.saglik(kimlik)
+    assert saglik.hazir is True
+    assert saglik.ayrinti["saglik_kaynagi"] == "konteyner_durumu"
+    assert saglik.ayrinti["saglik_url_yok"] is True

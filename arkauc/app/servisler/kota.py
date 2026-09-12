@@ -223,3 +223,47 @@ async def kota_durumu(
         "kullanici": _sozluk(KotaKapsami.kullanici),
         "api_anahtari": _sozluk(KotaKapsami.api_anahtari),
     }
+
+
+def kapsam_sec(
+    *, kullanici_id: int | None, api_anahtari_id: int | None
+) -> tuple[KotaKapsami, int] | None:
+    """Etkin kapsami secer: anahtar varsa `api_anahtari`, yoksa `kullanici`."""
+    if api_anahtari_id is not None:
+        return KotaKapsami.api_anahtari, api_anahtari_id
+    if kullanici_id is not None:
+        return KotaKapsami.kullanici, kullanici_id
+    return None
+
+
+async def kapsam_kota_durumu(
+    oturum: AsyncSession,
+    *,
+    kullanici_id: int | None,
+    api_anahtari_id: int | None,
+) -> dict[str, object] | None:
+    """Secilen kapsamin kota durumu; tanimli kota yoksa `None` doner."""
+    secim = kapsam_sec(kullanici_id=kullanici_id, api_anahtari_id=api_anahtari_id)
+    if secim is None:
+        return None
+    kapsam, kapsam_id = secim
+    kayit = await _kayit_getir(oturum, kapsam, kapsam_id)
+    gunluk = kayit.gunluk_istek if kayit is not None else None
+    aylik = kayit.aylik_token if kayit is not None else None
+    if kapsam is KotaKapsami.api_anahtari:
+        anahtar = await _anahtar(oturum, kapsam_id)
+        if anahtar is not None and anahtar.gunluk_istek_siniri is not None:
+            gunluk = anahtar.gunluk_istek_siniri
+    if kayit is None and gunluk is None and aylik is None:
+        return None
+    an = datetime.now(timezone.utc)
+    kayit_gun = kayit.gun_sifirlanma if kayit is not None else gun_sonu(an)
+    kayit_ay = kayit.ay_sifirlanma if kayit is not None else ay_sonu(an)
+    return {
+        "gunluk_istek": gunluk,
+        "kullanilan_gunluk": kayit.kullanilan_gunluk if kayit is not None else 0,
+        "aylik_token": aylik,
+        "kullanilan_aylik": kayit.kullanilan_aylik if kayit is not None else 0,
+        "gun_sifirlanma": iso(kayit_gun),
+        "ay_sifirlanma": iso(kayit_ay),
+    }

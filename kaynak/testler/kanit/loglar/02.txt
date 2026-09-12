@@ -1,0 +1,81 @@
+
+=== POST /kullanicilar rol=operator ===
+HTTP 201 application/json
+{"id":3,"eposta":"goz-operator@gozlem.example.com","ad_soyad":"Goz operator","rol":"operator","durum":"aktif","eposta_dogrulandi":true,"olusturulma":"2026-09-12T19:43:48.857200+00:00","son_giris":null}
+
+=== POST /kullanicilar rol=izleyici ===
+HTTP 201 application/json
+{"id":4,"eposta":"goz-izleyici@gozlem.example.com","ad_soyad":"Goz izleyici","rol":"izleyici","durum":"aktif","eposta_dogrulandi":true,"olusturulma":"2026-09-12T19:43:48.911318+00:00","son_giris":null}
+
+=== SQL: BDM durumları ===
+[(1, 'yaris-model-1', 'hazir'), (2, 'yaris-model-2', 'taslak'), (3, 'goz-ikinci-model', 'hazir')]
+
+=== POST /api-anahtarlari (geçerli) ===
+HTTP 201 application/json
+{"id":1,"ad":"Goz Anahtar","onek":"kuty_wVZCFfj","son_dort":"d9FS","durum":"aktif","izinli_modeller":["yaris-model-1"],"gunluk_istek_siniri":null,"olusturulma":"2026-09-12T19:43:49.035397","son_kullanim":null,"tam_anahtar":"kuty_wVZCFfjPSEpmMs3sHrVZRUcMNYg0d9FS"}
+
+=== Oluşturma yanıtında kuty_ geçenler ===
+['kuty_wVZCFfjPSEpmMs3sHrVZRUcMNYg0d9FS']
+
+=== GET /api-anahtarlari (ham) ===
+[{"id":1,"ad":"Goz Anahtar","onek":"kuty_wVZCFfj","son_dort":"d9FS","durum":"aktif","izinli_modeller":["yaris-model-1"],"gunluk_istek_siniri":null,"olusturulma":"2026-09-12T19:43:49.035397","son_kullanim":null}]
+
+=== Liste yanıtında kuty_ geçenler ===
+[]
+
+=== Tam anahtar listede var mı? ===
+False
+
+=== Liste alanları ===
+['ad', 'durum', 'gunluk_istek_siniri', 'id', 'izinli_modeller', 'olusturulma', 'onek', 'son_dort', 'son_kullanim']
+
+=== POST /api-anahtarlari izinli_modeller=[yok-boyle-model] ===
+HTTP 400 application/json
+{"hata":{"kod":"gecersiz_istek","mesaj":"Bilinmeyen model seçildi.","ayrinti":{"gecersiz":["yok-boyle-model"]}}}
+
+=== POST /api-anahtarlari izinli_modeller=[gecerli,yok-2] ===
+HTTP 400 application/json
+{"hata":{"kod":"gecersiz_istek","mesaj":"Bilinmeyen model seçildi.","ayrinti":{"gecersiz":["yok-2"]}}}
+
+=== POST /api-anahtarlari izinli_modeller=[999999] ===
+HTTP 400 application/json
+{"hata":{"kod":"gecersiz_istek","mesaj":"Bilinmeyen model seçildi.","ayrinti":{"gecersiz":["999999"]}}}
+
+=== GET /modeller anahtarla (izinli=[yaris-model-1]) ===
+HTTP 200 application/json
+[{"id":1,"slug":"yaris-model-1","gorunen_ad":"Yaris Model 1","aciklama":"","saglayici":"ollama","baglam_penceresi":8192,"yetenekler":{"akis":true,"gorsel":false,"arac":false},"durum":"hazir"}]
+
+=== POST /api-anahtarlari/{id}/iptal ===
+HTTP 200 application/json
+{"durum":"iptal"}
+
+=== GET /modeller iptal sonrası ===
+HTTP 401 application/json
+{"hata":{"kod":"anahtar_gecersiz","mesaj":"API anahtarı iptal edilmiş.","ayrinti":{}}}
+
+=== POST /sohbet iptal sonrası ===
+HTTP 401 application/json
+{"hata":{"kod":"anahtar_gecersiz","mesaj":"API anahtarı iptal edilmiş.","ayrinti":{}}}
+
+=== GET /api-anahtarlari iptal sonrası (durum) ===
+HTTP 200 application/json
+[{"id":1,"ad":"Goz Anahtar","onek":"kuty_wVZCFfj","son_dort":"d9FS","durum":"iptal","izinli_modeller":["yaris-model-1"],"gunluk_istek_siniri":null,"olusturulma":"2026-09-12T19:43:49.035397","son_kullanim":"2026-09-12T19:43:49.062530"}]
+
+=== POST /api-anahtarlari (izleyici ile) ===
+HTTP 201 application/json
+{"id":2,"ad":"Izleyici Anahtari","onek":"kuty_xm8r2RQ","son_dort":"rPW1","durum":"aktif","izinli_modeller":[],"gunluk_istek_siniri":null,"olusturulma":"2026-09-12T19:43:49.091576","son_kullanim":null,"tam_anahtar":"kuty_xm8r2RQfd715BJXi2meWBrSNFTmIrPW1"}
+
+=== POST /api-anahtarlari (operator ile) ===
+HTTP 201 application/json
+{"id":3,"ad":"Operator Anahtari","onek":"kuty_eatOh32","son_dort":"SgN1","durum":"aktif","izinli_modeller":[],"gunluk_istek_siniri":null,"olusturulma":"2026-09-12T19:43:49.098939","son_kullanim":null,"tam_anahtar":"kuty_eatOh32jj5MWgKTgSvGhnpFX5FRnSgN1"}
+
+=== GET /api-anahtarlari (jetonsuz) ===
+HTTP 401 application/json
+{"hata":{"kod":"kimlik_gerekli","mesaj":"Bu işlem için giriş yapmalısınız.","ayrinti":{}}}
+
+=== POST /api-anahtarlari/999999/iptal ===
+HTTP 404 application/json
+{"hata":{"kod":"bulunamadi","mesaj":"API anahtarı bulunamadı.","ayrinti":{"api_anahtari_id":999999}}}
+
+=== SQL: api_anahtari (ham) ===
+[(1, 'Goz Anahtar', 'kuty_wVZCFfj', 'd9FS', 'iptal', '["yaris-model-1"]', 'ab1dabb6281c'), (2, 'Izleyici Anahtari', 'kuty_xm8r2RQ', 'rPW1', 'aktif', '[]', '50019d43245d'), (3, 'Operator Anahtari', 'kuty_eatOh32', 'SgN1', 'aktif', '[]', 'ca0921912910')]

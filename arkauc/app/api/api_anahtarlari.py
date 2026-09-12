@@ -2,6 +2,9 @@
 
 Tam anahtar yalnızca oluşturma yanıtında bir kez döner; sonraki okumalar
 `onek`/`son_dort` ile temsil edilir.
+
+Listeleme, oluşturma ve iptal `yonetici`/`operator` ile sınırlıdır; salt
+okunur `izleyici` bu uçlarda `403 yetki_yok` alır.
 """
 
 from __future__ import annotations
@@ -15,9 +18,11 @@ from arkauc.app.cekirdek.bagimliliklar import gecerli_personel, veritabani_oturu
 from arkauc.app.cekirdek.denetim import islem_kaydet
 from arkauc.app.cekirdek.guvenlik import api_anahtari_uret
 from arkauc.app.cekirdek.hatalar import Bulunamadi, GecersizIstek
-from bdm_veritabani.modeller import AnahtarDurumu, ApiAnahtari, Bdm, Kullanici
+from bdm_veritabani.modeller import AnahtarDurumu, ApiAnahtari, Bdm, Kullanici, Rol
 
 router = APIRouter()
+
+YAZMA_ROLLERI = (Rol.yonetici, Rol.operator)
 
 
 class AnahtarOlustur(BaseModel):
@@ -67,9 +72,9 @@ async def _izinli_modelleri_dogrula(
 @router.get("/api-anahtarlari")
 async def anahtarlari_listele(
     oturum: AsyncSession = Depends(veritabani_oturumu),
-    _personel: Kullanici = Depends(gecerli_personel()),
+    _personel: Kullanici = Depends(gecerli_personel(YAZMA_ROLLERI)),
 ) -> list[dict[str, object]]:
-    """Personel için tüm API anahtarlarını maskeli olarak listeler."""
+    """Yönetici/operatör için tüm API anahtarlarını maskeli olarak listeler."""
     satirlar = (
         await oturum.execute(
             sa.select(ApiAnahtari).order_by(
@@ -84,7 +89,7 @@ async def anahtarlari_listele(
 async def anahtar_olustur(
     govde: AnahtarOlustur,
     oturum: AsyncSession = Depends(veritabani_oturumu),
-    personel: Kullanici = Depends(gecerli_personel()),
+    personel: Kullanici = Depends(gecerli_personel(YAZMA_ROLLERI)),
 ) -> dict[str, object]:
     """Yeni API anahtarı üretir; tam anahtar yalnız bu yanıtta döner."""
     izinli = await _izinli_modelleri_dogrula(oturum, govde.izinli_modeller)
@@ -124,7 +129,7 @@ async def anahtar_olustur(
 async def anahtar_iptal(
     anahtar_id: int,
     oturum: AsyncSession = Depends(veritabani_oturumu),
-    personel: Kullanici = Depends(gecerli_personel()),
+    personel: Kullanici = Depends(gecerli_personel(YAZMA_ROLLERI)),
 ) -> dict[str, object]:
     """Anahtarı iptal eder; iptal edilmiş anahtar kimlik doğrulamada reddedilir."""
     anahtar = await oturum.get(ApiAnahtari, anahtar_id)

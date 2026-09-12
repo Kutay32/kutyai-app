@@ -1,0 +1,115 @@
+
+=== PUT /ayarlar {} ===
+HTTP 200 application/json
+{"marka_adi":"Yaris-2","kurulum_tamam":true,"saklama_gun":90,"maskeleme_aktif":true,"kayit_acik":true,"smtp_host":"","smtp_gonderen":"","smtp_tanimli":false,"bakim_modu":false}
+
+=== PUT /ayarlar {'marka_adi': 'Gözlem A.Ş.', 'saklama_gun': 30, 'maskeleme_aktif': False, 'kayit_acik': True, 'smtp_host': 'smtp.gozlem.example.com', 'smtp_port': 587, 'smtp_kullanici': 'gozlem', 'smtp_sifre': 'GozlemSmtpParolasi!42', 'smtp_gonderen': 'KutyAI <bildirim@gozlem.example.com>', 'smtp_tls': True, 'bakim_modu': False} ===
+HTTP 200 application/json
+{"marka_adi":"Gözlem A.Ş.","kurulum_tamam":true,"saklama_gun":30,"maskeleme_aktif":false,"kayit_acik":true,"smtp_host":"smtp.gozlem.example.com","smtp_gonderen":"KutyAI <bildirim@gozlem.example.com>","smtp_tanimli":true,"bakim_modu":false}
+
+=== GET /ayarlar (ham) ===
+HTTP 200
+{"marka_adi":"Gözlem A.Ş.","kurulum_tamam":true,"saklama_gun":30,"maskeleme_aktif":false,"kayit_acik":true,"smtp_host":"smtp.gozlem.example.com","smtp_gonderen":"KutyAI <bildirim@gozlem.example.com>","smtp_tanimli":true,"bakim_modu":false}
+
+=== GET /ayarlar içinde SMTP parolası var mı? ===
+False
+
+=== GET /ayarlar alanları ===
+['bakim_modu', 'kayit_acik', 'kurulum_tamam', 'marka_adi', 'maskeleme_aktif', 'saklama_gun', 'smtp_gonderen', 'smtp_host', 'smtp_tanimli']
+
+=== SQL: smtp_sifre ham değeri ===
+('"gAAAAABqpat2fpehA8t0zaqyvIWpy5Eln2cvzoc4zp3Hy9UsZVG71vAmT4Izvw1RQ8bTmmaK71j5peI0Gno0G1lAvLOGhW-i4lnL7RvDOLgt-Un6XEhqLf0="',)
+
+=== SQL: smtp ile ilgili ayarlar ===
+[('smtp_gonderen', '"KutyAI <bildirim@gozlem.example.com>"'), ('smtp_host', '"smtp.gozlem.example.com"'), ('smtp_port', '587'), ('smtp_kullanici', '"gozlem"'), ('smtp_sifre', '"gAAAAABqpat2fpehA8t0zaqyvIWpy5Eln2cvzoc4zp3Hy9UsZVG71vAmT4I'), ('smtp_tls', 'true')]
+
+=== PUT /ayarlar {'saklama_gun': 0} ===
+HTTP 400 application/json
+{"hata":{"kod":"dogrulama_hatasi","mesaj":"Gönderilen alanlar doğrulanamadı.","ayrinti":{"alanlar":[{"alan":"saklama_gun","mesaj":"Input should be greater than or equal to 1"}]}}}
+
+=== PUT /ayarlar {'saklama_gun': 3651} ===
+HTTP 400 application/json
+{"hata":{"kod":"dogrulama_hatasi","mesaj":"Gönderilen alanlar doğrulanamadı.","ayrinti":{"alanlar":[{"alan":"saklama_gun","mesaj":"Input should be less than or equal to 3650"}]}}}
+
+=== PUT /ayarlar {'saklama_gun': 3650} ===
+HTTP 200 application/json
+{"marka_adi":"Gözlem A.Ş.","kurulum_tamam":true,"saklama_gun":3650,"maskeleme_aktif":false,"kayit_acik":true,"smtp_host":"smtp.gozlem.example.com","smtp_gonderen":"KutyAI <bildirim@gozlem.example.com>","smtp_tanimli":true,"bakim_modu":false}
+
+=== PUT /ayarlar {'marka_adi': ''} ===
+HTTP 400 application/json
+{"hata":{"kod":"dogrulama_hatasi","mesaj":"Gönderilen alanlar doğrulanamadı.","ayrinti":{"alanlar":[{"alan":"marka_adi","mesaj":"String should have at least 1 character"}]}}}
+
+=== PUT /ayarlar {'smtp_port': 0} ===
+HTTP 400 application/json
+{"hata":{"kod":"dogrulama_hatasi","mesaj":"Gönderilen alanlar doğrulanamadı.","ayrinti":{"alanlar":[{"alan":"smtp_port","mesaj":"Input should be greater than or equal to 1"}]}}}
+
+=== PUT /ayarlar {'smtp_port': 70000} ===
+HTTP 400 application/json
+{"hata":{"kod":"dogrulama_hatasi","mesaj":"Gönderilen alanlar doğrulanamadı.","ayrinti":{"alanlar":[{"alan":"smtp_port","mesaj":"Input should be less than or equal to 65535"}]}}}
+
+=== PUT /ayarlar {'bilinmeyen_alan': 'x', 'kayit_acik': False} ===
+HTTP 200 application/json
+{"marka_adi":"Gözlem A.Ş.","kurulum_tamam":true,"saklama_gun":3650,"maskeleme_aktif":false,"kayit_acik":false,"smtp_host":"smtp.gozlem.example.com","smtp_gonderen":"KutyAI <bildirim@gozlem.example.com>","smtp_tanimli":true,"bakim_modu":false}
+
+=== PUT /ayarlar {'smtp_sifre': ''} ===
+HTTP 200 application/json
+{"marka_adi":"Gözlem A.Ş.","kurulum_tamam":true,"saklama_gun":3650,"maskeleme_aktif":false,"kayit_acik":false,"smtp_host":"smtp.gozlem.example.com","smtp_gonderen":"KutyAI <bildirim@gozlem.example.com>","smtp_tanimli":true,"bakim_modu":false}
+
+=== SQL: smtp_sifre temizleme sonrası ===
+('""',)
+
+=== PUT /ayarlar {'smtp_sifre': 'GozlemSmtpParolasi!42'} ===
+HTTP 200 application/json
+{"marka_adi":"Gözlem A.Ş.","kurulum_tamam":true,"saklama_gun":3650,"maskeleme_aktif":false,"kayit_acik":false,"smtp_host":"smtp.gozlem.example.com","smtp_gonderen":"KutyAI <bildirim@gozlem.example.com>","smtp_tanimli":true,"bakim_modu":false}
+
+=== GET /ayarlar (operator) ===
+HTTP 403 application/json
+{"hata":{"kod":"yetki_yok","mesaj":"Bu işlem için yetkiniz yok.","ayrinti":{}}}
+
+=== PUT /ayarlar (izleyici) ===
+HTTP 403 application/json
+{"hata":{"kod":"yetki_yok","mesaj":"Bu işlem için yetkiniz yok.","ayrinti":{}}}
+
+=== GET /ayarlar (jetonsuz) ===
+HTTP 401 application/json
+{"hata":{"kod":"kimlik_gerekli","mesaj":"Bu işlem için giriş yapmalısınız.","ayrinti":{}}}
+
+=== GET /saglik/kurulum (marka sonrası) ===
+HTTP 200 application/json
+{"kurulum_tamam":true,"marka_adi":"Gözlem A.Ş.","surum":"0.1.0"}
+
+=== PUT /ayarlar {'bakim_modu': True} ===
+HTTP 200 application/json
+{"marka_adi":"Gözlem A.Ş.","kurulum_tamam":true,"saklama_gun":3650,"maskeleme_aktif":false,"kayit_acik":false,"smtp_host":"smtp.gozlem.example.com","smtp_gonderen":"KutyAI <bildirim@gozlem.example.com>","smtp_tanimli":true,"bakim_modu":true}
+
+=== GET /ayarlar (bakım açık) ===
+HTTP 200 application/json
+{"marka_adi":"Gözlem A.Ş.","kurulum_tamam":true,"saklama_gun":3650,"maskeleme_aktif":false,"kayit_acik":false,"smtp_host":"smtp.gozlem.example.com","smtp_gonderen":"KutyAI <bildirim@gozlem.example.com>","smtp_tanimli":true,"bakim_modu":true}
+
+=== POST /sohbet (bakım açık) ===
+HTTP 502 application/json
+{"hata":{"kod":"ust_saglayici_hatasi","mesaj":"Model sağlayıcısına bağlanılamadı.","ayrinti":{"durum":0,"govde":"ConnectError: All connection attempts failed"}}}
+
+=== GET /modeller (bakım açık) ===
+HTTP 200 application/json
+[{"id":3,"slug":"goz-ikinci-model","gorunen_ad":"Goz Ikinci Model","aciklama":"","saglayici":"ollama","baglam_penceresi":8192,"yetenekler":{"akis":true,"gorsel":false,"arac":false},"durum":"hazir"},{"id":1,"slug":"yaris-model-1","gorunen_ad":"Yaris Model 1","aciklama":"","saglayici":"ollama","baglam_penceresi":8192,"yetenekler":{"akis":true,"gorsel":false,"arac":false},"durum":"hazir"}]
+
+=== GET /loglar/konusmalar (bakım açık) ===
+HTTP 200 application/json
+{"toplam":2,"sayfa":1,"boyut":25,"kayitlar":[{"id":4,"baslik":"Bakım modunda mıyız?","kullanici_id":1,"kullanici_eposta":"goz-yonetici-1@gozlem.example.com","api_anahtari_id":null,"bdm_id":1,"bdm_ad":"Yaris Model 1","mesaj_sayisi":1,"token_girdi":5,"token_cikti":0,"olusturulma":"2026-09-12T19:43:50.810954","guncellenme":"2026-09-12T19:43:50.818045"},{"id":3,"baslik":"API anahtarıyla sohbet","kullanici_id":null,"kullanici_eposta":null,"api_anahtari_id":1,"bdm_id":1,"bdm_ad":"Yaris Model 1","mesaj_sayisi":2,"token_girdi":5,"token_cikti":6,"olusturulma":"2026-09-11T23:00:00","guncellenme":"2026-09-11T23:00:00"}]}
+
+=== PUT /ayarlar {'bakim_modu': False} ===
+HTTP 200 application/json
+{"marka_adi":"Gözlem A.Ş.","kurulum_tamam":true,"saklama_gun":3650,"maskeleme_aktif":false,"kayit_acik":false,"smtp_host":"smtp.gozlem.example.com","smtp_gonderen":"KutyAI <bildirim@gozlem.example.com>","smtp_tanimli":true,"bakim_modu":false}
+
+=== SQL: ayar.guncellendi denetim kayıtları ===
+id=26 kullanici_id=1 ayrinti={"anahtarlar": ["bakim_modu", "kayit_acik", "marka_adi", "maskeleme_aktif", "saklama_gun", "smtp_gonderen", "smtp_host", "smtp_kullanici", "smtp_port", "smtp_sifre", "smtp_tls"]}
+id=27 kullanici_id=1 ayrinti={"anahtarlar": ["saklama_gun"]}
+id=28 kullanici_id=1 ayrinti={"anahtarlar": ["kayit_acik"]}
+id=29 kullanici_id=1 ayrinti={"anahtarlar": ["smtp_sifre"]}
+id=30 kullanici_id=1 ayrinti={"anahtarlar": ["smtp_sifre"]}
+id=31 kullanici_id=1 ayrinti={"anahtarlar": ["bakim_modu"]}
+id=32 kullanici_id=1 ayrinti={"anahtarlar": ["bakim_modu"]}
+
+=== SQL: denetim izinde SMTP parolası geçiyor mu? ===
+(0,)

@@ -57,12 +57,19 @@ def _cerceve(olay: str, veri: dict[str, Any]) -> str:
 
 
 async def _sse(olaylar: AsyncIterator[dict[str, Any]]) -> AsyncIterator[str]:
-    """Akisi SSE cercevelerine cevirir; hatalar `event: hata` olarak akitilir."""
+    """Akisi SSE cercevelerine cevirir; hatalar `event: hata` olarak akitilir.
+
+    Uretici ne firlatirsa firlatsin baglanti govdesiz kapanmaz: istisna Turkce
+    hata zarfina cevrilir ve ardindan her zaman `event: bitti` gonderilir
+    (API.md §9). Istemci kopmasi (`asyncio.CancelledError`) yakalanmaz.
+    """
     try:
         async for olay in olaylar:
             yield _cerceve("ilerleme", olay)
     except KutyaiHatasi as hata:
         yield _cerceve("hata", hata.govde())
+    except Exception as hata:  # noqa: BLE001 - SSE govdesi yarim kapanmamali
+        yield _cerceve("hata", cekim.akis_hatasi(hata).govde())
     yield _cerceve("bitti", {})
 
 

@@ -2,15 +2,23 @@
 
 Tek seferliktir: `ayar.kurulum_tamam` yazıldıktan sonra gelen istekler
 `409 kurulum_zaten_tamam` ile reddedilir.
+
+Yarış koruması tek süreç (tek uvicorn worker) varsayımına dayanır: kurulum
+kritik bölgesi modül düzeyindeki `asyncio.Lock` ile serileştirilir, kilidin
+içinde `kurulum_tamam` yeniden okunur ve yazım kilidinden çıkmadan commit
+edilir. Çok işçili kurulumda bu kilit paylaşılmaz; o durumda çakışma
+`IntegrityError` → `409 cakisma` güvenlik ağına düşer.
 """
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 
 import sqlalchemy as sa
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from arkauc.app.cekirdek.ayarlar_db import ayar_oku, ayar_yaz
@@ -22,6 +30,24 @@ from bdm_listesi import BdmOlustur, bdm_olustur, bdm_sozlugu
 from bdm_veritabani.modeller import Bdm, Kullanici, KullaniciDurumu, Rol
 
 router = APIRouter()
+
+_kurulum_kilidi: asyncio.Lock | None = None
+_kurulum_kilidi_dongusu: asyncio.AbstractEventLoop | None = None
+
+
+def _kilit() -> asyncio.Lock:
+    """Kurulum kilidini çalışan olay döngüsüne bağlar.
+
+    `asyncio.Lock` ilk beklemede oluşturulduğu döngüye bağlanır; üretimde tek
+    döngü vardır, testlerde ise senaryo başına yeni döngü kurulduğundan kilit
+    döngü değişiminde yeniden üretilir.
+    """
+    global _kurulum_kilidi, _kurulum_kilidi_dongusu
+    dongu = asyncio.get_running_loop()
+    if _kurulum_kilidi is None or _kurulum_kilidi_dongusu is not dongu:
+        _kurulum_kilidi = asyncio.Lock()
+        _kurulum_kilidi_dongusu = dongu
+    return _kurulum_kilidi
 
 
 class YoneticiGirdisi(BaseModel):
@@ -102,37 +128,53 @@ async def kurulumu_tamamla(
     if await ayar_oku(oturum, "kurulum_tamam", False):
         raise Cakisma("Kurulum daha önce tamamlanmış.", kod="kurulum_zaten_tamam")
 
-    eposta = str(govde.yonetici.eposta).lower()
-    mevcut = (
-        await oturum.execute(sa.select(Kullanici.id).where(Kullanici.eposta == eposta))
-    ).scalar_one_or_none()
-    if mevcut is not None:
-        raise Cakisma("Bu e-posta ile kayıtlı bir kullanıcı var.", {"alan": "eposta"})
+    async with _kilit():
+        # Kilit alındıktan sonra taze okuma: eşzamanlı istek bu arada bitirmiş olabilir.
+        if await ayar_oku(oturum, "kurulum_tamam", False):
+            raise Cakisma("Kurulum daha önce tamamlanmış.", kod="kurulum_zaten_tamam")
 
-    yonetici = Kullanici(
-        eposta=eposta,
-        ad_soyad=govde.yonetici.ad_soyad,
-        sifre_hash=sifre_hashle(govde.yonetici.parola),
-        rol=Rol.yonetici,
-        durum=KullaniciDurumu.aktif,
-        eposta_dogrulandi=True,
-    )
-    oturum.add(yonetici)
-    await oturum.flush()
+        eposta = str(govde.yonetici.eposta).lower()
+        mevcut = (
+            await oturum.execute(
+                sa.select(Kullanici.id).where(Kullanici.eposta == eposta)
+            )
+        ).scalar_one_or_none()
+        if mevcut is not None:
+            raise Cakisma("Bu e-posta ile kayıtlı bir kullanıcı var.", {"alan": "eposta"})
 
-    bdm = await bdm_olustur(oturum, govde.bdm)
+        try:
+            yonetici = Kullanici(
+                eposta=eposta,
+                ad_soyad=govde.yonetici.ad_soyad,
+                sifre_hash=sifre_hashle(govde.yonetici.parola),
+                rol=Rol.yonetici,
+                durum=KullaniciDurumu.aktif,
+                eposta_dogrulandi=True,
+            )
+            oturum.add(yonetici)
+            await oturum.flush()
 
-    await ayar_yaz(oturum, "marka_adi", govde.marka_adi)
-    await ayar_yaz(oturum, "varsayilan_bdm_slug", bdm.slug)
-    await ayar_yaz(oturum, "kurulum_tamam", True)
-    await islem_kaydet(
-        oturum,
-        "kurulum.tamamlandi",
-        kullanici_id=yonetici.id,
-        hedef_tur="bdm",
-        hedef_id=bdm.id,
-        ayrinti={"marka_adi": govde.marka_adi, "bdm_slug": bdm.slug},
-    )
+            bdm = await bdm_olustur(oturum, govde.bdm)
+
+            await ayar_yaz(oturum, "marka_adi", govde.marka_adi)
+            await ayar_yaz(oturum, "varsayilan_bdm_slug", bdm.slug)
+            await ayar_yaz(oturum, "kurulum_tamam", True)
+            await islem_kaydet(
+                oturum,
+                "kurulum.tamamlandi",
+                kullanici_id=yonetici.id,
+                hedef_tur="bdm",
+                hedef_id=bdm.id,
+                ayrinti={"marka_adi": govde.marka_adi, "bdm_slug": bdm.slug},
+            )
+            # Kilit bırakılmadan kalıcılaştır: sonraki istek ancak yazım görünür
+            # olduktan sonra `kurulum_tamam`ı okuyabilir.
+            await oturum.commit()
+        except IntegrityError as hata:
+            await oturum.rollback()
+            raise Cakisma(
+                "Bu e-posta ile kayıtlı bir kullanıcı var.", {"alan": "eposta"}
+            ) from hata
 
     dogrulama = await _upstream_dogrula(oturum, bdm) if govde.dogrula else None
     return {

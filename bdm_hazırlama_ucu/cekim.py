@@ -3,6 +3,9 @@
 Ollama yerel API'sinin `POST {temel}/api/pull` NDJSON akisi `{yuzde, mesaj}`
 olaylarina cevrilir; `temel_url` icindeki `/v1` eki kirpilir. Diger
 saglayicilarda indirme desteklenmez: `GecersizIstek` firlatilir.
+
+Akis sirasinda olusan tasima/adres hatalari `akis_hatasi` ile Turkce hata
+zarfina cevrilir; HTTP katmani (`uc._sse`) bunu `event: hata` olarak akitir.
 """
 
 from __future__ import annotations
@@ -14,13 +17,30 @@ from typing import Any
 
 import httpx
 
-from arkauc.app.cekirdek.hatalar import GecersizIstek, UstSaglayiciHatasi
+from arkauc.app.cekirdek.hatalar import (
+    GecersizIstek,
+    KutyaiHatasi,
+    SunucuHatasi,
+    UstSaglayiciHatasi,
+)
+from bdm_hazırlama_ucu.dogrulama import BAGLANTI_MESAJI
 from bdm_veritabani.modeller import Bdm, Saglayici
 
 logger = logging.getLogger("kutyai.hazirlama")
 
 ZAMAN_ASIMI_SN = 30.0
 DESTEKLENMEYEN_MESAJ = "Bu sağlayıcı için model indirme desteklenmiyor."
+
+# Adres/tasima kaynakli istisnalar: `httpx.InvalidURL`, `httpx.UnsupportedProtocol`
+# disinda IDNA hatalari (`UnicodeError`) ve bozuk adres degerleri (`ValueError`)
+# da `httpx.HTTPError` hiyerarsisinde degildir; ayrica yakalanmalari gerekir.
+AG_HATALARI: tuple[type[Exception], ...] = (
+    httpx.InvalidURL,
+    httpx.UnsupportedProtocol,
+    httpx.HTTPError,
+    UnicodeError,
+    ValueError,
+)
 
 # Ollama durum metinlerinin Turkce karsiliklari.
 DURUM_CEVIRILERI: dict[str, str] = {
@@ -36,6 +56,21 @@ DURUM_CEVIRILERI: dict[str, str] = {
 def varsayilan_tasima() -> httpx.AsyncBaseTransport | None:
     """Varsayilan ag tasimasi; testler sahte tasima enjekte etmek icin ezer."""
     return None
+
+
+def akis_hatasi(hata: BaseException) -> KutyaiHatasi:
+    """Indirme akisini kesen istisnayi Turkce hata zarfina cevirir.
+
+    Tasima/adres kaynakli hatalar saglayici hatasi olarak bildirilir; beklenmeyen
+    hatalar sunucu hatasina duser. Cagiran taraf sonucu `event: hata` olarak akitir.
+    """
+    if isinstance(hata, AG_HATALARI):
+        logger.warning("Model indirme akisi kesildi: %s", hata)
+        return UstSaglayiciHatasi(
+            BAGLANTI_MESAJI, {"neden": type(hata).__name__}
+        )
+    logger.exception("Model indirme akisinda beklenmeyen hata.", exc_info=hata)
+    return SunucuHatasi()
 
 
 def cek_destegi_denetle(bdm: Bdm) -> None:

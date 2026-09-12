@@ -19,7 +19,7 @@ Her hata gövdesi:
 | HTTP | `kod` |
 |---|---|
 | 400 | `gecersiz_istek`, `dogrulama_hatasi` |
-| 401 | `kimlik_gerekli`, `jeton_gecersiz`, `jeton_suresi_doldu`, `anahtar_gecersiz` |
+| 401 | `kimlik_gerekli`, `jeton_gecersiz`, `jeton_suresi_doldu`, `anahtar_gecersiz`, `gecersiz_kimlik_bilgisi` |
 | 403 | `yetki_yok`, `eposta_dogrulanmadi` |
 | 404 | `bulunamadi` |
 | 409 | `cakisma`, `gecersiz_gecis`, `kurulum_zaten_tamam` |
@@ -47,7 +47,10 @@ type Bdm = {
   yetenekler: { akis: boolean; gorsel: boolean; arac: boolean };
   durum: "taslak"|"hazir"|"calisiyor"|"durdu"|"hata";
   yerel_mi: boolean;
-  konteyner: { image?: string; gpu?: boolean; port?: number; bellek_gb?: number } | null;
+  konteyner: {
+    image?: string; gpu?: boolean; port?: number; bellek_gb?: number; konteyner_id?: string;
+    yol?: { takma_ad?: string; oncelik?: number };
+  } | null;
   olusturulma: string; guncellenme: string;
 };
 type BdmOzet = Pick<Bdm, "id"|"slug"|"gorunen_ad"|"aciklama"|"saglayici"|"baglam_penceresi"|"yetenekler"|"durum">;
@@ -107,7 +110,7 @@ Yanıt `201`: `{ "yonetici": Kullanici, "bdm": Bdm, "dogrulama": { "basarili": b
 | PATCH | `/kullanicilar/{id}` | `{rol?, durum?, ad_soyad?}` → `Kullanici` |
 | DELETE | `/kullanicilar/{id}` | — → `204` (pasifleştirir) |
 
-## 7. API anahtarları
+## 7. API anahtarları (yönetici/operatör; `izleyici` → `403`)
 
 | Yöntem | Yol | Yanıt |
 |---|---|---|
@@ -121,11 +124,11 @@ Yanıt `201`: `{ "yonetici": Kullanici, "bdm": Bdm, "dogrulama": { "basarili": b
 |---|---|---|---|
 | GET | `/modeller` | kimlikli | `BdmOzet[]` (yalnız `hazir\|calisiyor`, anahtarın izinli listesi süzülür) |
 | GET | `/saglayicilar` | **açık** | `[{ad, gorunen_ad, yerel, gpu_gerekir, akis_destegi, api_anahtari_gerekir, varsayilan_temel_url, varsayilan_port, konteyner_image, aciklama}]` — kurulum sihirbazı kimlik doğrulamadan önce çağırır |
-| GET | `/bdm` | personel | `Bdm[]` |
+| GET | `/bdm` | personel | `Bdm[]`; isteğe bağlı `?arama=` (görünen ad ve slug üzerinde, büyük/küçük harf duyarsız) |
 | POST | `/bdm` | yönetici/operatör | `201 Bdm` |
 | PATCH | `/bdm/{id}` | yönetici/operatör | `Bdm` |
 | POST | `/bdm/{id}/kopyala` | yönetici | `201 Bdm` |
-| DELETE | `/bdm/{id}` | yönetici | `204` |
+| DELETE | `/bdm/{id}` | yönetici | `204`; `durum=calisiyor` ise veya bağlı konuşma/kullanım kaydı varsa `409 gecersiz_gecis` |
 
 `POST /bdm` gövdesi:
 ```json
@@ -176,7 +179,11 @@ data: {"token_girdi":12,"token_cikti":34,"gecikme_ms":812}
 event: bitti
 data: {}
 ```
-Hata durumunda: `event: hata` + `data:` içinde hata zarfı. `Content-Type: text/event-stream`.
+Hata durumunda: `event: hata` + `data:` içinde hata zarfı, **ardından her zaman `event: bitti`**. `Content-Type: text/event-stream`.
+
+**Maskeleme sınırı (bilinçli karar):** Kullanıcı mesajı hem veritabanına hem sağlayıcıya **maskelenmiş** olarak gider. Modelin ürettiği yanıt veritabanına **maskelenmiş** kaydedilir; istemciye ise ham akıtılır (kendi oturumunun verisi). Bu nedenle paneldeki kayıt ile istemcideki metin farklı olabilir — kayıt tarafı KVKK'ya uygun, gösterim tarafı kullanıcının kendi verisidir.
+
+**Bakım modu:** `ayar.bakim_modu=true` iken `/sohbet` ve `/sohbet/akis` → `503 bdm_hazir_degil` (mesaj: "Sistem bakımda.").
 
 ## 10. BDM hazırlama — `/bdm/hazirlama` (personel)
 
@@ -211,15 +218,19 @@ Geçersiz durum geçişi `409 gecersiz_gecis`.
 | GET | `/loglar/konusmalar?kullanici_id=&bdm_id=&baslangic=&bitis=&arama=&sayfa=&boyut=` | `Sayfa<{id,baslik,kullanici_eposta,bdm_ad,mesaj_sayisi,token_girdi,token_cikti,olusturulma}>` |
 | GET | `/loglar/konusmalar/{id}` | mesajlarla birlikte |
 | GET | `/loglar/konusmalar/{id}/disa-aktar?bicim=json\|md\|csv` | dosya indirme |
-| DELETE | `/loglar/konusmalar/{id}` | `204` |
+| DELETE | `/loglar/konusmalar/{id}` | `204` — yönetici/operatör (`izleyici` → `403`) |
 | POST | `/loglar/temizle` `{gun?}` | `{silinen:number}` (yalnız yönetici) |
+
+Sayfalama sınırları: `sayfa >= 1`, `1 <= boyut <= 200`; aralık dışı değer `400 dogrulama_hatasi`.
+`baslangic > bitis` ise `400 gecersiz_istek`.
 
 ## 13. Kullanım
 
-| Yöntem | Yol | Yanıt |
-|---|---|---|
-| GET | `/kullanim/ozet?gun=30` | `{ toplam_istek, toplam_token, basarili, hatali, kota_asimi, ortalama_gecikme_ms }` |
-| GET | `/kullanim/zaman-serisi?gun=30&kirilim=bdm\|kullanici` | `{ seri: [{ etiket, istek, token }] }` |
+| Yöntem | Yol | Yetki | Yanıt |
+|---|---|---|---|
+| GET | `/kullanim/ozet?gun=30` | personel | `{ toplam_istek, toplam_token, basarili, hatali, kota_asimi, ortalama_gecikme_ms }` |
+| GET | `/kullanim/zaman-serisi?gun=30&kirilim=bdm\|kullanici` | personel | `{ seri: [{ etiket, istek, token }] }` |
+| GET | `/kullanim/benim?gun=30` | `gecerli_istemci` | Kişisel kullanım: `{ gun, toplam_istek, toplam_token, girdi_token, cikti_token, ortalama_gecikme_ms, kota: {gunluk_istek, kullanilan_gunluk, aylik_token, kullanilan_aylik, gun_sifirlanma, ay_sifirlanma} \| null, seri: [{ tarih, token }] }` — yalnız çağıran kullanıcının/anahtarın kayıtları |
 
 ## 14. Ayarlar (yönetici)
 

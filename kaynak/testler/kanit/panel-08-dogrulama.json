@@ -1,0 +1,62 @@
+{
+  "S1": {
+    "yenilePost": 1,
+    "cevap": [
+      "200 /bdm/yonetim/surucu/durum",
+      "200 /kullanim/ozet?gun=30",
+      "200 /loglar/konusmalar?boyut=5",
+      "200 /bdm/yonetim/surucu/durum",
+      "200 /kullanim/ozet?gun=30",
+      "200 /loglar/konusmalar?boyut=5",
+      "200 /saglik",
+      "200 /saglik",
+      "401 /bdm/yonetim/surucu/durum",
+      "401 /kullanim/ozet?gun=30",
+      "401 /loglar/konusmalar?boyut=5",
+      "401 /bdm/yonetim/surucu/durum",
+      "401 /kullanim/ozet?gun=30",
+      "401 /loglar/konusmalar?boyut=5",
+      "200 /saglik/kurulum",
+      "200 /saglik/kurulum",
+      "200 /bdm/yonetim/surucu/durum",
+      "200 /kullanim/ozet?gun=30",
+      "200 /loglar/konusmalar?boyut=5",
+      "200 /bdm/yonetim/surucu/durum",
+      "200 /kullanim/ozet?gun=30",
+      "200 /loglar/konusmalar?boyut=5",
+      "200 /kullanim/ozet?gun=30",
+      "200 /bdm/yonetim/surucu/durum",
+      "200 /bdm/yonetim/surucu/durum",
+      "200 /kullanim/ozet?gun=30",
+      "200 /loglar/konusmalar?boyut=5",
+      "200 /loglar/konusmalar?boyut=5"
+    ],
+    "son": {
+      "url": "http://localhost:3001/",
+      "anahtarlar": [
+        "kutyai.panel.yenileme",
+        "kutyai.panel.kullanici",
+        "kutyai.panel.erisim"
+      ]
+    }
+  },
+  "S2": {
+    "yenilePost": 1,
+    "url": "http://localhost:3001/",
+    "anahtarlar": [
+      "kutyai.panel.yenileme",
+      "kutyai.panel.kullanici",
+      "kutyai.panel.erisim"
+    ]
+  },
+  "S3": {
+    "yenilePost": 1,
+    "url": "http://localhost:3001/",
+    "anahtarlar": [
+      "kutyai.panel.yenileme",
+      "kutyai.panel.kullanici",
+      "kutyai.panel.erisim"
+    ],
+    "metin": "Acme AI | Kontrol Paneli | Ayse Yilmaz | Kontrol Paneli | Platformun genel durumu, kullanım değerleri ve son konuşmalar. | Sistem Durumu | API sunucusunun canlılık bilgisi. | Ayakta | Sürüm 0.1.0 | Ortam | test | Sunuc"
+  }
+}

@@ -2,10 +2,11 @@
 
 Once `GET {temel_url}/models` yoklanir; bu uc 401/403/404/405 dondururse
 1 tokenlik `POST {temel_url}/chat/completions` denemesi yapilir. Gecikme
-olculur ve sonuca gore `bdm.durum` `hazir` ya da `hata` yazilir.
+olculur ve sonuca gore `bdm.durum` `hazir` ya da `hata` yazilir; `calisiyor`
+durumundaki BDM'e dokunulmaz (API.md §11 durum makinesi).
 
-Baglanti hatalari firlatilmaz: sonuc `basarili=False` ve Turkce mesajla
-doner, boylece panel kullaniciya nedeni gosterebilir.
+Baglanti ve adres hatalari firlatilmaz: sonuc `basarili=False` ve Turkce
+mesajla doner, boylece panel kullaniciya nedeni gosterebilir.
 """
 
 from __future__ import annotations
@@ -27,6 +28,16 @@ ZAMAN_ASIMI_SN = 10.0
 YEDEK_DENEME_KODLARI = frozenset({401, 403, 404, 405})
 BAGLANTI_MESAJI = "Model sağlayıcısına bağlanılamadı. Adresi ve ağ erişimini kontrol edin."
 ADRES_MESAJI = "Model adresi tanımlı değil. Lütfen temel adresi girin."
+ADRES_GECERSIZ_MESAJI = "Sağlayıcı adresi geçersiz."
+# Cozulemeyen/bozuk adresler: `httpx.InvalidURL` ve `httpx.UnsupportedProtocol`
+# `httpx.HTTPError` hiyerarsisinde degildir; IDNA hatalari `UnicodeError`/`ValueError`
+# olarak gelir. Adres hatalari baglanti hatasindan ayri mesajla bildirilir.
+ADRES_HATALARI: tuple[type[Exception], ...] = (
+    httpx.InvalidURL,
+    httpx.UnsupportedProtocol,
+    UnicodeError,
+    ValueError,
+)
 
 
 def varsayilan_tasima() -> httpx.AsyncBaseTransport | None:
@@ -75,10 +86,17 @@ async def _sonuc(
     modeller: list[str],
     mesaj: str,
 ) -> dict[str, Any]:
-    """Sonucu BDM durumuna yazar ve API govdesini dondurur."""
-    bdm.durum = BdmDurumu.hazir if basarili else BdmDurumu.hata
-    if oturum is not None:
-        await oturum.flush()
+    """Sonucu BDM durumuna yazar ve API govdesini dondurur.
+
+    Calisan bir BDM'in durumu degistirilmez: konteyner ayakta kalir, ancak
+    `calisiyor` durumundan `hazir`/`hata` gecisi durum makinesinde yoktur
+    (API.md §11) ve BDM'i durdurulamaz hale getirirdi. Sonuc yalnizca yanitta
+    bildirilir.
+    """
+    if bdm.durum != BdmDurumu.calisiyor:
+        bdm.durum = BdmDurumu.hazir if basarili else BdmDurumu.hata
+        if oturum is not None:
+            await oturum.flush()
     return {
         "basarili": basarili,
         "gecikme_ms": gecikme_ms,
@@ -101,6 +119,24 @@ async def _baglanti_hatasi(
         gecikme_ms=_gecikme_ms(baslangic),
         modeller=[],
         mesaj=BAGLANTI_MESAJI,
+    )
+
+
+async def _adres_hatasi(
+    bdm: Bdm,
+    oturum: AsyncSession | None,
+    baslangic: float,
+    hata: Exception,
+) -> dict[str, Any]:
+    """Bozuk/cozulemeyen adresi 500 yerine Turkce sonucla bildirir."""
+    logger.warning("BDM %s icin saglayici adresi gecersiz: %s", bdm.id, hata)
+    return await _sonuc(
+        bdm,
+        oturum,
+        basarili=False,
+        gecikme_ms=_gecikme_ms(baslangic),
+        modeller=[],
+        mesaj=ADRES_GECERSIZ_MESAJI,
     )
 
 
@@ -148,6 +184,8 @@ async def _denemeleri_yap(
 ) -> dict[str, Any]:
     try:
         yanit = await istemci.get(f"{temel}/models", headers=basliklar)
+    except ADRES_HATALARI as hata:
+        return await _adres_hatasi(bdm, oturum, baslangic, hata)
     except httpx.HTTPError as hata:
         return await _baglanti_hatasi(bdm, oturum, baslangic, hata)
 
@@ -192,6 +230,8 @@ async def _denemeleri_yap(
                 "stream": False,
             },
         )
+    except ADRES_HATALARI as hata:
+        return await _adres_hatasi(bdm, oturum, baslangic, hata)
     except httpx.HTTPError as hata:
         return await _baglanti_hatasi(bdm, oturum, baslangic, hata)
 

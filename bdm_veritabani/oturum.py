@@ -33,8 +33,26 @@ def motor() -> Any:
         else:
             secenekler["pool_pre_ping"] = True
         _motor = create_async_engine(url, **secenekler)
+        if url.startswith("sqlite"):
+            _yabanci_anahtar_zorla(_motor.sync_engine)
         _uretici = async_sessionmaker(_motor, class_=AsyncSession, expire_on_commit=False)
     return _motor
+
+
+def _yabanci_anahtar_zorla(senkron_motor: Any) -> None:
+    """SQLite baglantilarinda FOREIGN KEY zorlamasini acar.
+
+    SQLite varsayilan olarak yabanci anahtarlari yok sayar; bu olmadan
+    `ON DELETE CASCADE`/`RESTRICT` kurallari sessizce devre disi kalir ve
+    yetim kayitlar olusur.
+    """
+    from sqlalchemy import event
+
+    @event.listens_for(senkron_motor, "connect")
+    def _ac(dbapi_baglanti: Any, _kayit: Any) -> None:  # pragma: no cover - surucu kancasi
+        imlec = dbapi_baglanti.cursor()
+        imlec.execute("PRAGMA foreign_keys=ON")
+        imlec.close()
 
 
 def oturum_fabrikasi() -> async_sessionmaker[AsyncSession]:

@@ -1,0 +1,20 @@
+
+=== POST /kullanicilar izleyici (2) ===
+HTTP 409 application/json
+{"hata":{"kod":"cakisma","mesaj":"Bu e-posta adresi zaten kayıtlı.","ayrinti":{}}}
+
+=== POST /api-anahtarlari (izleyici2) ===
+HTTP 201 application/json
+{"id":5,"ad":"Izleyici-2 Anahtar","onek":"kuty_YeuZtho","son_dort":"GhZS","durum":"aktif","izinli_modeller":[],"gunluk_istek_siniri":null,"olusturulma":"2026-09-12T19:46:31.878247","son_kullanim":null,"tam_anahtar":"kuty_YeuZtho6I6qyoS1ddFUe1AnidFEPGhZS"}
+
+=== POST /api-anahtarlari/{id}/iptal (izleyici2) ===
+HTTP 200 application/json
+{"durum":"iptal"}
+
+=== GET /modeller (izleyicinin ürettiği anahtarla) ===
+HTTP 200 application/json
+[{"id":3,"slug":"goz-ikinci-model","gorunen_ad":"Goz Ikinci Model","aciklama":"","saglayici":"ollama","baglam_penceresi":8192,"yetenekler":{"akis":true,"gorsel":false,"arac":false},"durum":"hazir"},{"id":1,"slug":"yaris-model-1","gorunen_ad":"Yaris Model 1","aciklama":"","saglayici":"ollama","baglam_penceresi":8192,"yetenekler":{"akis":true,"gorsel":false,"arac":false},"durum":"hazir"}]
+
+=== POST /sohbet (izleyicinin ürettiği anahtarla) ===
+HTTP 502 application/json
+{"hata":{"kod":"ust_saglayici_hatasi","mesaj":"Model sağlayıcısına bağlanılamadı.","ayrinti":{"durum":0,"govde":"ConnectError: All connection attempts failed"}}}

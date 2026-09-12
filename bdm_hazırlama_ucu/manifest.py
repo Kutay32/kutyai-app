@@ -2,7 +2,8 @@
 
 Uzak saglayicilar (openai, azure, openrouter, ozel) icin manifest uretilmez;
 konteynerde calisan yerel saglayicilar (ollama, vllm, tgi) icin imaj, komut,
-port, GPU bayragi, kaba bellek tahmini ve ortam degiskenleri dondurulur.
+port, GPU bayragi, kaba bellek tahmini, ortam degiskenleri ve HTTP saglik
+sondasi adresi (`saglik_url`) dondurulur.
 """
 
 from __future__ import annotations
@@ -19,6 +20,13 @@ from bdm_veritabani.modeller import Bdm, Saglayici
 logger = logging.getLogger("kutyai.hazirlama")
 
 VARSAYILAN_PORT = 8000
+# Konteyner HTTP saglik sondasi yollari; Docker surucusu bu adresi
+# `kutyai.saglik_url` etiketi olarak yazar (spec §10).
+_SAGLIK_YOLLARI: dict[str, str] = {
+    "vllm": "/health",
+    "tgi": "/health",
+    "ollama": "/api/tags",
+}
 # Model adindaki parametre sayisi: `7B`, `72b`, `1.5B`.
 _PARAMETRE_DESENI = re.compile(r"(\d+(?:[.,]\d+)?)\s*[bB](?![A-Za-z0-9])")
 # fp16 agirliklar icin parametre basina bellek (GB).
@@ -83,6 +91,16 @@ def _ortam(bdm: Bdm, port: int) -> dict[str, str]:
     return {"HF_TOKEN": anahtar} if anahtar else {}
 
 
+def saglik_url(bdm: Bdm, port: int) -> str:
+    """Konteyner HTTP saglik sondasi adresi; bilinmeyen saglayicida bos dize.
+
+    Konteyner portu host'a ayni numarayla eslenir (Docker surucusu), bu yuzden
+    adres `localhost:{port}` uzerinden kurulur.
+    """
+    yol = _SAGLIK_YOLLARI.get(bdm.saglayici.value, "")
+    return f"http://localhost:{port}{yol}" if yol else ""
+
+
 def manifest_uret(bdm: Bdm) -> dict[str, Any]:
     """Saglayiciya uygun konteyner manifestini uretir."""
     bilgi = saglayici_bilgisi(bdm.saglayici.value)
@@ -99,4 +117,5 @@ def manifest_uret(bdm: Bdm) -> dict[str, Any]:
         "gpu": bilgi.gpu_gerekir,
         "bellek_gb": bellek_tahmini(bdm),
         "ortam": _ortam(bdm, port),
+        "saglik_url": saglik_url(bdm, port),
     }

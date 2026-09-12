@@ -1,0 +1,55 @@
+
+=== Baseline GET /saglik/kurulum ===
+HTTP 200 application/json
+{"kurulum_tamam":false,"marka_adi":"KutyAI","surum":"0.1.0"}
+
+=== Senaryo ===
+FARKLI E-POSTA
+
+=== İstek 1 (geçen 0.14s) ===
+HTTP 201 application/json
+{"yonetici":{"id":1,"eposta":"goz-yonetici-1@gozlem.example.com","ad_soyad":"Gözlem Yönetici","rol":"yonetici","durum":"aktif","eposta_dogrulandi":true,"olusturulma":"2026-09-12T19:43:48.009716+00:00","son_giris":null},"bdm":{"id":1,"slug":"yaris-model-1","gorunen_ad":"Yaris Model 1","aciklama":"","saglayici":"ollama","temel_url":"http://127.0.0.1:11434/v1","upstream_model":"llama3","api_anahtari_maskeli":"","baglam_penceresi":8192,"maks_cikti":2048,"sicaklik_varsayilan":0.7,"sistem_istemi":"","yetenekler":{"akis":true,"gorsel":false,"arac":false},"durum":"taslak","yerel_mi":true,"konteyner":null,"olusturulma":"2026-09-12T19:43:48.065749","guncellenme":"2026-09-12T19:43:48.065751"},"dogrulama":null,"kurulum_tamam":true}
+
+=== İstek 2 (geçen 0.14s) ===
+HTTP 201 application/json
+{"yonetici":{"id":2,"eposta":"goz-yonetici-2@gozlem.example.com","ad_soyad":"Gözlem Yönetici","rol":"yonetici","durum":"aktif","eposta_dogrulandi":true,"olusturulma":"2026-09-12T19:43:48.062039+00:00","son_giris":null},"bdm":{"id":2,"slug":"yaris-model-2","gorunen_ad":"Yaris Model 2","aciklama":"","saglayici":"ollama","temel_url":"http://127.0.0.1:11434/v1","upstream_model":"llama3","api_anahtari_maskeli":"","baglam_penceresi":8192,"maks_cikti":2048,"sicaklik_varsayilan":0.7,"sistem_istemi":"","yetenekler":{"akis":true,"gorsel":false,"arac":false},"durum":"taslak","yerel_mi":true,"konteyner":null,"olusturulma":"2026-09-12T19:43:48.080304","guncellenme":"2026-09-12T19:43:48.080306"},"dogrulama":null,"kurulum_tamam":true}
+
+=== Sonra GET /saglik/kurulum ===
+HTTP 200 application/json
+{"kurulum_tamam":true,"marka_adi":"Yaris-2","surum":"0.1.0"}
+
+=== Kurulum sonrası tekrar POST /kurulum ===
+HTTP 409 application/json
+{"hata":{"kod":"kurulum_zaten_tamam","mesaj":"Kurulum daha önce tamamlanmış.","ayrinti":{}}}
+
+=== Panel girişi goz-yonetici-1@gozlem.example.com ===
+HTTP 200 application/json
+{"erisim_jetonu":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwicm9sIjoieW9uZXRpY2kiLCJqdGkiOiIxYWFoQlU4R3pjR3ZnUWwxZERTbk53IiwidHVyIjoiZXJpc2ltIiwiaWF0IjoxNzg5MjQyMjI4LCJleHAiOjE3ODkyNDMxMjh9.eD7UOsfzWrWLy8Nm0GJz95dmd7iihpRKKjRFM2EWeAI","yenileme_jetonu":"qQQfDmbGrltSdaAPEFTov1Ohnzc9-D7WI9j10GkRYhbpvL8wOKGhdGEpjWGb_yUx","kullanici":{"id":1,"eposta":"goz-yonetici-1@gozlem.example.com","ad_soyad":"Gözlem Yönetici","rol":"yonetici","durum":"aktif","eposta_dogrulandi":true,"olusturulma":"2026-09-12T19:43:48.009716","son_giris":"2026-09-12T19:43:48.151333+00:00"}}
+
+=== Panel girişi goz-yonetici-2@gozlem.example.com ===
+HTTP 200 application/json
+{"erisim_jetonu":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyIiwicm9sIjoieW9uZXRpY2kiLCJqdGkiOiI4aHFGaFpiNUxjb1JPaEJZcEI5TkdBIiwidHVyIjoiZXJpc2ltIiwiaWF0IjoxNzg5MjQyMjI4LCJleHAiOjE3ODkyNDMxMjh9.y6R7Wx0wvMGkIhN9PlbOJx1NT5zYIoIIybIHYJSey3Q","yenileme_jetonu":"E3RIZb015NqppIrXdE2GicEjOi17yQsSVptUZQ_NMvXMAJnT_jots9cRQrbHOiS9","kullanici":{"id":2,"eposta":"goz-yonetici-2@gozlem.example.com","ad_soyad":"Gözlem Yönetici","rol":"yonetici","durum":"aktif","eposta_dogrulandi":true,"olusturulma":"2026-09-12T19:43:48.062039","son_giris":"2026-09-12T19:43:48.211444+00:00"}}
+
+=== Panel girişi goz-yonetici-3@gozlem.example.com ===
+HTTP 401 application/json
+{"hata":{"kod":"gecersiz_kimlik_bilgisi","mesaj":"E-posta veya parola hatalı.","ayrinti":{}}}
+
+=== GET /kullanicilar -> toplam=2 ===
+id=2 eposta=goz-yonetici-2@gozlem.example.com rol=yonetici durum=aktif
+id=1 eposta=goz-yonetici-1@gozlem.example.com rol=yonetici durum=aktif
+
+=== GET /bdm -> HTTP 200 ===
+id=1 slug=yaris-model-1 ad=Yaris Model 1
+id=2 slug=yaris-model-2 ad=Yaris Model 2
+
+=== SQL: kullanici tablosu ===
+[(1, 'goz-yonetici-1@gozlem.example.com', 'yonetici', 'aktif'), (2, 'goz-yonetici-2@gozlem.example.com', 'yonetici', 'aktif')]
+
+=== SQL: bdm tablosu ===
+[(1, 'yaris-model-1', 'Yaris Model 1'), (2, 'yaris-model-2', 'Yaris Model 2')]
+
+=== SQL: kurulum ayarları ===
+[('kurulum_tamam', 'true'), ('marka_adi', '"Yaris-2"'), ('varsayilan_bdm_slug', '"yaris-model-2"')]
+
+=== SQL: islem_kaydi ===
+[(1, 'kurulum.tamamlandi', 1, 'bdm', '1'), (2, 'kurulum.tamamlandi', 2, 'bdm', '2'), (3, 'kimlik.giris', 1, 'kullanici', '1'), (4, 'kimlik.giris', 2, 'kullanici', '2'), (5, 'kimlik.giris', 1, 'kullanici', '1')]

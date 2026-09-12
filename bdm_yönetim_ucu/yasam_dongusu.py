@@ -8,7 +8,12 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from arkauc.app.cekirdek.denetim import islem_kaydet
-from arkauc.app.cekirdek.hatalar import BdmHazirDegil, GecersizGecis, SurucuYok
+from arkauc.app.cekirdek.hatalar import (
+    BdmHazirDegil,
+    GecersizGecis,
+    SurucuYok,
+    UstSaglayiciHatasi,
+)
 from arkauc.app.servisler.konteyner import KonteynerSurucusu, SaglikDurumu, surucu_al
 from bdm_listesi import bdm_sozlugu
 from bdm_listesi.saglayicilar import saglayici_bilgisi
@@ -23,12 +28,14 @@ GPU_GEREKLI_MESAJ = (
 )
 
 # Durum makinesi: taslak → hazir → calisiyor → durdu; `hata` her durumdan girilebilir.
+# `hata`dan çıkış yöneticinin kurtarma yollarıdır: `durdu` (durdur ucu) ve
+# `hazir` (doğrulama ucu); `calisiyor`a doğrudan geçiş yoktur.
 gecerli_gecisler: dict[BdmDurumu, frozenset[BdmDurumu]] = {
     BdmDurumu.taslak: frozenset({BdmDurumu.hazir, BdmDurumu.hata}),
     BdmDurumu.hazir: frozenset({BdmDurumu.calisiyor, BdmDurumu.taslak, BdmDurumu.hata}),
     BdmDurumu.calisiyor: frozenset({BdmDurumu.durdu, BdmDurumu.hata}),
     BdmDurumu.durdu: frozenset({BdmDurumu.calisiyor, BdmDurumu.hazir, BdmDurumu.hata}),
-    BdmDurumu.hata: frozenset({BdmDurumu.taslak, BdmDurumu.hazir, BdmDurumu.hata}),
+    BdmDurumu.hata: frozenset({BdmDurumu.taslak, BdmDurumu.hazir, BdmDurumu.durdu, BdmDurumu.hata}),
 }
 
 
@@ -87,15 +94,22 @@ def _konteyner_kaydi(bdm: Bdm, manifest: dict[str, Any], konteyner_id: str) -> d
 
 
 async def _eski_konteyneri_kaldir(bdm: Bdm, surucu: KonteynerSurucusu) -> None:
-    """Varsa önceki konteyneri durdurup siler (en iyi çaba)."""
+    """Varsa önceki konteyneri durdurup siler (en iyi çaba).
+
+    Yerel sürücüde durdurma modeli boşaltmak için Ollama'ya istek atar; sunucu
+    yanıt vermezse `UstSaglayiciHatasi` yükselir. Bu, yeni başlatmayı engellemez:
+    `baslat` zaten sunucu erişilebilirliğini kendi yoklamasıyla denetler.
+    """
     kimlik = konteyner_kimligi(bdm, zorunlu=False)
     if kimlik is None:
         return
     for islem in (surucu.durdur, surucu.sil):
         try:
             await islem(kimlik)
-        except SurucuYok:
-            logger.warning("Eski konteyner zaten yok: %s", kimlik)
+        except (SurucuYok, UstSaglayiciHatasi) as hata:
+            logger.warning(
+                "Eski konteyner kaldırılamadı (%s/%s): %s", islem.__name__, kimlik, hata.mesaj
+            )
 
 
 async def _calistir(bdm: Bdm, surucu: KonteynerSurucusu) -> str:
@@ -157,11 +171,29 @@ async def durdur(
     kullanici_id: int | None = None,
     ip: str = "",
 ) -> dict[str, Any]:
-    """Çalışan konteyneri durdurur (`calisiyor` → `durdu`)."""
+    """Çalışan konteyneri durdurur (`calisiyor` → `durdu`).
+
+    `hata` durumundan çıkış bir kurtarma yoludur: kayıtlı konteyner yoksa ya da
+    çalışma zamanı onu tanımıyorsa/servise ulaşılamıyorsa durdurma en iyi çaba
+    olarak denenir ve hata durumu yöneticiyi kilitlememesi için geçiş yine
+    uygulanır (kesinti loga yazılır). `calisiyor`dan çıkışta hatalar yutulmaz.
+    """
     gecis_dogrula(bdm, BdmDurumu.durdu)
-    kimlik = konteyner_kimligi(bdm)
+    kurtarma = bdm.durum is BdmDurumu.hata
+    kimlik = konteyner_kimligi(bdm, zorunlu=not kurtarma)
     surucu = surucu_sec(bdm)
-    await surucu.durdur(kimlik)
+    if kimlik is not None:
+        try:
+            await surucu.durdur(kimlik)
+        except (SurucuYok, UstSaglayiciHatasi) as hata:
+            if not kurtarma:
+                raise
+            logger.warning(
+                "BDM %s hata durumundan çıkarılırken konteyner durdurulamadı (%s): %s",
+                bdm.id,
+                kimlik,
+                hata.mesaj,
+            )
     gecis_uygula(bdm, BdmDurumu.durdu)
     await _kaydet(
         oturum, "bdm.durduruldu", bdm, surucu, kimlik, kullanici_id=kullanici_id, ip=ip

@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 import sqlalchemy as sa
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from arkauc.app.cekirdek import guvenlik
@@ -36,6 +37,21 @@ EN_KISA_PAROLA = 8
 
 VARSAYILAN_SAYFA_BOYUTU = 25
 EN_BUYUK_SAYFA_BOYUTU = 200
+
+# Hesap var/yok ayrimini yanit suresinden okunamaz kilmak icin sabit maliyetli
+# karsilastirma: kayitli hesapta da bulunamayan/pasif hesapta da ayni argon2
+# dogrulamasi yapilir. Karsilastirilan parola sabit ozetle hicbir zaman eslesmez;
+# argon2 isi yine de tam olarak yapilir (VerifyMismatchError).
+SAHTE_PAROLA_HASH = (
+    "$argon2id$v=19$m=65536,t=3,p=4$6nqYQldmzK90s40AI5GbVA$"
+    "YYp36k7V3Y/W+rowHh51exiCSNjTiHCNq2xALd8qi1c"
+)
+ZAMANLAMA_SIFRESI = "kutyai-zamanlama-sahte-parola"
+
+
+def zamanlama_dogrulamasi() -> None:
+    """Sabit maliyetli argon2 dogrulamasi (hesap numaralandirma sizintisini kapatir)."""
+    guvenlik.sifre_dogrula(SAHTE_PAROLA_HASH, ZAMANLAMA_SIFRESI)
 
 
 class GecersizKimlikBilgisi(KutyaiHatasi):
@@ -101,6 +117,21 @@ async def kullanici_bul(oturum: AsyncSession, eposta: str) -> Kullanici | None:
             sa.select(Kullanici).where(Kullanici.eposta == eposta_normalize(eposta))
         )
     ).scalar_one_or_none()
+
+
+async def kaydi_yaz(oturum: AsyncSession, eposta: str) -> None:
+    """Bekleyen kullanici INSERT'ini yazar; eszamanli e-posta tekrarini 409 yapar.
+
+    "once ara, sonra ekle" yarisinda benzersizlik ihlali olusur; bu durum
+    500 yerine `409 cakisma` olarak raporlanir.
+    """
+    try:
+        await oturum.flush()
+    except IntegrityError:
+        await oturum.rollback()
+        if await kullanici_bul(oturum, eposta) is not None:
+            raise Cakisma("Bu e-posta adresi zaten kayıtlı.") from None
+        raise
 
 
 async def kullanici_getir(oturum: AsyncSession, kullanici_id: int) -> Kullanici | None:
@@ -179,7 +210,7 @@ async def kullanici_olustur(
         eposta_dogrulandi=True,
     )
     oturum.add(kullanici)
-    await oturum.flush()
+    await kaydi_yaz(oturum, normal)
     return kullanici
 
 
@@ -255,9 +286,25 @@ async def oturumu_yenile(
     ip: str = "",
     user_agent: str = "",
 ) -> tuple[Kullanici, str, str]:
-    """Refresh rotasyonu: eski kayit iptal edilir, yeni jeton cifti uretilir."""
+    """Refresh rotasyonu: eski kayit atomik olarak tuketilir, yeni jeton cifti uretilir.
+
+    Tuketim tek bir kosullu UPDATE ile yapilir (`iptal=0` -> `iptal=1`); ayni
+    jetonla paralel gelen isteklerden yalnizca biri `rowcount=1` gorur, digerleri
+    `401 jeton_gecersiz` alir. Yeni oturum kaydi ancak tuketim basariliysa eklenir.
+    """
+    sonuc = await oturum.execute(
+        sa.update(Oturum)
+        .where(
+            Oturum.jeton_hash == guvenlik.ozet(yenileme_jetonu),
+            Oturum.iptal.is_(False),
+        )
+        .values(iptal=True)
+    )
+    if int(sonuc.rowcount or 0) != 1:
+        raise JetonGecersiz("Oturum bilgisi geçersiz. Lütfen tekrar giriş yapın.")
+
     kayit = await oturum_bul(oturum, yenileme_jetonu)
-    if kayit is None or kayit.iptal:
+    if kayit is None:
         raise JetonGecersiz("Oturum bilgisi geçersiz. Lütfen tekrar giriş yapın.")
     if _utc(kayit.son_kullanma) <= datetime.now(timezone.utc):
         raise JetonSuresiDoldu()
@@ -266,7 +313,6 @@ async def oturumu_yenile(
         raise JetonGecersiz("Oturum bilgisi geçersiz. Lütfen tekrar giriş yapın.")
     if kullanici.durum == KullaniciDurumu.pasif:
         raise YetkiYok("Hesabınız devre dışı bırakılmış.")
-    kayit.iptal = True
     erisim, yeni_yenileme = await oturum_ac(
         oturum, kullanici, ip=ip, user_agent=user_agent
     )
@@ -334,7 +380,20 @@ async def dogrulama_jetonu_uret(
 async def dogrulama_jetonu_tuket(
     oturum: AsyncSession, jeton: str, tur: JetonTuru
 ) -> DogrulamaJetonu:
-    """Jetonu hash'i ile bulur ve tek kullanimlik/sureli kurallarini denetler."""
+    """Jetonu tek kullanimlik olarak atomik tuketir (spec §4.3).
+
+    Tuketim `kullanildi=0` kosullu tek UPDATE ile yapilir; ayni jetonla paralel
+    gelen isteklerden yalnizca biri tuketir, digerleri 400 alir.
+    """
+    sonuc = await oturum.execute(
+        sa.update(DogrulamaJetonu)
+        .where(
+            DogrulamaJetonu.jeton_hash == guvenlik.ozet(jeton),
+            DogrulamaJetonu.tur == tur,
+            DogrulamaJetonu.kullanildi.is_(False),
+        )
+        .values(kullanildi=True)
+    )
     kayit = (
         await oturum.execute(
             sa.select(DogrulamaJetonu).where(
@@ -345,8 +404,10 @@ async def dogrulama_jetonu_tuket(
     ).scalar_one_or_none()
     if kayit is None:
         raise GecersizIstek("Bağlantı geçersiz. Lütfen yeni bir bağlantı isteyin.")
-    if kayit.kullanildi:
-        raise GecersizIstek("Bu bağlantı daha önce kullanılmış.")
+    if int(sonuc.rowcount or 0) != 1:
+        if kayit.kullanildi:
+            raise GecersizIstek("Bu bağlantı daha önce kullanılmış.")
+        raise GecersizIstek("Bağlantı geçersiz. Lütfen yeni bir bağlantı isteyin.")
     if _utc(kayit.son_kullanma) <= datetime.now(timezone.utc):
         raise GecersizIstek("Bağlantının süresi doldu. Lütfen yeni bir bağlantı isteyin.")
     return kayit

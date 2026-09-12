@@ -1,0 +1,45 @@
+{
+  "senaryo": "eşzamanlı 401 dalgası — erişim jetonu bozuk, yenileme jetonu sağlam (yenileme yanıtı 400 ms geciktirildi; yinelenen yenilemeler gerçek sunucunun rotasyon davranışı gibi 401 dönecek şekilde benzetildi)",
+  "beklenti": "tek /kimlik/yenile POST'u, tüm isteklerin 200 dönmesi, oturumun silinmemesi",
+  "yenilePost": 1,
+  "cevaplar": [
+    "200 /bdm/yonetim/surucu/durum",
+    "200 /kullanim/ozet?gun=30",
+    "200 /loglar/konusmalar?boyut=5",
+    "200 /bdm/yonetim/surucu/durum",
+    "200 /kullanim/ozet?gun=30",
+    "200 /loglar/konusmalar?boyut=5",
+    "200 /saglik",
+    "200 /saglik",
+    "401 /bdm/yonetim/surucu/durum",
+    "401 /kullanim/ozet?gun=30",
+    "401 /loglar/konusmalar?boyut=5",
+    "401 /bdm/yonetim/surucu/durum",
+    "401 /kullanim/ozet?gun=30",
+    "401 /loglar/konusmalar?boyut=5",
+    "200 /saglik/kurulum",
+    "200 /saglik/kurulum",
+    "200 /kimlik/yenile (tek POST)",
+    "200 /bdm/yonetim/surucu/durum",
+    "200 /kullanim/ozet?gun=30",
+    "200 /loglar/konusmalar?boyut=5",
+    "200 /bdm/yonetim/surucu/durum",
+    "200 /kullanim/ozet?gun=30",
+    "200 /loglar/konusmalar?boyut=5",
+    "200 /kullanim/ozet?gun=30",
+    "200 /bdm/yonetim/surucu/durum",
+    "200 /bdm/yonetim/surucu/durum",
+    "200 /kullanim/ozet?gun=30",
+    "200 /loglar/konusmalar?boyut=5",
+    "200 /loglar/konusmalar?boyut=5"
+  ],
+  "son": {
+    "url": "http://localhost:3001/",
+    "anahtarlar": [
+      "kutyai.panel.yenileme",
+      "kutyai.panel.kullanici",
+      "kutyai.panel.erisim"
+    ]
+  },
+  "ekran_goruntusu": "kaynak/testler/kanit/panel-08-yenileme-tek-kez.png"
+}

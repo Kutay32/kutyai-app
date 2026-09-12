@@ -165,7 +165,7 @@ async def kayit(
         eposta_dogrulandi=False,
     )
     oturum.add(kullanici)
-    await oturum.flush()
+    await kimlik_servisi.kaydi_yaz(oturum, eposta)
 
     jeton = await kimlik_servisi.dogrulama_jetonu_uret(
         oturum, kullanici, JetonTuru.eposta_dogrulama, kimlik_servisi.EPOSTA_DOGRULAMA_SAAT
@@ -208,7 +208,6 @@ async def dogrula(
     if kullanici is None:
         raise GecersizIstek("Bağlantı geçersiz. Lütfen yeni bir bağlantı isteyin.")
 
-    kayit.kullanildi = True
     kullanici.eposta_dogrulandi = True
     # Pasiflestirilmis hesap dogrulama baglantisiyla geri acilmaz.
     if kullanici.durum != KullaniciDurumu.pasif:
@@ -295,6 +294,9 @@ async def sifre_sifirlama_iste(
 ) -> dict[str, object]:
     """Parola sifirlama baglantisi gonderir; e-posta yoksa da ayni mesaj doner."""
     kullanici = await kimlik_servisi.kullanici_bul(oturum, veri.eposta)
+    # Hesap var/yok ayrimi yanit suresinden okunmasin: bulunamayan/pasif hesapta
+    # da kayitli hesaptakiyle ayni sabit maliyetli argon2 dogrulamasi odenir.
+    kimlik_servisi.zamanlama_dogrulamasi()
     yanit: dict[str, object] = {"mesaj": SIFIRLAMA_ISTEK_MESAJI}
     if kullanici is None or kullanici.durum == KullaniciDurumu.pasif:
         return yanit
@@ -339,7 +341,6 @@ async def sifre_sifirla(
     if kullanici.durum == KullaniciDurumu.pasif:
         raise YetkiYok("Hesabınız devre dışı bırakılmış. Yöneticiye başvurun.")
 
-    kayit.kullanildi = True
     kullanici.sifre_hash = guvenlik.sifre_hashle(veri.yeni_parola)
     iptal = await kimlik_servisi.tum_oturumlari_iptal_et(oturum, kullanici.id)
     await islem_kaydet(

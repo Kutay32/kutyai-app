@@ -1,0 +1,273 @@
+
+=== GET /loglar/konusmalar ===
+HTTP 200 application/json
+{"toplam":4,"sayfa":1,"boyut":25,"kayitlar":[{"id":3,"baslik":"API anahtarıyla sohbet","kullanici_id":null,"kullanici_eposta":null,"api_anahtari_id":1,"bdm_id":1,"bdm_ad":"Yaris Model 1","mesaj_sayisi":2,"token_girdi":5,"token_cikti":6,"olusturulma":"2026-09-11T23:00:00","guncellenme":"2026-09-11T23:00:00"},{"id":2,"baslik":"Sunucu kurulum notları","kullanici_id":2,"kullanici_eposta":"goz-yonetici-2@gozlem.example.com","api_anahtari_id":null,"bdm_id":2,"bdm_ad":"Yaris Model 2","mesaj_sayisi":2,"token_girdi":33,"token_cikti":44,"olusturulma":"2026-09-05T10:30:00","guncellenme":"2026-09-05T10:30:00"},{"id":1,"baslik":"Öğle yemeği planı çığöşü","kullanici_id":1,"kullanici_eposta":"goz-yonetici-1@gozlem.example.com","api_anahtari_id":null,"bdm_id":1,"bdm_ad":"Yaris Model 1","mesaj_sayisi":2,"token_girdi":11,"token_cikti":22,"olusturulma":"2026-09-01T09:00:00","guncellenme":"2026-09-01T09:00:00"},{"id":4,"baslik":"Saklama süresi dolmuş eski kayıt","kullanici_id":1,"kullanici_eposta":"goz-yonetici-1@gozlem.example.com","api_anahtari_id":null,"bdm_id":1,"bdm_ad":"Yaris Model 1","mesaj_sayisi":0,"token_girdi":1,"token_cikti":1,"olusturulma":"2026-06-01T08:00:00","guncellenme":"2026-06-01T08:00:00"}]}
+
+=== Liste başlıkları ===
+['API anahtarıyla sohbet', 'Sunucu kurulum notları', 'Öğle yemeği planı çığöşü', 'Saklama süresi dolmuş eski kayıt']
+
+=== Kayıt anahtarları ===
+['api_anahtari_id', 'baslik', 'bdm_ad', 'bdm_id', 'guncellenme', 'id', 'kullanici_eposta', 'kullanici_id', 'mesaj_sayisi', 'olusturulma', 'token_cikti', 'token_girdi']
+
+=== GET /loglar/konusmalar?kullanici_id=1 ===
+HTTP 200 application/json
+{"toplam":2,"sayfa":1,"boyut":25,"kayitlar":[{"id":1,"baslik":"Öğle yemeği planı çığöşü","kullanici_id":1,"kullanici_eposta":"goz-yonetici-1@gozlem.example.com","api_anahtari_id":null,"bdm_id":1,"bdm_ad":"Yaris Model 1","mesaj_sayisi":2,"token_girdi":11,"token_cikti":22,"olusturulma":"2026-09-01T09:00:00","guncellenme":"2026-09-01T09:00:00"},{"id":4,"baslik":"Saklama süresi dolmuş eski kayıt","kullanici_id":1,"kullanici_eposta":"goz-yonetici-1@gozlem.example.com","api_anahtari_id":null,"bdm_id":1,"bdm_ad":"Yaris Model 1","mesaj_sayisi":0,"token_girdi":1,"token_cikti":1,"olusturulma":"2026-06-01T08:00:00","guncellenme":"2026-06-01T08:00:00"}]}
+
+=== GET /loglar/konusmalar?bdm_id=2 ===
+HTTP 200 application/json
+{"toplam":1,"sayfa":1,"boyut":25,"kayitlar":[{"id":2,"baslik":"Sunucu kurulum notları","kullanici_id":2,"kullanici_eposta":"goz-yonetici-2@gozlem.example.com","api_anahtari_id":null,"bdm_id":2,"bdm_ad":"Yaris Model 2","mesaj_sayisi":2,"token_girdi":33,"token_cikti":44,"olusturulma":"2026-09-05T10:30:00","guncellenme":"2026-09-05T10:30:00"}]}
+
+=== GET /loglar/konusmalar?arama=Docker ===
+HTTP 200 application/json
+{"toplam":1,"sayfa":1,"boyut":25,"kayitlar":[{"id":2,"baslik":"Sunucu kurulum notları","kullanici_id":2,"kullanici_eposta":"goz-yonetici-2@gozlem.example.com","api_anahtari_id":null,"bdm_id":2,"bdm_ad":"Yaris Model 2","mesaj_sayisi":2,"token_girdi":33,"token_cikti":44,"olusturulma":"2026-09-05T10:30:00","guncellenme":"2026-09-05T10:30:00"}]}
+
+=== GET /loglar/konusmalar?arama=%C3%B6%C4%9Fle ===
+HTTP 200 application/json
+{"toplam":1,"sayfa":1,"boyut":25,"kayitlar":[{"id":1,"baslik":"Öğle yemeği planı çığöşü","kullanici_id":1,"kullanici_eposta":"goz-yonetici-1@gozlem.example.com","api_anahtari_id":null,"bdm_id":1,"bdm_ad":"Yaris Model 1","mesaj_sayisi":2,"token_girdi":11,"token_cikti":22,"olusturulma":"2026-09-01T09:00:00","guncellenme":"2026-09-01T09:00:00"}]}
+
+=== GET /loglar/konusmalar?arama=%C3%96%C4%9Fle ===
+HTTP 200 application/json
+{"toplam":1,"sayfa":1,"boyut":25,"kayitlar":[{"id":1,"baslik":"Öğle yemeği planı çığöşü","kullanici_id":1,"kullanici_eposta":"goz-yonetici-1@gozlem.example.com","api_anahtari_id":null,"bdm_id":1,"bdm_ad":"Yaris Model 1","mesaj_sayisi":2,"token_girdi":11,"token_cikti":22,"olusturulma":"2026-09-01T09:00:00","guncellenme":"2026-09-01T09:00:00"}]}
+
+=== GET /loglar/konusmalar?baslangic=2026-09-04T00:00:00&bitis=2026-09-06T00:00:00 ===
+HTTP 200 application/json
+{"toplam":1,"sayfa":1,"boyut":25,"kayitlar":[{"id":2,"baslik":"Sunucu kurulum notları","kullanici_id":2,"kullanici_eposta":"goz-yonetici-2@gozlem.example.com","api_anahtari_id":null,"bdm_id":2,"bdm_ad":"Yaris Model 2","mesaj_sayisi":2,"token_girdi":33,"token_cikti":44,"olusturulma":"2026-09-05T10:30:00","guncellenme":"2026-09-05T10:30:00"}]}
+
+=== GET /loglar/konusmalar?baslangic=2026-09-06T00:00:00&bitis=2026-09-04T00:00:00 ===
+HTTP 200 application/json
+{"toplam":0,"sayfa":1,"boyut":25,"kayitlar":[]}
+
+=== GET /loglar/konusmalar?boyut=10000 ===
+HTTP 200 application/json
+{"toplam":4,"sayfa":1,"boyut":200,"kayitlar":[{"id":3,"baslik":"API anahtarıyla sohbet","kullanici_id":null,"kullanici_eposta":null,"api_anahtari_id":1,"bdm_id":1,"bdm_ad":"Yaris Model 1","mesaj_sayisi":2,"token_girdi":5,"token_cikti":6,"olusturulma":"2026-09-11T23:00:00","guncellenme":"2026-09-11T23:00:00"},{"id":2,"baslik":"Sunucu kurulum notları","kullanici_id":2,"kullanici_eposta":"goz-yonetici-2@gozlem.example.com","api_anahtari_id":null,"bdm_id":2,"bdm_ad":"Yaris Model 2","mesaj_sayisi":2,"token_girdi":33,"token_cikti":44,"olusturulma":"2026-09-05T10:30:00","guncellenme":"2026-09-05T10:30:00"},{"id":1,"baslik":"Öğle yemeği planı çığöşü","kullanici_id":1,"kullanici_eposta":"goz-yonetici-1@gozlem.example.com","api_anahtari_id":null,"bdm_id":1,"bdm_ad":"Yaris Model 1","mesaj_sayisi":2,"token_girdi":11,"token_cikti":22,"olusturulma":"2026-09-01T09:00:00","guncellenme":"2026-09-01T09:00:00"},{"id":4,"baslik":"Saklama süresi dolmuş eski kayıt","kullanici_id":1,"kullanici_eposta":"goz-yonetici-1@gozlem.example.com","api_anahtari_id":null,"bdm_id":1,"bdm_ad":"Yaris Model 1","mesaj_sayisi":0,"token_girdi":1,"token_cikti":1,"olusturulma":"2026-06-01T08:00:00","guncellenme":"2026-06-01T08:00:00"}]}
+
+=== GET /loglar/konusmalar?sayfa=0 ===
+HTTP 200 application/json
+{"toplam":4,"sayfa":1,"boyut":25,"kayitlar":[{"id":3,"baslik":"API anahtarıyla sohbet","kullanici_id":null,"kullanici_eposta":null,"api_anahtari_id":1,"bdm_id":1,"bdm_ad":"Yaris Model 1","mesaj_sayisi":2,"token_girdi":5,"token_cikti":6,"olusturulma":"2026-09-11T23:00:00","guncellenme":"2026-09-11T23:00:00"},{"id":2,"baslik":"Sunucu kurulum notları","kullanici_id":2,"kullanici_eposta":"goz-yonetici-2@gozlem.example.com","api_anahtari_id":null,"bdm_id":2,"bdm_ad":"Yaris Model 2","mesaj_sayisi":2,"token_girdi":33,"token_cikti":44,"olusturulma":"2026-09-05T10:30:00","guncellenme":"2026-09-05T10:30:00"},{"id":1,"baslik":"Öğle yemeği planı çığöşü","kullanici_id":1,"kullanici_eposta":"goz-yonetici-1@gozlem.example.com","api_anahtari_id":null,"bdm_id":1,"bdm_ad":"Yaris Model 1","mesaj_sayisi":2,"token_girdi":11,"token_cikti":22,"olusturulma":"2026-09-01T09:00:00","guncellenme":"2026-09-01T09:00:00"},{"id":4,"baslik":"Saklama süresi dolmuş eski kayıt","kullanici_id":1,"kullanici_eposta":"goz-yonetici-1@gozlem.example.com","api_anahtari_id":null,"bdm_id":1,"bdm_ad":"Yaris Model 1","mesaj_sayisi":0,"token_girdi":1,"token_cikti":1,"olusturulma":"2026-06-01T08:00:00","guncellenme":"2026-06-01T08:00:00"}]}
+
+=== GET /loglar/konusmalar?sayfa=-3 ===
+HTTP 200 application/json
+{"toplam":4,"sayfa":1,"boyut":25,"kayitlar":[{"id":3,"baslik":"API anahtarıyla sohbet","kullanici_id":null,"kullanici_eposta":null,"api_anahtari_id":1,"bdm_id":1,"bdm_ad":"Yaris Model 1","mesaj_sayisi":2,"token_girdi":5,"token_cikti":6,"olusturulma":"2026-09-11T23:00:00","guncellenme":"2026-09-11T23:00:00"},{"id":2,"baslik":"Sunucu kurulum notları","kullanici_id":2,"kullanici_eposta":"goz-yonetici-2@gozlem.example.com","api_anahtari_id":null,"bdm_id":2,"bdm_ad":"Yaris Model 2","mesaj_sayisi":2,"token_girdi":33,"token_cikti":44,"olusturulma":"2026-09-05T10:30:00","guncellenme":"2026-09-05T10:30:00"},{"id":1,"baslik":"Öğle yemeği planı çığöşü","kullanici_id":1,"kullanici_eposta":"goz-yonetici-1@gozlem.example.com","api_anahtari_id":null,"bdm_id":1,"bdm_ad":"Yaris Model 1","mesaj_sayisi":2,"token_girdi":11,"token_cikti":22,"olusturulma":"2026-09-01T09:00:00","guncellenme":"2026-09-01T09:00:00"},{"id":4,"baslik":"Saklama süresi dolmuş eski kayıt","kullanici_id":1,"kullanici_eposta":"goz-yonetici-1@gozlem.example.com","api_anahtari_id":null,"bdm_id":1,"bdm_ad":"Yaris Model 1","mesaj_sayisi":0,"token_girdi":1,"token_cikti":1,"olusturulma":"2026-06-01T08:00:00","guncellenme":"2026-06-01T08:00:00"}]}
+
+=== GET /loglar/konusmalar?boyut=0 ===
+HTTP 200 application/json
+{"toplam":4,"sayfa":1,"boyut":25,"kayitlar":[{"id":3,"baslik":"API anahtarıyla sohbet","kullanici_id":null,"kullanici_eposta":null,"api_anahtari_id":1,"bdm_id":1,"bdm_ad":"Yaris Model 1","mesaj_sayisi":2,"token_girdi":5,"token_cikti":6,"olusturulma":"2026-09-11T23:00:00","guncellenme":"2026-09-11T23:00:00"},{"id":2,"baslik":"Sunucu kurulum notları","kullanici_id":2,"kullanici_eposta":"goz-yonetici-2@gozlem.example.com","api_anahtari_id":null,"bdm_id":2,"bdm_ad":"Yaris Model 2","mesaj_sayisi":2,"token_girdi":33,"token_cikti":44,"olusturulma":"2026-09-05T10:30:00","guncellenme":"2026-09-05T10:30:00"},{"id":1,"baslik":"Öğle yemeği planı çığöşü","kullanici_id":1,"kullanici_eposta":"goz-yonetici-1@gozlem.example.com","api_anahtari_id":null,"bdm_id":1,"bdm_ad":"Yaris Model 1","mesaj_sayisi":2,"token_girdi":11,"token_cikti":22,"olusturulma":"2026-09-01T09:00:00","guncellenme":"2026-09-01T09:00:00"},{"id":4,"baslik":"Saklama süresi dolmuş eski kayıt","kullanici_id":1,"kullanici_eposta":"goz-yonetici-1@gozlem.example.com","api_anahtari_id":null,"bdm_id":1,"bdm_ad":"Yaris Model 1","mesaj_sayisi":0,"token_girdi":1,"token_cikti":1,"olusturulma":"2026-06-01T08:00:00","guncellenme":"2026-06-01T08:00:00"}]}
+
+=== GET /loglar/konusmalar?boyut=-5 ===
+HTTP 200 application/json
+{"toplam":4,"sayfa":1,"boyut":1,"kayitlar":[{"id":3,"baslik":"API anahtarıyla sohbet","kullanici_id":null,"kullanici_eposta":null,"api_anahtari_id":1,"bdm_id":1,"bdm_ad":"Yaris Model 1","mesaj_sayisi":2,"token_girdi":5,"token_cikti":6,"olusturulma":"2026-09-11T23:00:00","guncellenme":"2026-09-11T23:00:00"}]}
+
+=== GET /loglar/konusmalar?sayfa=abc ===
+HTTP 400 application/json
+{"hata":{"kod":"dogrulama_hatasi","mesaj":"Gönderilen alanlar doğrulanamadı.","ayrinti":{"alanlar":[{"alan":"query.sayfa","mesaj":"Input should be a valid integer, unable to parse string as an integer"}]}}}
+
+=== GET /loglar/konusmalar?boyut=99999999999999999999 ===
+HTTP 200 application/json
+{"toplam":4,"sayfa":1,"boyut":200,"kayitlar":[{"id":3,"baslik":"API anahtarıyla sohbet","kullanici_id":null,"kullanici_eposta":null,"api_anahtari_id":1,"bdm_id":1,"bdm_ad":"Yaris Model 1","mesaj_sayisi":2,"token_girdi":5,"token_cikti":6,"olusturulma":"2026-09-11T23:00:00","guncellenme":"2026-09-11T23:00:00"},{"id":2,"baslik":"Sunucu kurulum notları","kullanici_id":2,"kullanici_eposta":"goz-yonetici-2@gozlem.example.com","api_anahtari_id":null,"bdm_id":2,"bdm_ad":"Yaris Model 2","mesaj_sayisi":2,"token_girdi":33,"token_cikti":44,"olusturulma":"2026-09-05T10:30:00","guncellenme":"2026-09-05T10:30:00"},{"id":1,"baslik":"Öğle yemeği planı çığöşü","kullanici_id":1,"kullanici_eposta":"goz-yonetici-1@gozlem.example.com","api_anahtari_id":null,"bdm_id":1,"bdm_ad":"Yaris Model 1","mesaj_sayisi":2,"token_girdi":11,"token_cikti":22,"olusturulma":"2026-09-01T09:00:00","guncellenme":"2026-09-01T09:00:00"},{"id":4,"baslik":"Saklama süresi dolmuş eski kayıt","kullanici_id":1,"kullanici_eposta":"goz-yonetici-1@gozlem.example.com","api_anahtari_id":null,"bdm_id":1,"bdm_ad":"Yaris Model 1","mesaj_sayisi":0,"token_girdi":1,"token_cikti":1,"olusturulma":"2026-06-01T08:00:00","guncellenme":"2026-06-01T08:00:00"}]}
+
+=== GET /loglar/konusmalar?kullanici_id=abc ===
+HTTP 400 application/json
+{"hata":{"kod":"dogrulama_hatasi","mesaj":"Gönderilen alanlar doğrulanamadı.","ayrinti":{"alanlar":[{"alan":"query.kullanici_id","mesaj":"Input should be a valid integer, unable to parse string as an integer"}]}}}
+
+=== GET /loglar/konusmalar/1 ===
+HTTP 200 application/json
+{"id":1,"baslik":"Öğle yemeği planı çığöşü","bdm_id":1,"bdm_ad":"Yaris Model 1","kullanici_id":1,"kullanici_eposta":"goz-yonetici-1@gozlem.example.com","api_anahtari_id":null,"sistem_istemi":"","token_girdi":11,"token_cikti":22,"olusturulma":"2026-09-01T09:00:00","guncellenme":"2026-09-01T09:00:00","mesajlar":[{"id":1,"rol":"kullanici","icerik":"Merhaba, öğle yemeği için Şişli'de buluşalım mı?","token_sayisi":8,"gecikme_ms":0,"model":"llama3","hata":null,"olusturulma":"2026-09-01T09:00:00"},{"id":2,"rol":"asistan","icerik":"Elbette, saat 12:30 uygun mu?","token_sayisi":3,"gecikme_ms":120,"model":"llama3","hata":null,"olusturulma":"2026-09-01T09:00:01"}]}
+
+=== GET /loglar/konusmalar/99999 ===
+HTTP 404 application/json
+{"hata":{"kod":"bulunamadi","mesaj":"Konuşma bulunamadı.","ayrinti":{"konusma_id":99999}}}
+
+=== GET disa-aktar bicim=json ===
+HTTP 200
+content-type=application/json; charset=utf-8
+content-disposition=attachment; filename="konusma-1.json"
+bytes=885
+{
+  "id": 1,
+  "baslik": "Öğle yemeği planı çığöşü",
+  "bdm_id": 1,
+  "bdm_ad": "Yaris Model 1",
+  "kullanici_id": 1,
+  "kullanici_eposta": "goz-yonetici-1@gozlem.example.com",
+  "api_anahtari_id": null,
+  "sistem_istemi": "",
+  "token_girdi": 11,
+  "token_cikti": 22,
+  "olusturulma": "2026-09-01T09:00:00",
+  "guncellenme": "2026-09-01T09:00:00",
+  "mesajlar": [
+    {
+      "id": 1,
+      "rol": "kullanici",
+      "icerik": "Merhaba, öğle yemeği için Şişli'de buluşalım mı?",
+      "token_sayisi": 8,
+      "gecikme_ms": 0,
+      "model": "llama3",
+      "hata": null,
+      "olusturulma": "2026-09-01T09:00:00"
+    },
+    {
+      "id": 2,
+      "rol": "asistan",
+      "icerik": "Elbette, saat 12:30 uygun mu?",
+      "token_sayisi": 3,
+      "gecikme_ms": 120,
+      "model": "llama3",
+      "hata": null,
+      "olusturulma": "2026-09-01T09:00:01"
+    }
+  ]
+}
+
+=== GET disa-aktar bicim=md ===
+HTTP 200
+content-type=text/markdown; charset=utf-8
+content-disposition=attachment; filename="konusma-1.md"
+bytes=286
+# Öğle yemeği planı çığöşü
+
+- Konuşma no: 1
+- Model: Yaris Model 1
+- Kullanıcı: goz-yonetici-1@gozlem.example.com
+- Oluşturulma: 2026-09-01T09:00:00
+
+---
+
+## Kullanıcı
+
+Merhaba, öğle yemeği için Şişli'de buluşalım mı?
+
+## Asistan
+
+Elbette, saat 12:30 uygun mu?
+
+
+=== GET disa-aktar bicim=csv ===
+HTTP 200
+content-type=text/csv; charset=utf-8
+content-disposition=attachment; filename="konusma-1.csv"
+bytes=213
+mesaj_id,rol,icerik,token,gecikme_ms,olusturulma
+1,kullanici,"Merhaba, öğle yemeği için Şişli'de buluşalım mı?",8,0,2026-09-01T09:00:00
+2,asistan,"Elbette, saat 12:30 uygun mu?",3,120,2026-09-01T09:00:01
+
+
+=== GET disa-aktar bicim=pdf ===
+HTTP 400 application/json
+{"hata":{"kod":"gecersiz_istek","mesaj":"Desteklenmeyen biçim: pdf","ayrinti":{"gecerli_bicimler":["json","md","csv"]}}}
+
+=== GET disa-aktar bicim=JSON (büyük harf) ===
+HTTP 200 application/json; charset=utf-8
+{
+  "id": 1,
+  "baslik": "Öğle yemeği planı çığöşü",
+  "bdm_id": 1,
+  "bdm_ad": "Yaris Model 1",
+  "kullanici_id": 1,
+  "kullanici_eposta": "goz-yonetici-1@gozlem.example.com",
+  "api_anahtari_id": null,
+  "sistem_istemi": "",
+  "token_girdi": 11,
+  "token_cikti": 22,
+  "olusturulma": "2026-09-01T09:00:00",
+  "guncellenme": "2026-09-01T09:00:00",
+  "mesajlar": [
+    {
+      "id": 1,
+      "rol": "kullanici",
+      "icerik": "Merhaba, öğle yemeği için Şişli'de buluşalım mı?",
+      "token_sayisi": 8,
+      "gecikme_ms": 0,
+      "model": "llama3",
+      "hata": null,
+      "olusturulma": "2026-09-01T09:00:00"
+    },
+    {
+      "id": 2,
+      "rol": "asistan",
+      "icerik": "Elbette, saat 12:30 uygun mu?",
+      "token_sayisi": 3,
+      "gecikme_ms": 120,
+      "model": "llama3",
+      "hata": null,
+      "olusturulma": "2026-09-01T09:00:01"
+    }
+  ]
+}
+
+=== JSON çözüldü ===
+anahtarlar=['api_anahtari_id', 'baslik', 'bdm_ad', 'bdm_id', 'guncellenme', 'id', 'kullanici_eposta', 'kullanici_id', 'mesajlar', 'olusturulma', 'sistem_istemi', 'token_cikti', 'token_girdi'] mesaj=2
+
+=== DELETE /loglar/konusmalar/1 (operator) ===
+HTTP 204 gövde=''
+
+=== DELETE /loglar/konusmalar/2 (izleyici) ===
+HTTP 204 gövde=''
+
+=== DELETE /loglar/konusmalar/99999 ===
+HTTP 404 application/json
+{"hata":{"kod":"bulunamadi","mesaj":"Konuşma bulunamadı.","ayrinti":{"konusma_id":99999}}}
+
+=== SQL: silme sonrası konuşmalar ===
+[(3, 'API anahtarıyla sohbet'), (4, 'Saklama süresi dolmuş eski kayıt')]
+
+=== SQL: silme sonrası mesajlar ===
+[(5, 3), (6, 3)]
+
+=== POST /loglar/temizle (operator, gun=10) ===
+HTTP 403 application/json
+{"hata":{"kod":"yetki_yok","mesaj":"Bu işlem için yetkiniz yok.","ayrinti":{}}}
+
+=== POST /loglar/temizle (izleyici, gun=10) ===
+HTTP 403 application/json
+{"hata":{"kod":"yetki_yok","mesaj":"Bu işlem için yetkiniz yok.","ayrinti":{}}}
+
+=== POST /loglar/temizle (yonetici, gun=0) ===
+HTTP 400 application/json
+{"hata":{"kod":"dogrulama_hatasi","mesaj":"Gönderilen alanlar doğrulanamadı.","ayrinti":{"alanlar":[{"alan":"gun","mesaj":"Input should be greater than or equal to 1"}]}}}
+
+=== POST /loglar/temizle (yonetici, gun=3651) ===
+HTTP 400 application/json
+{"hata":{"kod":"dogrulama_hatasi","mesaj":"Gönderilen alanlar doğrulanamadı.","ayrinti":{"alanlar":[{"alan":"gun","mesaj":"Input should be less than or equal to 3650"}]}}}
+
+=== SQL: temizle öncesi konuşmalar ===
+[(3, 'API anahtarıyla sohbet', '2026-09-11 23:00:00.000000'), (4, 'Saklama süresi dolmuş eski kayıt', '2026-06-01 08:00:00.000000')]
+
+=== POST /loglar/temizle (yonetici, gun=10) ===
+HTTP 200 application/json
+{"silinen":1}
+
+=== POST /loglar/temizle (yonetici, gövdesiz) ===
+HTTP 200 application/json
+{"silinen":0}
+
+=== SQL: temizle sonrası konuşmalar ===
+[(3, 'API anahtarıyla sohbet')]
+
+=== GET /loglar/konusmalar (jetonsuz) ===
+HTTP 401 application/json
+{"hata":{"kod":"kimlik_gerekli","mesaj":"Bu işlem için giriş yapmalısınız.","ayrinti":{}}}
+
+=== SQL: log/anahtar/silme işlemlerinin denetim izi ===
+id=1 eylem=kurulum.tamamlandi kullanici_id=1 hedef=bdm:1 ayrinti={"marka_adi": "Yaris-1", "bdm_slug": "yaris-model-1"}
+id=2 eylem=kurulum.tamamlandi kullanici_id=2 hedef=bdm:2 ayrinti={"marka_adi": "Yaris-2", "bdm_slug": "yaris-model-2"}
+id=3 eylem=kimlik.giris kullanici_id=1 hedef=kullanici:1 ayrinti={"panel": true}
+id=4 eylem=kimlik.giris kullanici_id=2 hedef=kullanici:2 ayrinti={"panel": true}
+id=5 eylem=kimlik.giris kullanici_id=1 hedef=kullanici:1 ayrinti={"panel": true}
+id=6 eylem=kimlik.giris kullanici_id=1 hedef=kullanici:1 ayrinti={"panel": true}
+id=7 eylem=kullanici.olustur kullanici_id=1 hedef=kullanici:3 ayrinti={"rol": "operator"}
+id=8 eylem=kullanici.olustur kullanici_id=1 hedef=kullanici:4 ayrinti={"rol": "izleyici"}
+id=9 eylem=kimlik.giris kullanici_id=3 hedef=kullanici:3 ayrinti={"panel": true}
+id=10 eylem=kimlik.giris kullanici_id=4 hedef=kullanici:4 ayrinti={"panel": true}
+id=11 eylem=api_anahtari.olusturuldu kullanici_id=1 hedef=api_anahtari:1 ayrinti={"ad": "Goz Anahtar", "izinli_modeller": ["yaris-model-1"]}
+id=12 eylem=api_anahtari.kullanildi kullanici_id=None hedef=api_anahtari:1 ayrinti={}
+id=13 eylem=api_anahtari.iptal_edildi kullanici_id=1 hedef=api_anahtari:1 ayrinti={"ad": "Goz Anahtar"}
+id=14 eylem=api_anahtari.olusturuldu kullanici_id=4 hedef=api_anahtari:2 ayrinti={"ad": "Izleyici Anahtari", "izinli_modeller": []}
+id=15 eylem=api_anahtari.olusturuldu kullanici_id=3 hedef=api_anahtari:3 ayrinti={"ad": "Operator Anahtari", "izinli_modeller": []}
+id=16 eylem=kimlik.giris kullanici_id=1 hedef=kullanici:1 ayrinti={"panel": true}
+id=17 eylem=kimlik.giris kullanici_id=3 hedef=kullanici:3 ayrinti={"panel": true}
+id=18 eylem=kimlik.giris kullanici_id=4 hedef=kullanici:4 ayrinti={"panel": true}
+id=19 eylem=konusma.silindi kullanici_id=3 hedef=konusma:1 ayrinti={"baslik": "\u00d6\u011fle yeme\u011fi plan\u0131 \u00e7\u0131\u011f\u00f6\u015f\u00fc"}
+id=20 eylem=konusma.silindi kullanici_id=4 hedef=konusma:2 ayrinti={"baslik": "Sunucu kurulum notlar\u0131"}
+id=21 eylem=loglar.temizlendi kullanici_id=1 hedef=konusma: ayrinti={"gun": 10, "silinen": 1}
+id=22 eylem=loglar.temizlendi kullanici_id=1 hedef=konusma: ayrinti={"gun": null, "silinen": 0}

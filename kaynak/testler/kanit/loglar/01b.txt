@@ -1,0 +1,53 @@
+
+=== Baseline GET /saglik/kurulum ===
+HTTP 200 application/json
+{"kurulum_tamam":false,"marka_adi":"KutyAI","surum":"0.1.0"}
+
+=== Senaryo ===
+AYNI E-POSTA
+
+=== İstek 1 (geçen 0.15s) ===
+HTTP 201 application/json
+{"yonetici":{"id":1,"eposta":"goz-yonetici-1@gozlem.example.com","ad_soyad":"Gözlem Yönetici","rol":"yonetici","durum":"aktif","eposta_dogrulandi":true,"olusturulma":"2026-09-12T19:41:11.820050+00:00","son_giris":null},"bdm":{"id":1,"slug":"yaris-model-1","gorunen_ad":"Yaris Model 1","aciklama":"","saglayici":"ollama","temel_url":"http://127.0.0.1:11434/v1","upstream_model":"llama3","api_anahtari_maskeli":"","baglam_penceresi":8192,"maks_cikti":2048,"sicaklik_varsayilan":0.7,"sistem_istemi":"","yetenekler":{"akis":true,"gorsel":false,"arac":false},"durum":"taslak","yerel_mi":true,"konteyner":null,"olusturulma":"2026-09-12T19:41:11.872608","guncellenme":"2026-09-12T19:41:11.872610"},"dogrulama":null,"kurulum_tamam":true}
+
+=== İstek 2 (geçen 0.15s) ===
+HTTP 500 application/json
+{"hata":{"kod":"sunucu_hatasi","mesaj":"Beklenmeyen bir sunucu hatası oluştu.","ayrinti":{}}}
+
+=== Sonra GET /saglik/kurulum ===
+HTTP 200 application/json
+{"kurulum_tamam":true,"marka_adi":"Yaris-1","surum":"0.1.0"}
+
+=== Kurulum sonrası tekrar POST /kurulum ===
+HTTP 409 application/json
+{"hata":{"kod":"kurulum_zaten_tamam","mesaj":"Kurulum daha önce tamamlanmış.","ayrinti":{}}}
+
+=== Panel girişi goz-yonetici-1@gozlem.example.com ===
+HTTP 200 application/json
+{"erisim_jetonu":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwicm9sIjoieW9uZXRpY2kiLCJqdGkiOiJIQnRhNGdzbDYxNTJ6WF9md2ItRVhBIiwidHVyIjoiZXJpc2ltIiwiaWF0IjoxNzg5MjQyMDcxLCJleHAiOjE3ODkyNDI5NzF9.RFul5NmcgiAYbahpJChNi9CRaZFoRbAhtyhPPP-EuqQ","yenileme_jetonu":"I_OQPRh-BRPanIx_TPeBhn-6C9lxt5rd4uumssArzDLV1GyD0nzOn-VnTNrcW46g","kullanici":{"id":1,"eposta":"goz-yonetici-1@gozlem.example.com","ad_soyad":"Gözlem Yönetici","rol":"yonetici","durum":"aktif","eposta_dogrulandi":true,"olusturulma":"2026-09-12T19:41:11.820050","son_giris":"2026-09-12T19:41:11.976049+00:00"}}
+
+=== Panel girişi goz-yonetici-1@gozlem.example.com ===
+HTTP 200 application/json
+{"erisim_jetonu":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwicm9sIjoieW9uZXRpY2kiLCJqdGkiOiJlWGVDdExrdVlEaGdpMFlZLWxxNXpnIiwidHVyIjoiZXJpc2ltIiwiaWF0IjoxNzg5MjQyMDcyLCJleHAiOjE3ODkyNDI5NzJ9.TnCccsY03cFrVsMyZJAdsVJ25M_RlRPmktP09CKpve4","yenileme_jetonu":"PVLxEnEMu0VE9lWhvPkiflB3m4O3h6KaCOJWSA-wD3q2LxbPlm8viyq9T4LIAGR8","kullanici":{"id":1,"eposta":"goz-yonetici-1@gozlem.example.com","ad_soyad":"Gözlem Yönetici","rol":"yonetici","durum":"aktif","eposta_dogrulandi":true,"olusturulma":"2026-09-12T19:41:11.820050","son_giris":"2026-09-12T19:41:12.035172+00:00"}}
+
+=== Panel girişi goz-yonetici-3@gozlem.example.com ===
+HTTP 401 application/json
+{"hata":{"kod":"gecersiz_kimlik_bilgisi","mesaj":"E-posta veya parola hatalı.","ayrinti":{}}}
+
+=== GET /kullanicilar -> toplam=1 ===
+id=1 eposta=goz-yonetici-1@gozlem.example.com rol=yonetici durum=aktif
+
+=== GET /bdm -> HTTP 200 ===
+id=1 slug=yaris-model-1 ad=Yaris Model 1
+
+=== SQL: kullanici tablosu ===
+[(1, 'goz-yonetici-1@gozlem.example.com', 'yonetici', 'aktif')]
+
+=== SQL: bdm tablosu ===
+[(1, 'yaris-model-1', 'Yaris Model 1')]
+
+=== SQL: kurulum ayarları ===
+[('kurulum_tamam', 'true'), ('marka_adi', '"Yaris-1"'), ('varsayilan_bdm_slug', '"yaris-model-1"')]
+
+=== SQL: islem_kaydi ===
+[(1, 'kurulum.tamamlandi', 1, 'bdm', '1'), (2, 'kimlik.giris', 1, 'kullanici', '1'), (3, 'kimlik.giris', 1, 'kullanici', '1'), (4, 'kimlik.giris', 1, 'kullanici', '1')]
