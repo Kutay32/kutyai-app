@@ -8,8 +8,10 @@ from __future__ import annotations
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from arkauc.app.cekirdek.hatalar import Bulunamadi
 from bdm_konusma_gecmisi.maskeleme import maskele_metin
 from bdm_veritabani.modeller import (
+    Bdm,
     KullanimDurumu,
     KullanimKaydi,
     Konusma,
@@ -42,11 +44,19 @@ async def konusma_olustur(
     oturum: AsyncSession,
     *,
     bdm_id: int,
+    org_id: int | None = None,
     kullanici_id: int | None = None,
     api_anahtari_id: int | None = None,
     sistem_istemi: str = "",
 ) -> Konusma:
+    if org_id is None:
+        org_id = (
+            await oturum.execute(sa.select(Bdm.org_id).where(Bdm.id == bdm_id))
+        ).scalar_one_or_none()
+    if org_id is None:
+        raise Bulunamadi("Model kaydı bulunamadı.", {"bdm_id": bdm_id})
     konusma = Konusma(
+        org_id=org_id,
         bdm_id=bdm_id,
         kullanici_id=kullanici_id,
         api_anahtari_id=api_anahtari_id,
@@ -101,6 +111,7 @@ async def kullanim_yaz(
     oturum: AsyncSession,
     *,
     bdm_id: int,
+    org_id: int | None = None,
     kullanici_id: int | None = None,
     api_anahtari_id: int | None = None,
     konusma_id: int | None = None,
@@ -109,7 +120,12 @@ async def kullanim_yaz(
     gecikme_ms: int = 0,
     durum: KullanimDurumu = KullanimDurumu.basarili,
 ) -> KullanimKaydi:
+    if org_id is None:
+        org_id = (
+            await oturum.execute(sa.select(Bdm.org_id).where(Bdm.id == bdm_id))
+        ).scalar_one_or_none()
     kayit = KullanimKaydi(
+        org_id=org_id,
         bdm_id=bdm_id,
         kullanici_id=kullanici_id,
         api_anahtari_id=api_anahtari_id,

@@ -23,15 +23,28 @@ from arkauc.app.cekirdek.hatalar import (
     KimlikGerekli,
     YetkiYok,
 )
+from arkauc.app.cekirdek.organizasyon import (
+    ORG_BASLIGI,
+    organizasyon_coz,
+    rol_yetkili_mi,
+    uyelik_getir,
+    uyelik_rolleri,
+)
 from bdm_veritabani.modeller import (
     PERSONEL_ROLLERI,
+    PERSONEL_UYELIK_ROLLERI,
     AnahtarDurumu,
     ApiAnahtari,
     Kullanici,
     KullaniciDurumu,
+    Organizasyon,
     Rol,
+    UyelikDurumu,
+    UyelikRolu,
 )
 from bdm_veritabani.oturum import oturum_uret
+
+from fastapi import Request
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -88,18 +101,61 @@ async def gecerli_kullanici(
 
 
 def gecerli_personel(
-    roller: tuple[Rol, ...] = PERSONEL_ROLLERI,
+    roller: tuple[Rol | UyelikRolu, ...] = PERSONEL_UYELIK_ROLLERI,
 ) -> Callable[..., Kullanici]:
-    """Belirtilen rollerden birini zorunlu kilan bagimlilik uretir."""
+    """Belirtilen organizasyon rollerinden birini zorunlu kilan bagimlilik.
+
+    Yetki karari aktif organizasyondaki **uyelik** rolu uzerinden verilir;
+    `sahip` her zaman yetkilidir. `Rol` degerleri geriye uyumluluk icin kabul
+    edilir ve `UyelikRolu`ne cevrilir.
+    """
+
+    izinli = uyelik_rolleri(tuple(roller))
 
     async def _bagimlilik(
         kullanici: Kullanici = Depends(gecerli_kullanici),
+        organizasyon: Organizasyon = Depends(aktif_organizasyon),
+        oturum: AsyncSession = Depends(veritabani_oturumu),
     ) -> Kullanici:
-        if kullanici.rol not in roller:
+        uyelik = await uyelik_getir(oturum, organizasyon.id, kullanici.id)
+        if uyelik is None or uyelik.durum != UyelikDurumu.aktif:
+            raise YetkiYok()
+        if not rol_yetkili_mi(uyelik.rol, izinli):
             raise YetkiYok()
         return kullanici
 
     return _bagimlilik
+
+
+async def _jeton_org(kimlik: KimlikBilgisi) -> int | None:
+    """Erisim jetonundaki `org` claim'i (yoksa None)."""
+    if kimlik is None or not kimlik.credentials:
+        return None
+    jeton = kimlik.credentials
+    if jeton.startswith(guvenlik.API_ONEK):
+        return None
+    try:
+        govde = guvenlik.jeton_coz(jeton)
+    except Exception:
+        return None
+    deger = govde.get("org")
+    return int(deger) if deger is not None else None
+
+
+async def aktif_organizasyon(
+    istek: Request,
+    oturum: AsyncSession = Depends(veritabani_oturumu),
+    kullanici: Kullanici = Depends(gecerli_kullanici),
+    kimlik: KimlikBilgisi = Depends(_bearer),
+) -> Organizasyon:
+    """Panel/kullanici uclari icin aktif organizasyon."""
+    return await organizasyon_coz(
+        oturum,
+        baslik=istek.headers.get(ORG_BASLIGI),
+        org_claim=await _jeton_org(kimlik),
+        kullanici_id=kullanici.id,
+        varsayilana_ekle=True,
+    )
 
 
 async def _anahtarla_istemci(jeton: str, oturum: AsyncSession) -> IstemciKimligi:
@@ -134,3 +190,20 @@ async def gecerli_istemci(
     if kullanici.rol == Rol.son_kullanici and not kullanici.eposta_dogrulandi:
         raise EpostaDogrulanmadi()
     return IstemciKimligi(tur="kullanici", kullanici=kullanici)
+
+
+async def istemci_organizasyonu(
+    istek: Request,
+    oturum: AsyncSession = Depends(veritabani_oturumu),
+    istemci: IstemciKimligi = Depends(gecerli_istemci),
+    kimlik: KimlikBilgisi = Depends(_bearer),
+) -> Organizasyon:
+    """Sohbet uclari icin aktif organizasyon (JWT veya API anahtari)."""
+    return await organizasyon_coz(
+        oturum,
+        baslik=istek.headers.get(ORG_BASLIGI),
+        org_claim=await _jeton_org(kimlik),
+        kullanici_id=istemci.kullanici_id,
+        anahtar=istemci.anahtar,
+        varsayilana_ekle=True,
+    )

@@ -13,6 +13,7 @@ async def islem_kaydet(
     oturum: AsyncSession,
     eylem: str,
     *,
+    org_id: int | None = None,
     kullanici_id: int | None = None,
     hedef_tur: str = "",
     hedef_id: str | int = "",
@@ -22,6 +23,7 @@ async def islem_kaydet(
     """Denetim izine bir satir ekler. Cagiran taraf commit eder."""
     oturum.add(
         IslemKaydi(
+            org_id=org_id,
             kullanici_id=kullanici_id,
             eylem=eylem,
             hedef_tur=hedef_tur,

@@ -33,12 +33,18 @@ import httpx  # noqa: E402
 import pytest  # noqa: E402
 
 from arkauc.app.cekirdek import guvenlik  # noqa: E402
+from arkauc.app.cekirdek.organizasyon import varsayilan_uyelik_ekle  # noqa: E402
+from bdm_listesi.katalog import slug_uret  # noqa: E402
 from bdm_veritabani.modeller import (  # noqa: E402
     AnahtarDurumu,
     ApiAnahtari,
     Kullanici,
     KullaniciDurumu,
+    Organizasyon,
     Rol,
+    Uyelik,
+    UyelikDurumu,
+    UyelikRolu,
 )
 from bdm_veritabani.oturum import (  # noqa: E402
     motoru_sifirla,
@@ -108,9 +114,47 @@ class Yardimci:
                 eposta_dogrulandi=dogrulandi,
             )
             oturum.add(kullanici)
+            await oturum.flush()
+            await varsayilan_uyelik_ekle(oturum, kullanici)
             await oturum.commit()
             await oturum.refresh(kullanici)
             return kullanici
+
+    async def organizasyon(
+        self, ad: str = "Test Organizasyon", *, sahibi: Kullanici | None = None
+    ) -> Organizasyon:
+        """Yeni organizasyon; `sahibi` verilmezse yeni bir sahip kullanicisi uretir."""
+        async with oturum_fabrikasi()() as oturum:
+            sahip = sahibi or await self.kullanici_ekle(rol=Rol.yonetici)
+            organizasyon = Organizasyon(ad=ad, slug=slug_uret(ad))
+            oturum.add(organizasyon)
+            await oturum.flush()
+            oturum.add(
+                Uyelik(
+                    organizasyon_id=organizasyon.id,
+                    kullanici_id=sahip.id,
+                    rol=UyelikRolu.sahip,
+                    durum=UyelikDurumu.aktif,
+                )
+            )
+            await oturum.commit()
+            await oturum.refresh(organizasyon)
+            return organizasyon
+
+    async def uye_yap(
+        self, organizasyon: Organizasyon, kullanici: Kullanici, rol: UyelikRolu = UyelikRolu.son_kullanici
+    ) -> Uyelik:
+        async with oturum_fabrikasi()() as oturum:
+            uyelik = Uyelik(
+                organizasyon_id=organizasyon.id,
+                kullanici_id=kullanici.id,
+                rol=rol,
+                durum=UyelikDurumu.aktif,
+            )
+            oturum.add(uyelik)
+            await oturum.commit()
+            await oturum.refresh(uyelik)
+            return uyelik
 
     async def yonetici(self, **kwargs) -> Kullanici:
         return await self.kullanici_ekle(rol=Rol.yonetici, **kwargs)
@@ -145,6 +189,10 @@ class Yardimci:
 
     def basliklar(self, kullanici: Kullanici) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.jeton(kullanici)}"}
+
+    def org_basliklari(self, kullanici: Kullanici, organizasyon: Organizasyon) -> dict[str, str]:
+        """Jeton + `X-Organizasyon` basligi."""
+        return {**self.basliklar(kullanici), "X-Organizasyon": organizasyon.slug}
 
     def anahtar_basliklari(self, tam_anahtar: str) -> dict[str, str]:
         return {"Authorization": f"Bearer {tam_anahtar}"}

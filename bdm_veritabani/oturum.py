@@ -18,6 +18,51 @@ from bdm_veritabani.modeller import Taban
 _motor: Any = None
 _uretici: async_sessionmaker[AsyncSession] | None = None
 
+#: Tohumlama sirasinda ogrenilen varsayilan organizasyon kimligi.
+_varsayilan_org_id: int | None = None
+
+
+def varsayilan_org_id_ata(deger: int) -> None:
+    global _varsayilan_org_id
+    _varsayilan_org_id = int(deger)
+
+
+def varsayilan_org_id() -> int | None:
+    return _varsayilan_org_id
+
+
+def _org_doldur(oturum: Any, *_argumanlar: Any, **_anahtar: Any) -> None:
+    """`org_id` zorunlu tablolara dogrudan eklenen nesneleri varsayilana baglar.
+
+    Uygulama kodunun tamami `org_id`yi acikca gecirir; bu kanca yalnizca test,
+    tohum ve yardimci betiklerdeki dogrudan ORM eklemelerini guvenli kilar.
+    """
+    from bdm_veritabani.modeller import ORG_ZORUNLU_TABLOLAR
+
+    for nesne in oturum.new:
+        tablo = getattr(nesne, "__tablename__", None)
+        if tablo not in ORG_ZORUNLU_TABLOLAR:
+            continue
+        if getattr(nesne, "org_id", None) is not None:
+            continue
+        if _varsayilan_org_id is None:  # pragma: no cover - tohumlama atlanirsa
+            raise RuntimeError(
+                "Varsayılan organizasyon bilinmiyor; org_id'yi açıkça verin "
+                "ya da önce tohumlamayı çalıştırın."
+            )
+        nesne.org_id = _varsayilan_org_id
+
+
+def _kancalari_kur() -> None:
+    from sqlalchemy import event
+    from sqlalchemy.orm import Session as SenkronOturum
+
+    if not event.contains(SenkronOturum, "before_flush", _org_doldur):
+        event.listen(SenkronOturum, "before_flush", _org_doldur)
+
+
+_kancalari_kur()
+
 
 def motor() -> Any:
     """Tekil async motoru dondurur (gerekiyorsa olusturur)."""

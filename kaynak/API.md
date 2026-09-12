@@ -239,3 +239,48 @@ Sayfalama sınırları: `sayfa >= 1`, `1 <= boyut <= 200`; aralık dışı değe
 |---|---|---|
 | GET | `/ayarlar` | — → `{ marka_adi, kurulum_tamam, saklama_gun, maskeleme_aktif, kayit_acik, smtp_host, smtp_gonderen, smtp_tanimli, bakim_modu }` |
 | PUT | `/ayarlar` | `{ marka_adi?, saklama_gun?, maskeleme_aktif?, kayit_acik?, smtp_host?, smtp_port?, smtp_kullanici?, smtp_sifre?, smtp_gonderen?, smtp_tls?, bakim_modu? }` |
+
+---
+
+## 15. Çok kiracılılık (v2)
+
+**Aktif organizasyon** şu öncelikle çözülür: `X-Organizasyon: <slug>` başlığı → erişim jetonundaki `org` claim'i → API anahtarının organizasyonu → kullanıcının ilk aktif üyeliği. Hiçbiri yoksa kullanıcı **varsayılan organizasyona** eklenir (`varsayilan`).
+
+Yetki kararı `kullanici.rol` değil **üyelik rolü** üzerinden verilir: `sahip` (her zaman yetkili) · `yonetici` · `operator` · `izleyici` · `son_kullanici`.
+
+| Yöntem | Yol | Yetki | Not |
+|---|---|---|---|
+| GET | `/organizasyonlar` | kimlikli | Üye olduğu organizasyonlar: `[{id, ad, slug, durum, rol, olusturulma}]` |
+| POST | `/organizasyonlar` | kimlikli | `{ad, slug?}` → `201`; oluşturan `sahip` olur |
+| GET | `/organizasyonlar/{id}` | üye | |
+| PATCH | `/organizasyonlar/{id}` | `sahip`/`yonetici` | `{ad?, durum?}` |
+| GET | `/organizasyonlar/{id}/uyeler` | üye | `[{kullanici_id, eposta, ad_soyad, rol, durum, olusturulma}]` |
+| POST | `/organizasyonlar/{id}/uyeler` | `sahip`/`yonetici` | `{eposta?\|kullanici_id?, rol}` → `201` |
+| PATCH | `/organizasyonlar/{id}/uyeler/{kullanici_id}` | `sahip`/`yonetici` | `{rol?, durum?}` |
+| DELETE | `/organizasyonlar/{id}/uyeler/{kullanici_id}` | `sahip`/`yonetici` | `204` |
+| POST | `/kimlik/organizasyon-sec` | kimlikli | `{organizasyon_id}` → `{erisim_jetonu, organizasyon}` |
+
+**Kurallar:** son `sahip` düşürülemez/silinemez ve kişi kendi `sahip` rolünü düşüremez → `409 gecersiz_gecis`. Organizasyon kapsamlı tüm kayıtlar (`bdm`, `konusma`, `api_anahtari`, `loglar`, `kullanim`, `dosya`, `rag`, `araclar`, `faturalama`, `sso`, `posta-sablonlari`) yalnız aktif organizasyona görünür; başka organizasyonun kaydı `404` döner.
+
+## 16. Dil (i18n)
+
+- İstek dili `Accept-Language` başlığından çözülür (`tr` varsayılan, `en` desteklenir); hata ve bilgi mesajları o dilde döner.
+- `kod` alanı her zaman dilden bağımsızdır ve mesaj seçimi için tek referanstır.
+- Yanıt başlığı `Content-Language: tr|en` döner.
+
+| Yöntem | Yol | Yetki | Yanıt |
+|---|---|---|---|
+| GET | `/i18n/diller` | açık | `[{kod, ad, varsayilan}]` |
+| GET | `/i18n/sozluk/{dil}` | açık | `{ anahtar: mesaj }` (arayüz kataloğu) |
+
+## 17. Yeni hata kodları (v2)
+
+| HTTP | `kod` |
+|---|---|
+| 400 | `organizasyon_gerekli`, `sso_yapilandirilmamis`, `medya_desteklenmiyor`, `arac_bulunamadi`, `arac_tur_siniri`, `dosya_tur_desteklenmiyor`, `gomme_modeli_yok`, `plan_bulunamadi`, `abonelik_yok`, `odeme_saglayici_yok` |
+| 401 | `sso_dogrulanamadi`, `oidc_durum_gecersiz`, `saml_yanit_gecersiz` |
+| 402 | `abonelik_gecikmis` |
+| 403 | `org_erisim_yok` |
+| 409 | `saml_tekrar_oynatma` |
+| 413 | `dosya_cok_buyuk` |
+| 502 | `arac_hatasi`, `rag_gomme_hatasi`, `webhook_imzasi_gecersiz` |

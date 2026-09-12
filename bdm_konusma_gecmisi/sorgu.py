@@ -29,6 +29,7 @@ def _sinirla(sayfa: int, boyut: int) -> tuple[int, int]:
 async def konusmalari_listele(
     oturum: AsyncSession,
     *,
+    org_id: int | None = None,
     kullanici_id: int | None = None,
     api_anahtari_id: int | None = None,
     bdm_id: int | None = None,
@@ -41,6 +42,8 @@ async def konusmalari_listele(
     sayfa, boyut = _sinirla(sayfa, boyut)
 
     kosullar: list[sa.ColumnElement[bool]] = []
+    if org_id is not None:
+        kosullar.append(Konusma.org_id == org_id)
     if kullanici_id is not None:
         kosullar.append(Konusma.kullanici_id == kullanici_id)
     if api_anahtari_id is not None:
@@ -172,8 +175,13 @@ async def konusma_sahibi_mi(
     return False
 
 
-async def kullanim_ozeti(oturum: AsyncSession, *, gun: int = 30) -> dict[str, object]:
+async def kullanim_ozeti(
+    oturum: AsyncSession, *, gun: int = 30, org_id: int | None = None
+) -> dict[str, object]:
     esik = datetime.now(timezone.utc) - timedelta(days=max(1, int(gun)))
+    kosullar: list[sa.ColumnElement[bool]] = [KullanimKaydi.olusturulma >= esik]
+    if org_id is not None:
+        kosullar.append(KullanimKaydi.org_id == org_id)
     satirlar = (
         await oturum.execute(
             sa.select(
@@ -182,11 +190,12 @@ async def kullanim_ozeti(oturum: AsyncSession, *, gun: int = 30) -> dict[str, ob
                 sa.func.coalesce(sa.func.sum(KullanimKaydi.girdi_token), 0),
                 sa.func.coalesce(sa.func.sum(KullanimKaydi.cikti_token), 0),
             )
-            .where(KullanimKaydi.olusturulma >= esik)
+            .where(*kosullar)
             .group_by(KullanimKaydi.durum)
         )
     ).all()
 
+    gecikme_kosullari = [*kosullar, KullanimKaydi.gecikme_ms > 0]
     gecikme_toplam, gecikme_adet = (
         await oturum.execute(
             sa.select(
@@ -194,9 +203,7 @@ async def kullanim_ozeti(oturum: AsyncSession, *, gun: int = 30) -> dict[str, ob
                 sa.func.coalesce(
                     sa.func.sum(sa.case((KullanimKaydi.gecikme_ms > 0, 1), else_=0)), 0
                 ),
-            ).where(
-                KullanimKaydi.olusturulma >= esik, KullanimKaydi.gecikme_ms > 0
-            )
+            ).where(*gecikme_kosullari)
         )
     ).one()
 

@@ -47,8 +47,10 @@ def ozet(deger: str) -> str:
 # -- JWT ---------------------------------------------------------------------
 
 
-def erisim_jetonu_uret(kullanici_id: int, rol: str) -> tuple[str, str]:
-    """(jeton, jti) dondurur."""
+def erisim_jetonu_uret(
+    kullanici_id: int, rol: str, org_id: int | None = None
+) -> tuple[str, str]:
+    """(jeton, jti) dondurur. `org_id` verilirse `org` claim'i eklenir."""
     jti = rastgele_jeton(16)
     simdi = datetime.now(timezone.utc)
     govde: dict[str, Any] = {
@@ -59,6 +61,8 @@ def erisim_jetonu_uret(kullanici_id: int, rol: str) -> tuple[str, str]:
         "iat": int(simdi.timestamp()),
         "exp": int((simdi + timedelta(minutes=ayarlar.erisim_omru_dk)).timestamp()),
     }
+    if org_id is not None:
+        govde["org"] = int(org_id)
     return jwt.encode(govde, ayarlar.gizli_anahtar, algorithm="HS256"), jti
 
 

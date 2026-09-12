@@ -12,6 +12,7 @@ from bdm_veritabani.modeller import MaskelemeKurali, Rol, Taban
 from bdm_veritabani.oturum import oturum_fabrikasi
 
 BEKLENEN_TABLOLAR = {
+    # v1 çekirdek
     "kullanici",
     "oturum",
     "dogrulama_jetonu",
@@ -24,11 +25,56 @@ BEKLENEN_TABLOLAR = {
     "islem_kaydi",
     "ayar",
     "maskeleme_kurali",
+    # v2 çok kiracılı yapı
+    "organizasyon",
+    "uyelik",
+    "plan",
+    "abonelik",
+    "fatura",
+    "dosya",
+    "vektor_belgesi",
+    "vektor_parcasi",
+    "arac",
+    "arac_cagrisi",
+    "sso_saglayici",
+    "sso_kimlik",
+    "posta_sablonu",
 }
 
 
-async def test_sema_on_iki_tabloyu_icerir():
+async def test_sema_tum_tablolari_icerir():
     assert set(Taban.metadata.tables) == BEKLENEN_TABLOLAR
+
+
+async def test_org_kolonlari_zorunlu():
+    """Cok kiracili yapi: org kapsamli tablolarda org_id NOT NULL olmali."""
+    kapsamli = (
+        "bdm",
+        "konusma",
+        "api_anahtari",
+        "dosya",
+        "vektor_belgesi",
+        "vektor_parcasi",
+        "arac",
+        "abonelik",
+        "fatura",
+        "posta_sablonu",
+        "sso_saglayici",
+    )
+    for tablo in kapsamli:
+        assert Taban.metadata.tables[tablo].columns["org_id"].nullable is False, tablo
+    assert Taban.metadata.tables["uyelik"].columns["organizasyon_id"].nullable is False
+
+
+async def test_varsayilan_organizasyon_tohumda_olusturulur():
+    from bdm_veritabani.modeller import Organizasyon
+    from bdm_veritabani.oturum import oturum_fabrikasi
+
+    async with oturum_fabrikasi()() as oturum:
+        satirlar = (
+            await oturum.execute(sa.select(Organizasyon.slug))
+        ).scalars().all()
+    assert "varsayilan" in satirlar
 
 
 async def test_tohum_maskeleme_kurallarini_ekler():

@@ -116,7 +116,14 @@ async def _tekil_slug(oturum: AsyncSession, ad: str, istenen: str | None = None)
     return f"{taban}-{sayac}"
 
 
-async def bdm_olustur(oturum: AsyncSession, veri: BdmOlustur) -> Bdm:
+async def bdm_olustur(
+    oturum: AsyncSession, veri: BdmOlustur, *, org_id: int | None = None
+) -> Bdm:
+    if org_id is None:
+        from bdm_veritabani.tohum import varsayilan_organizasyon
+
+        org_id = (await varsayilan_organizasyon(oturum)).id
+
     bilgi = saglayici_bilgisi(veri.saglayici.value)
     temel_url = veri.temel_url or bilgi.varsayilan_temel_url
     if not temel_url:
@@ -129,6 +136,7 @@ async def bdm_olustur(oturum: AsyncSession, veri: BdmOlustur) -> Bdm:
         "arac": False,
     }
     bdm = Bdm(
+        org_id=org_id,
         slug=await _tekil_slug(oturum, veri.gorunen_ad, veri.slug),
         gorunen_ad=veri.gorunen_ad,
         aciklama=veri.aciklama,
@@ -188,10 +196,13 @@ async def bdm_slug_getir(oturum: AsyncSession, slug: str) -> Bdm:
 async def bdm_listele(
     oturum: AsyncSession,
     *,
+    org_id: int | None = None,
     durumlar: tuple[BdmDurumu, ...] | None = None,
     arama: str | None = None,
 ) -> list[Bdm]:
     sorgu = sa.select(Bdm).order_by(Bdm.gorunen_ad)
+    if org_id is not None:
+        sorgu = sorgu.where(Bdm.org_id == org_id)
     if durumlar:
         sorgu = sorgu.where(Bdm.durum.in_([d for d in durumlar]))
     if arama:
@@ -236,6 +247,7 @@ async def bdm_sil(oturum: AsyncSession, bdm: Bdm) -> None:
 
 async def bdm_kopyala(oturum: AsyncSession, bdm: Bdm, yeni_ad: str, yeni_slug: str | None) -> Bdm:
     yeni = Bdm(
+        org_id=bdm.org_id,
         slug=await _tekil_slug(oturum, yeni_ad, yeni_slug),
         gorunen_ad=yeni_ad,
         aciklama=bdm.aciklama,
@@ -258,11 +270,14 @@ async def bdm_kopyala(oturum: AsyncSession, bdm: Bdm, yeni_ad: str, yeni_slug: s
 
 
 async def kullanilabilir_modeller(
-    oturum: AsyncSession, izinli_modeller: list[str] | None = None
+    oturum: AsyncSession,
+    izinli_modeller: list[str] | None = None,
+    *,
+    org_id: int | None = None,
 ) -> list[dict[str, object]]:
     """Sohbet istemcisine acik modeller: hazir veya calisiyor olanlar."""
     modeller = await bdm_listele(
-        oturum, durumlar=(BdmDurumu.hazir, BdmDurumu.calisiyor)
+        oturum, org_id=org_id, durumlar=(BdmDurumu.hazir, BdmDurumu.calisiyor)
     )
     if izinli_modeller:
         izin = {str(x) for x in izinli_modeller}
