@@ -14,6 +14,7 @@ build/
 *.log
 kaynak/testler/gecici/
 bdm_veritabani/hf-onbellek/
+bdm_veritabani/dosyalar/
 dagitim/.env
 .DS_Store
 Thumbs.db

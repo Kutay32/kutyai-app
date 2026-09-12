@@ -59,6 +59,28 @@ class Ayarlar(BaseSettings):
     image_onbellek: str = "vllm/vllm-openai:latest,ollama/ollama:latest"
     hf_onbellek: str = ""
 
+    # -- Dosya (spec §3) --
+    dosya_maks_mb: int = 25
+    dosya_dizini: str = ""
+    dosya_baglam_kr: int = 12000
+
+    # -- Araç çağırma (spec §4) --
+    arac_imza_anahtari: str = ""
+    arac_yerel_izin: bool = False
+    arac_maks_tur: int = 4
+
+    # -- RAG (spec §5) --
+    rag_ust_k: int = 4
+
+    # -- Ödeme (spec §6) --
+    odeme_saglayici: str = "yerel"
+    stripe_gizli_anahtar: str = ""
+    stripe_webhook_sirri: str = ""
+
+    # -- SSO (spec §7) --
+    sso_otomatik_uyelik: bool = True
+    sso_yeniden_yonlendirme: str = ""
+
     _uretilen: list[str] = PrivateAttr(default_factory=list)
 
     def model_post_init(self, __context: object) -> None:
@@ -112,6 +134,13 @@ class Ayarlar(BaseSettings):
         if ham:
             return ham
         return (KOK / "bdm_veritabani" / "hf-onbellek").as_posix()
+
+    def dosya_dizini_yolu(self) -> str:
+        """Yuklenen dosyalarin kok dizini."""
+        ham = (self.dosya_dizini or "").strip()
+        if ham:
+            return ham
+        return (KOK / "bdm_veritabani" / "dosyalar").as_posix()
 
     @property
     def smtp_var_mi(self) -> bool:

@@ -83,6 +83,7 @@ async def gecisi_kilitle(
     sonuc = await oturum.execute(
         sa.update(Bdm).where(Bdm.id == bdm.id, Bdm.durum.in_(izinli)).values(durum=hedef)
     )
+    _iz(f"gecis id={bdm.id} hedef={hedef.value} rowcount={sonuc.rowcount} oncesi={bdm.durum.value}")
     if int(sonuc.rowcount or 0) != 1:
         await oturum.refresh(bdm)
         gecis_dogrula(bdm, hedef)
@@ -91,6 +92,18 @@ async def gecisi_kilitle(
             {"mevcut": bdm.durum.value, "hedef": hedef.value},
         )
     bdm.durum = hedef
+
+
+import os as _os
+import time as _time
+
+_TRACE = _os.environ.get("KUTYAI_TRACE_YENIDEN")
+
+
+def _iz(mesaj: str) -> None:
+    if _TRACE:
+        with open(_TRACE, "a", encoding="utf-8") as dosya:
+            dosya.write(f"{_time.time():.4f} {mesaj}\n")
 
 
 def _hata_kodu(hata: BaseException) -> str:
@@ -345,6 +358,7 @@ async def yeniden_baslat(
     ip: str = "",
 ) -> dict[str, Any]:
     """Çalışan konteyneri durdurup aynı BDM için yenisini başlatır."""
+    _iz(f"yeniden_giris id={bdm.id} durum={bdm.durum.value}")
     if bdm.durum is BdmDurumu.calisiyor:
         # Önce durdurma kilidi: eşzamanlı yeniden başlatmalardan yalnızca biri geçer.
         await gecisi_kilitle(oturum, bdm, BdmDurumu.durdu, kaynaklar=(BdmDurumu.calisiyor,))

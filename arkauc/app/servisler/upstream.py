@@ -42,6 +42,60 @@ def kullanim_sozlugu(ham: dict[str, Any] | None) -> dict[str, int]:
     }
 
 
+def argumanlari_coz(ham: Any) -> dict[str, Any]:
+    """Model `function.arguments` alanini sozluge cevirir; bozuksa budur."""
+    if isinstance(ham, dict):
+        return ham
+    if not isinstance(ham, str) or not ham.strip():
+        return {}
+    try:
+        cozulen = json.loads(ham)
+    except ValueError:
+        logger.debug("Araç argümanları çözülemedi: %s", _kirp(ham, 200))
+        return {}
+    return cozulen if isinstance(cozulen, dict) else {}
+
+
+class AracBiriktirici:
+    """SSE `tool_calls` deltalarini indekse gore birlestirir."""
+
+    def __init__(self) -> None:
+        self._parcalar: dict[int, dict[str, Any]] = {}
+
+    def ekle(self, paket: dict[str, Any]) -> None:
+        for secim in paket.get("choices") or []:
+            for delta in (secim.get("delta") or {}).get("tool_calls") or []:
+                if not isinstance(delta, dict):
+                    continue
+                indis = int(delta.get("index") or 0)
+                kayit = self._parcalar.setdefault(
+                    indis, {"id": "", "ad": "", "argumanlar": ""}
+                )
+                if delta.get("id"):
+                    kayit["id"] = str(delta["id"])
+                fonksiyon = delta.get("function") or {}
+                if fonksiyon.get("name"):
+                    kayit["ad"] = str(fonksiyon["name"])
+                if fonksiyon.get("arguments"):
+                    kayit["argumanlar"] += str(fonksiyon["arguments"])
+
+    @property
+    def var_mi(self) -> bool:
+        return bool(self._parcalar)
+
+    def cagrilar(self) -> list[dict[str, Any]]:
+        """`[{"id", "ad", "argumanlar"}]` — ad bos olan parcalar elenir."""
+        return [
+            {
+                "id": kayit["id"] or f"cagri_{indis}",
+                "ad": kayit["ad"],
+                "argumanlar": argumanlari_coz(kayit["argumanlar"]),
+            }
+            for indis, kayit in sorted(self._parcalar.items())
+            if kayit["ad"]
+        ]
+
+
 class UstSaglayici:
     """Saglayiciya bagimsiz sohbet istemcisi (OpenAI sozlesmesi)."""
 
@@ -72,11 +126,12 @@ class UstSaglayici:
     def govde(
         self,
         bdm: Bdm,
-        mesajlar: list[dict[str, str]],
+        mesajlar: list[dict[str, Any]],
         *,
         sicaklik: float | None,
         maks_token: int | None,
         akis: bool,
+        araclar: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         govde: dict[str, Any] = {
             "model": bdm.upstream_model,
@@ -87,6 +142,9 @@ class UstSaglayici:
             govde["temperature"] = float(sicaklik)
         if maks_token:
             govde["max_tokens"] = int(maks_token)
+        if araclar:
+            govde["tools"] = list(araclar)
+            govde["tool_choice"] = "auto"
         if akis:
             govde["stream_options"] = {"include_usage": True}
         return govde
@@ -141,13 +199,21 @@ class UstSaglayici:
     async def akis_uret(
         self,
         bdm: Bdm,
-        mesajlar: list[dict[str, str]],
+        mesajlar: list[dict[str, Any]],
         *,
         sicaklik: float | None = None,
         maks_token: int | None = None,
+        araclar: list[dict[str, Any]] | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
-        """SSE parcalarini `{"parca": str}` / `{"kullanim": {...}}` olarak uretir."""
-        govde = self.govde(bdm, mesajlar, sicaklik=sicaklik, maks_token=maks_token, akis=True)
+        """SSE parcalarini `{"parca": str}` / `{"kullanim": {...}}` olarak uretir.
+
+        Arac cagrisi istendiyse akis sonunda tek bir `{"arac_cagrilari": [...]}`
+        olayi uretilir.
+        """
+        govde = self.govde(
+            bdm, mesajlar, sicaklik=sicaklik, maks_token=maks_token, akis=True, araclar=araclar
+        )
+        biriktirici = AracBiriktirici()
         try:
             async with self._istemci() as istemci:
                 async with istemci.stream(
@@ -170,8 +236,11 @@ class UstSaglayici:
                             continue
                         if not isinstance(paket, dict):
                             continue
+                        biriktirici.ekle(paket)
                         for olay in self._paket_olaylari(paket):
                             yield olay
+                if biriktirici.var_mi:
+                    yield {"arac_cagrilari": biriktirici.cagrilar()}
         except UstSaglayiciHatasi:
             raise
         except httpx.HTTPError as hata:
@@ -182,13 +251,16 @@ class UstSaglayici:
     async def tek_yanit(
         self,
         bdm: Bdm,
-        mesajlar: list[dict[str, str]],
+        mesajlar: list[dict[str, Any]],
         *,
         sicaklik: float | None = None,
         maks_token: int | None = None,
+        araclar: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        """`{"icerik": str, "kullanim": {"girdi": int, "cikti": int}}` dondurur."""
-        govde = self.govde(bdm, mesajlar, sicaklik=sicaklik, maks_token=maks_token, akis=False)
+        """`{"icerik", "kullanim", "arac_cagrilari"}` dondurur."""
+        govde = self.govde(
+            bdm, mesajlar, sicaklik=sicaklik, maks_token=maks_token, akis=False, araclar=araclar
+        )
         try:
             async with self._istemci() as istemci:
                 yanit = await istemci.post(
@@ -207,5 +279,30 @@ class UstSaglayici:
         secimler = paket.get("choices") or []
         if not secimler:
             raise self._hata(bdm, yanit.status_code, yanit.text)
-        icerik = (secimler[0].get("message") or {}).get("content") or ""
-        return {"icerik": str(icerik), "kullanim": kullanim_sozlugu(paket.get("usage"))}
+        ileti = secimler[0].get("message") or {}
+        icerik = ileti.get("content") or ""
+        return {
+            "icerik": str(icerik),
+            "kullanim": kullanim_sozlugu(paket.get("usage")),
+            "arac_cagrilari": self._mesaj_araclari(ileti),
+        }
+
+    @staticmethod
+    def _mesaj_araclari(ileti: dict[str, Any]) -> list[dict[str, Any]]:
+        """Tek yanittaki `message.tool_calls` alanini ortak bicime cevirir."""
+        cagrilar: list[dict[str, Any]] = []
+        for sira, cagri in enumerate(ileti.get("tool_calls") or []):
+            if not isinstance(cagri, dict):
+                continue
+            fonksiyon = cagri.get("function") or {}
+            ad = str(fonksiyon.get("name") or "")
+            if not ad:
+                continue
+            cagrilar.append(
+                {
+                    "id": str(cagri.get("id") or f"cagri_{sira}"),
+                    "ad": ad,
+                    "argumanlar": argumanlari_coz(fonksiyon.get("arguments")),
+                }
+            )
+        return cagrilar
