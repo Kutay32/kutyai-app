@@ -12,6 +12,7 @@ yazilir.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -19,9 +20,16 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from arkauc.app.cekirdek.i18n import VARSAYILAN_DIL, dil_coz, mesaj
+from arkauc.app.cekirdek.i18n import VARSAYILAN_DIL, dil_coz, katalog, mesaj
 
 logger = logging.getLogger("kutyai.hata")
+
+#: Katalog anahtarı biçimi (küçük harf, rakam, alt çizgi).
+_KATALOG_ANAHTARI = re.compile(r"^[a-z][a-z0-9_]*$")
+
+
+def _katalogda_var(anahtar: str) -> bool:
+    return anahtar in katalog(VARSAYILAN_DIL)
 
 
 def istek_dili(istek: Request) -> str:
@@ -46,6 +54,10 @@ class KutyaiHatasi(Exception):
     ) -> None:
         if mesaj:
             self.mesaj = mesaj
+            # Katalog anahtarını hem mesaj hem makine-okunur kod olarak kullan:
+            # `raise Bulunamadi("plan_bulunamadi")` → kod = plan_bulunamadi.
+            if kod is None and _KATALOG_ANAHTARI.match(mesaj) and _katalogda_var(mesaj):
+                self.kod = mesaj
         if kod:
             self.kod = kod
         if durum_kodu:

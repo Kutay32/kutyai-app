@@ -39,6 +39,7 @@ YONLENDIRICILER: tuple[tuple[str, str, str], ...] = (
     ("arkauc.app.api.medya", "/api/v1", "medya"),
     ("arkauc.app.api.faturalama", "/api/v1", "faturalama"),
     ("arkauc.app.api.sso", "/api/v1", "sso"),
+    ("arkauc.app.api.posta_sablonlari", "/api/v1", "posta-sablonlari"),
     ("arkauc.app.api.i18n", "/api/v1", "i18n"),
     ("arkauc.app.api.sohbet", "/api/v1", "sohbet"),
     ("arkauc.app.api.loglar", "/api/v1", "loglar"),

@@ -207,7 +207,7 @@ async def test_slug_org_icinde_tekil(istemci, yardimci) -> None:
         headers=basliklar,
     )
     assert cakisan.status_code == 409
-    assert cakisan.json()["hata"]["kod"] == "cakisma"
+    assert cakisan.json()["hata"]["kod"] == "arac_slug_kullaniliyor"
 
     # slug verilmeyen ikinci kayıt otomatik türetilir ve çakışmaz.
     otomatik = await _olustur(
@@ -428,7 +428,7 @@ async def test_adres_guvenligi_reddeder(istemci, yardimci, adres) -> None:
         UC, json={"ad": "Kötü", "uc_noktasi": adres}, headers=basliklar
     )
     assert yanit.status_code == 400
-    assert yanit.json()["hata"]["kod"] == "gecersiz_istek"
+    assert yanit.json()["hata"]["kod"] == "arac_uc_noktasi_gecersiz"
 
 
 async def test_http_yalniz_yerel_izinle(istemci, yardimci, webhook, monkeypatch) -> None:
@@ -491,7 +491,7 @@ async def test_hesap_makinesi_guvenli(istemci, yardimci) -> None:
             headers=basliklar,
         )
         assert yanit.status_code == 400, kotu
-        assert yanit.json()["hata"]["kod"] == "gecersiz_istek"
+        assert yanit.json()["hata"]["kod"] == "gecersiz_ifade"
 
 
 async def test_hesap_makinesi_eksik_arguman(istemci, yardimci) -> None:
@@ -562,7 +562,7 @@ async def test_arguman_semasi_dogrulanir(istemci, yardimci, webhook) -> None:
         f"{UC}/{arac['id']}/dene", json={"argumanlar": {"gun": 3}}, headers=basliklar
     )
     assert eksik.status_code == 400
-    assert eksik.json()["hata"]["kod"] == "gecersiz_istek"
+    assert eksik.json()["hata"]["kod"] == "arac_arguman_zorunlu"
     assert eksik.json()["hata"]["ayrinti"]["alan"] == "sehir"
 
     yanlis_tur = await istemci.post(
@@ -731,7 +731,7 @@ async def test_webhook_uc_noktasi_zorunlu(istemci, yardimci) -> None:
     basliklar = yardimci.basliklar(yonetici)
     yanit = await istemci.post(UC, json={"ad": "Boş"}, headers=basliklar)
     assert yanit.status_code == 400
-    assert yanit.json()["hata"]["kod"] == "gecersiz_istek"
+    assert yanit.json()["hata"]["kod"] == "arac_uc_noktasi_zorunlu"
 
 
 async def test_patch_tur_gecisi(istemci, yardimci, webhook) -> None:

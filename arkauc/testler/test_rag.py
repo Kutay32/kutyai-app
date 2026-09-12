@@ -383,7 +383,7 @@ async def test_belge_silme(istemci, yardimci, uygulama):
 
     detay = await istemci.get(f"{BELGELER}/{belge['id']}", headers=kurulum.basliklar)
     assert detay.status_code == 404
-    assert detay.json()["hata"]["kod"] == "bulunamadi"
+    assert detay.json()["hata"]["kod"] == "belge_bulunamadi"
 
     arama = await istemci.post(ARA, json={"sorgu": "kedi"}, headers=kurulum.basliklar)
     assert arama.json()["sonuclar"] == []
@@ -514,7 +514,7 @@ async def test_kaynak_ve_metin_dogrulamasi(istemci, yardimci, uygulama):
         headers=kurulum.basliklar,
     )
     assert sadece_bosluk.status_code == 400
-    assert sadece_bosluk.json()["hata"]["kod"] == "gecersiz_istek"
+    assert sadece_bosluk.json()["hata"]["kod"] == "belge_kaynak_gerekli"
     assert "metin veya dosya_id" in sadece_bosluk.json()["hata"]["mesaj"]
 
     ingilizce = await istemci.post(

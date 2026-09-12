@@ -443,7 +443,7 @@ async def test_org_disi_belge_404(istemci, yardimci, uygulama, sahte_rag):
     )
 
     assert yanit.status_code == 404
-    assert yanit.json()["hata"]["kod"] == "bulunamadi"
+    assert yanit.json()["hata"]["kod"] == "belge_bulunamadi"
     assert sahte_rag["gomme"] == []
 
 
