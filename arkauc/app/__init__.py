@@ -1,0 +1,1 @@
+"""KutyAI FastAPI uygulamasi."""

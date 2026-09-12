@@ -1,0 +1,6 @@
+[tool.pytest.ini_options]
+testpaths = ["arkauc/testler"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+addopts = "-q"
+filterwarnings = ["ignore::DeprecationWarning"]

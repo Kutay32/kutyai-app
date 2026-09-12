@@ -1,0 +1,86 @@
+[
+  {
+    "slug": "ollama-llama3",
+    "gorunen_ad": "Yerel Llama 3 (Ollama)",
+    "aciklama": "Ollama üzerinde çalışan, veri kurumdan çıkmayan genel amaçlı model.",
+    "saglayici": "ollama",
+    "temel_url": "http://localhost:11434/v1",
+    "upstream_model": "llama3",
+    "baglam_penceresi": 8192,
+    "maks_cikti": 2048,
+    "yerel_mi": true
+  },
+  {
+    "slug": "ollama-qwen25",
+    "gorunen_ad": "Yerel Qwen 2.5 (Ollama)",
+    "aciklama": "Türkçe dahil çok dilli görevlerde güçlü, yerel çalışan model.",
+    "saglayici": "ollama",
+    "temel_url": "http://localhost:11434/v1",
+    "upstream_model": "qwen2.5:7b",
+    "baglam_penceresi": 32768,
+    "maks_cikti": 4096,
+    "yerel_mi": true
+  },
+  {
+    "slug": "openai-gpt4o-mini",
+    "gorunen_ad": "GPT-4o mini",
+    "aciklama": "Hızlı ve ekonomik genel amaçlı model.",
+    "saglayici": "openai",
+    "temel_url": "https://api.openai.com/v1",
+    "upstream_model": "gpt-4o-mini",
+    "baglam_penceresi": 128000,
+    "maks_cikti": 4096
+  },
+  {
+    "slug": "openai-gpt4o",
+    "gorunen_ad": "GPT-4o",
+    "aciklama": "Yüksek doğruluk gerektiren görevler için amiral gemisi model.",
+    "saglayici": "openai",
+    "temel_url": "https://api.openai.com/v1",
+    "upstream_model": "gpt-4o",
+    "baglam_penceresi": 128000,
+    "maks_cikti": 8192
+  },
+  {
+    "slug": "openrouter-claude",
+    "gorunen_ad": "Claude (OpenRouter)",
+    "aciklama": "OpenRouter üzerinden erişilen Claude modelleri.",
+    "saglayici": "openrouter",
+    "temel_url": "https://openrouter.ai/api/v1",
+    "upstream_model": "anthropic/claude-3.5-sonnet",
+    "baglam_penceresi": 200000,
+    "maks_cikti": 8192
+  },
+  {
+    "slug": "vllm-mistral",
+    "gorunen_ad": "vLLM Mistral",
+    "aciklama": "GPU üzerinde yüksek verimli Mistral servisi.",
+    "saglayici": "vllm",
+    "temel_url": "http://localhost:8000/v1",
+    "upstream_model": "mistralai/Mistral-7B-Instruct-v0.3",
+    "baglam_penceresi": 32768,
+    "maks_cikti": 4096,
+    "yerel_mi": true
+  },
+  {
+    "slug": "tgi-llama",
+    "gorunen_ad": "TGI Llama 3.1",
+    "aciklama": "HuggingFace TGI üzerinde Llama 3.1 servisi.",
+    "saglayici": "tgi",
+    "temel_url": "http://localhost:8080/v1",
+    "upstream_model": "meta-llama/Llama-3.1-8B-Instruct",
+    "baglam_penceresi": 16384,
+    "maks_cikti": 4096,
+    "yerel_mi": true
+  },
+  {
+    "slug": "ozel-uyumlu",
+    "gorunen_ad": "Özel OpenAI Uyumlu Servis",
+    "aciklama": "Kurum içi, OpenAI uyumlu özel çıkarım servisi.",
+    "saglayici": "ozel",
+    "temel_url": "http://localhost:9000/v1",
+    "upstream_model": "kurum-ozel-model",
+    "baglam_penceresi": 8192,
+    "maks_cikti": 2048
+  }
+]
