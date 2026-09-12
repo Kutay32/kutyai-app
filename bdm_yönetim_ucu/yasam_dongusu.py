@@ -1,0 +1,215 @@
+"""BDM yaşam döngüsü: durum makinesi ve konteyner işlemleri (spec §7.6, §10)."""
+
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from arkauc.app.cekirdek.denetim import islem_kaydet
+from arkauc.app.cekirdek.hatalar import BdmHazirDegil, GecersizGecis, SurucuYok
+from arkauc.app.servisler.konteyner import KonteynerSurucusu, SaglikDurumu, surucu_al
+from bdm_listesi import bdm_sozlugu
+from bdm_listesi.saglayicilar import saglayici_bilgisi
+from bdm_veritabani.modeller import Bdm, BdmDurumu
+
+logger = logging.getLogger("kutyai.yonetim")
+
+# spec §10: GPU'suz ortamda GPU gerektiren saglayici icin kullaniciya gosterilen metin.
+GPU_GEREKLI_MESAJ = (
+    "Bu model GPU gerektirir; Ollama gibi CPU uyumlu bir sağlayıcı seçin "
+    "veya GPU çalışma zamanını kurun."
+)
+
+# Durum makinesi: taslak → hazir → calisiyor → durdu; `hata` her durumdan girilebilir.
+gecerli_gecisler: dict[BdmDurumu, frozenset[BdmDurumu]] = {
+    BdmDurumu.taslak: frozenset({BdmDurumu.hazir, BdmDurumu.hata}),
+    BdmDurumu.hazir: frozenset({BdmDurumu.calisiyor, BdmDurumu.taslak, BdmDurumu.hata}),
+    BdmDurumu.calisiyor: frozenset({BdmDurumu.durdu, BdmDurumu.hata}),
+    BdmDurumu.durdu: frozenset({BdmDurumu.calisiyor, BdmDurumu.hazir, BdmDurumu.hata}),
+    BdmDurumu.hata: frozenset({BdmDurumu.taslak, BdmDurumu.hazir, BdmDurumu.hata}),
+}
+
+
+def gecis_dogrula(bdm: Bdm, hedef: BdmDurumu) -> None:
+    """Geçiş durum makinesine uygun değilse `409 gecersiz_gecis` fırlatır."""
+    if hedef not in gecerli_gecisler.get(bdm.durum, frozenset()):
+        raise GecersizGecis(
+            f"'{bdm.durum.value}' durumundan '{hedef.value}' durumuna geçilemez.",
+            {"mevcut": bdm.durum.value, "hedef": hedef.value},
+        )
+
+
+def gecis_uygula(bdm: Bdm, hedef: BdmDurumu) -> None:
+    """Doğrulanmış geçişi uygular."""
+    gecis_dogrula(bdm, hedef)
+    bdm.durum = hedef
+
+
+async def manifest_al(bdm: Bdm) -> dict[str, Any]:
+    """Konteyner manifestini hazırlama modülünden ister (spec §7.5)."""
+    try:
+        from bdm_hazırlama_ucu.manifest import manifest_uret
+    except ImportError as hata:
+        raise BdmHazirDegil("Hazırlama modülü henüz kullanılamıyor.") from hata
+    manifest = manifest_uret(bdm)
+    if not isinstance(manifest, dict):
+        raise BdmHazirDegil("Hazırlama modülü geçerli bir konteyner manifesti üretmedi.")
+    return manifest
+
+
+def surucu_sec(bdm: Bdm) -> KonteynerSurucusu:
+    """Sağlayıcı ve yerellik bilgisine göre sürücüyü seçer."""
+    return surucu_al(bdm.saglayici.value, bdm.yerel_mi)
+
+
+def konteyner_kimligi(bdm: Bdm, *, zorunlu: bool = True) -> str | None:
+    """BDM kaydındaki konteyner kimliğini döndürür."""
+    ham = (bdm.konteyner or {}).get("konteyner_id")
+    if not ham:
+        if zorunlu:
+            raise SurucuYok("Bu model için çalışan konteyner kaydı yok.", {"bdm_id": bdm.id})
+        return None
+    return str(ham)
+
+
+def _konteyner_kaydi(bdm: Bdm, manifest: dict[str, Any], konteyner_id: str) -> dict[str, Any]:
+    """Konteyner JSON'unu günceller; rota tercihleri (`yol`) korunur."""
+    return {
+        **(bdm.konteyner or {}),
+        "image": manifest.get("image"),
+        "gpu": bool(manifest.get("gpu")),
+        "port": manifest.get("port"),
+        "bellek_gb": manifest.get("bellek_gb"),
+        "konteyner_id": konteyner_id,
+    }
+
+
+async def _eski_konteyneri_kaldir(bdm: Bdm, surucu: KonteynerSurucusu) -> None:
+    """Varsa önceki konteyneri durdurup siler (en iyi çaba)."""
+    kimlik = konteyner_kimligi(bdm, zorunlu=False)
+    if kimlik is None:
+        return
+    for islem in (surucu.durdur, surucu.sil):
+        try:
+            await islem(kimlik)
+        except SurucuYok:
+            logger.warning("Eski konteyner zaten yok: %s", kimlik)
+
+
+async def _calistir(bdm: Bdm, surucu: KonteynerSurucusu) -> str:
+    """GPU denetimi, manifest ve konteyner başlatma; geçiş uygulamaz."""
+    durum = await surucu.durum()
+    if saglayici_bilgisi(bdm.saglayici.value).gpu_gerekir and not durum.gpu_var:
+        raise SurucuYok(GPU_GEREKLI_MESAJ, {"saglayici": bdm.saglayici.value})
+    manifest = await manifest_al(bdm)
+    konteyner_id = await surucu.baslat(bdm_sozlugu(bdm), manifest)
+    bdm.konteyner = _konteyner_kaydi(bdm, manifest, konteyner_id)
+    return konteyner_id
+
+
+async def _kaydet(
+    oturum: AsyncSession,
+    eylem: str,
+    bdm: Bdm,
+    surucu: KonteynerSurucusu,
+    konteyner_id: str | None,
+    *,
+    kullanici_id: int | None,
+    ip: str,
+) -> None:
+    await islem_kaydet(
+        oturum,
+        eylem,
+        kullanici_id=kullanici_id,
+        hedef_tur="bdm",
+        hedef_id=bdm.id,
+        ayrinti={"konteyner_id": konteyner_id or "", "surucu": surucu.ad},
+        ip=ip,
+    )
+
+
+async def baslat(
+    oturum: AsyncSession,
+    bdm: Bdm,
+    *,
+    kullanici_id: int | None = None,
+    ip: str = "",
+) -> dict[str, Any]:
+    """BDM'yi `hazir` durumundan `calisiyor` durumuna geçirir."""
+    gecis_dogrula(bdm, BdmDurumu.calisiyor)
+    surucu = surucu_sec(bdm)
+    await _eski_konteyneri_kaldir(bdm, surucu)
+    konteyner_id = await _calistir(bdm, surucu)
+    gecis_uygula(bdm, BdmDurumu.calisiyor)
+    await _kaydet(
+        oturum, "bdm.baslatildi", bdm, surucu, konteyner_id, kullanici_id=kullanici_id, ip=ip
+    )
+    await oturum.flush()
+    return {"durum": bdm.durum.value, "konteyner_id": konteyner_id}
+
+
+async def durdur(
+    oturum: AsyncSession,
+    bdm: Bdm,
+    *,
+    kullanici_id: int | None = None,
+    ip: str = "",
+) -> dict[str, Any]:
+    """Çalışan konteyneri durdurur (`calisiyor` → `durdu`)."""
+    gecis_dogrula(bdm, BdmDurumu.durdu)
+    kimlik = konteyner_kimligi(bdm)
+    surucu = surucu_sec(bdm)
+    await surucu.durdur(kimlik)
+    gecis_uygula(bdm, BdmDurumu.durdu)
+    await _kaydet(
+        oturum, "bdm.durduruldu", bdm, surucu, kimlik, kullanici_id=kullanici_id, ip=ip
+    )
+    await oturum.flush()
+    return {"durum": bdm.durum.value}
+
+
+async def yeniden_baslat(
+    oturum: AsyncSession,
+    bdm: Bdm,
+    *,
+    kullanici_id: int | None = None,
+    ip: str = "",
+) -> dict[str, Any]:
+    """Çalışan konteyneri durdurup aynı BDM için yenisini başlatır."""
+    if bdm.durum == BdmDurumu.calisiyor:
+        gecis_uygula(bdm, BdmDurumu.durdu)
+    elif bdm.durum != BdmDurumu.durdu:
+        raise GecersizGecis(
+            f"'{bdm.durum.value}' durumundan '{BdmDurumu.calisiyor.value}' durumuna geçilemez.",
+            {"mevcut": bdm.durum.value, "hedef": BdmDurumu.calisiyor.value},
+        )
+    surucu = surucu_sec(bdm)
+    await _eski_konteyneri_kaldir(bdm, surucu)
+    konteyner_id = await _calistir(bdm, surucu)
+    gecis_uygula(bdm, BdmDurumu.calisiyor)
+    await _kaydet(
+        oturum,
+        "bdm.yeniden_baslatildi",
+        bdm,
+        surucu,
+        konteyner_id,
+        kullanici_id=kullanici_id,
+        ip=ip,
+    )
+    await oturum.flush()
+    return {"durum": bdm.durum.value, "konteyner_id": konteyner_id}
+
+
+async def saglik_al(bdm: Bdm) -> SaglikDurumu:
+    """Çalışan konteynerin sağlığını döndürür; kayıt yoksa sağlıksız kabul eder."""
+    kimlik = konteyner_kimligi(bdm, zorunlu=False)
+    if kimlik is None:
+        return SaglikDurumu(
+            calisiyor=False, hazir=False, mesaj="Bu model için çalışan konteyner kaydı yok."
+        )
+    try:
+        return await surucu_sec(bdm).saglik(kimlik)
+    except SurucuYok as hata:
+        return SaglikDurumu(calisiyor=False, hazir=False, mesaj=hata.mesaj)

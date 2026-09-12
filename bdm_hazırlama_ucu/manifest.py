@@ -1,0 +1,102 @@
+"""Konteyner manifesti uretimi (spec §7.5, §10, §4.5).
+
+Uzak saglayicilar (openai, azure, openrouter, ozel) icin manifest uretilmez;
+konteynerde calisan yerel saglayicilar (ollama, vllm, tgi) icin imaj, komut,
+port, GPU bayragi, kaba bellek tahmini ve ortam degiskenleri dondurulur.
+"""
+
+from __future__ import annotations
+
+import logging
+import re
+from typing import Any
+
+from arkauc.app.cekirdek import guvenlik
+from arkauc.app.cekirdek.hatalar import GecersizIstek
+from bdm_listesi.saglayicilar import saglayici_bilgisi
+from bdm_veritabani.modeller import Bdm, Saglayici
+
+logger = logging.getLogger("kutyai.hazirlama")
+
+VARSAYILAN_PORT = 8000
+# Model adindaki parametre sayisi: `7B`, `72b`, `1.5B`.
+_PARAMETRE_DESENI = re.compile(r"(\d+(?:[.,]\d+)?)\s*[bB](?![A-Za-z0-9])")
+# fp16 agirliklar icin parametre basina bellek (GB).
+_GB_BASI_PARAMETRE = 2.0
+
+
+def _port(bdm: Bdm, varsayilan: int | None) -> int:
+    ham = (bdm.konteyner or {}).get("port")
+    try:
+        if ham:
+            return int(ham)
+    except (TypeError, ValueError):  # pragma: no cover - bozuk konteyner kaydi
+        logger.warning("BDM %s icin gecersiz port degeri: %r", bdm.id, ham)
+    return int(varsayilan or VARSAYILAN_PORT)
+
+
+def bellek_tahmini(bdm: Bdm) -> float:
+    """Kaba bellek (GB) tahmini.
+
+    Model adindan parametre sayisi (orn. `7B`, `72b`) cikarilabiliyorsa fp16
+    agirlik varsayimiyla `parametre_milyar x 2` GB; cikarilamiyorsa baglam
+    penceresine dayali kaba deger `baglam_penceresi / 1024 x 0.5` GB doner.
+    Alt sinir 0.5 GB'dir; deger gercek olcume degil on kontrol icin kaba bir
+    buyukluk mertebesine karsilik gelir.
+    """
+    eslesme = _PARAMETRE_DESENI.search(bdm.upstream_model or "")
+    if eslesme is not None:
+        milyar = float(eslesme.group(1).replace(",", "."))
+        return max(0.5, round(milyar * _GB_BASI_PARAMETRE, 1))
+    return max(0.5, round(bdm.baglam_penceresi / 1024 * 0.5, 1))
+
+
+def _komut(bdm: Bdm, port: int) -> list[str]:
+    if bdm.saglayici is Saglayici.vllm:
+        return ["vllm", "serve", bdm.upstream_model, "--port", str(port)]
+    if bdm.saglayici is Saglayici.tgi:
+        return [
+            "text-generation-inference",
+            "--model-id",
+            bdm.upstream_model,
+            "--port",
+            str(port),
+        ]
+    return ["ollama", "serve"]
+
+
+def _ortam(bdm: Bdm, port: int) -> dict[str, str]:
+    """Konteyner ortam degiskenleri.
+
+    Deger gizli anahtar icerebilir (gated modeller icin `HF_TOKEN`); HTTP
+    katmani bu degerleri maskeler.
+    """
+    if bdm.saglayici is Saglayici.ollama:
+        return {"OLLAMA_HOST": f"0.0.0.0:{port}"}
+    if not bdm.api_anahtari_sifreli:
+        return {}
+    try:
+        anahtar = guvenlik.coz(bdm.api_anahtari_sifreli)
+    except Exception:  # pragma: no cover - bozuk sifreli deger
+        logger.warning("BDM %s icin upstream anahtari cozulemedi.", bdm.id)
+        return {}
+    return {"HF_TOKEN": anahtar} if anahtar else {}
+
+
+def manifest_uret(bdm: Bdm) -> dict[str, Any]:
+    """Saglayiciya uygun konteyner manifestini uretir."""
+    bilgi = saglayici_bilgisi(bdm.saglayici.value)
+    if bilgi.konteyner_image is None:
+        raise GecersizIstek(
+            "Bu sağlayıcı uzak sunucuda çalışır; konteyner manifesti üretilemez.",
+            {"saglayici": bdm.saglayici.value},
+        )
+    port = _port(bdm, bilgi.varsayilan_port)
+    return {
+        "image": bilgi.konteyner_image,
+        "komut": _komut(bdm, port),
+        "port": port,
+        "gpu": bilgi.gpu_gerekir,
+        "bellek_gb": bellek_tahmini(bdm),
+        "ortam": _ortam(bdm, port),
+    }

@@ -1,0 +1,27 @@
+@import "tailwindcss";
+
+/* Tasarım dili: nötr sahne, Instrument Serif yalnız marka başlıkları, Geist gövde/UI. */
+@theme inline {
+  --font-sans: var(--font-geist), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, sans-serif;
+  --font-serif: var(--font-instrument-serif), ui-serif, Georgia, Cambria, serif;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-neutral-50 font-sans text-neutral-900 antialiased;
+  }
+
+  ::selection {
+    @apply bg-neutral-900 text-white;
+  }
+
+  /* Tarayıcı varsayılanı yerine kenarlık-odaklı odak göstergesi kullanılır. */
+  :focus-visible {
+    @apply outline-none;
+  }
+}

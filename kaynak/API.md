@@ -120,6 +120,7 @@ Yanıt `201`: `{ "yonetici": Kullanici, "bdm": Bdm, "dogrulama": { "basarili": b
 | Yöntem | Yol | Yetki | Yanıt |
 |---|---|---|---|
 | GET | `/modeller` | kimlikli | `BdmOzet[]` (yalnız `hazir\|calisiyor`, anahtarın izinli listesi süzülür) |
+| GET | `/saglayicilar` | **açık** | `[{ad, gorunen_ad, yerel, gpu_gerekir, akis_destegi, api_anahtari_gerekir, varsayilan_temel_url, varsayilan_port, konteyner_image, aciklama}]` — kurulum sihirbazı kimlik doğrulamadan önce çağırır |
 | GET | `/bdm` | personel | `Bdm[]` |
 | POST | `/bdm` | yönetici/operatör | `201 Bdm` |
 | PATCH | `/bdm/{id}` | yönetici/operatör | `Bdm` |

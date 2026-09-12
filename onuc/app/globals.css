@@ -1,0 +1,67 @@
+@import "tailwindcss";
+
+/* Tasarım belirteçleri — nötr sahne, kenarlık odaklı hiyerarşi */
+:root {
+  --zemin: #ffffff;
+  --zemin-soluk: #fafafa; /* neutral-50 */
+  --kenarlik: #f5f5f5; /* neutral-100 */
+  --kenarlik-koyu: #e5e5e5; /* neutral-200 */
+  --murekkep: #171717; /* neutral-900 */
+  --murekkep-soluk: #737373; /* neutral-500 */
+  --vurgu: #171717;
+  --hata: #e11d48; /* rose-600 */
+  --basari: #15803d; /* green-700 */
+  --yaricap-buton: 0.375rem; /* rounded-md */
+  --yaricap-alan: 0.5rem; /* rounded-lg */
+  --yaricap-yuzey: 1rem; /* rounded-2xl */
+}
+
+@theme inline {
+  --color-zemin: var(--zemin);
+  --color-zemin-soluk: var(--zemin-soluk);
+  --color-kenarlik: var(--kenarlik);
+  --color-kenarlik-koyu: var(--kenarlik-koyu);
+  --color-murekkep: var(--murekkep);
+  --color-murekkep-soluk: var(--murekkep-soluk);
+  --color-hata: var(--hata);
+  --color-basari: var(--basari);
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-instrument-serif), "Instrument Serif", Georgia, serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SFMono-Regular", monospace;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background-color: var(--zemin);
+  color: var(--murekkep);
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  font-synthesis-weight: none;
+  text-rendering: optimizeLegibility;
+}
+
+/* Marka serifliği yalnız başlıklarda kullanılır */
+.marka-serif {
+  font-family: var(--font-instrument-serif), "Instrument Serif", Georgia, serif;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+/* Odak halkası kenarlıkla verilir; gölge/halka yok */
+*:focus-visible {
+  outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
