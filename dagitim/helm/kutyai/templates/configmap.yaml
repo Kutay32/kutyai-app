@@ -1,0 +1,17 @@
+{{- /*
+Sırsız yapılandırma (spec §11). Anahtarlar KUTYAI_* ortam değişkeni adlarıdır;
+adlar dagitim/.env.ornek ve dagitim/docker-compose.yml ile aynıdır.
+Pod'lar bu ConfigMap'i `envFrom.configMapRef` ile okur. Değerler metin olarak
+yazılır (0/1, "true"/"false", sayılar da metin) — pydantic ayarları bunları çözer.
+*/ -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kutyai.configmapAd" . }}
+  namespace: {{ include "kutyai.namespace" . }}
+  labels:
+    {{- include "kutyai.etiketler" (dict "kok" $ "bilesen" "yapilandirma") | nindent 4 }}
+data:
+  {{- range $ad, $deger := .Values.config }}
+  {{ $ad }}: {{ $deger | toString | quote }}
+  {{- end }}

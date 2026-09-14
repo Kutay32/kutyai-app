@@ -1,5 +1,6 @@
 "use client";
 
+import { useDil } from "@/lib/dil";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { sayiBicimle } from "@/lib/bicim";
@@ -22,26 +23,33 @@ export function Sayfalama({
   onSayfa,
   onBoyut,
 }: SayfalamaProps) {
+  const { t } = useDil();
   const sonSayfa = Math.max(1, Math.ceil(toplam / boyut));
+  // Toplam sayısı cümle içinde vurgulu kalır; şablon `{baglanti}` ile parçalanır.
+  const [once, sonra] = t("kayit.sayfalama.ozet", {
+    sayfa,
+    son: sonSayfa,
+  }).split("{baglanti}");
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 p-4">
       <p className="text-sm text-neutral-500">
-        Toplam <span className="text-neutral-900">{sayiBicimle(toplam)}</span> kayıt ·{" "}
-        {sayfa}/{sonSayfa}. sayfa
+        {once}
+        <span className="text-neutral-900">{sayiBicimle(toplam)}</span>
+        {sonra}
       </p>
 
       <div className="flex items-center gap-2">
         {boyutlar && onBoyut ? (
           <Select
-            aria-label="Sayfa boyutu"
+            aria-label={t("kayit.sayfalama.boyut.aria")}
             className="w-32"
             value={String(boyut)}
             onChange={(olay) => onBoyut(Number(olay.target.value))}
           >
             {boyutlar.map((secenek) => (
               <option key={secenek} value={secenek}>
-                {secenek} kayıt
+                {t("kayit.sayfalama.boyut.secenek", { sayi: secenek })}
               </option>
             ))}
           </Select>
@@ -53,7 +61,7 @@ export function Sayfalama({
           disabled={sayfa <= 1}
           onClick={() => onSayfa(sayfa - 1)}
         >
-          Önceki
+          {t("kayit.sayfalama.onceki")}
         </Button>
         <Button
           variant="secondary"
@@ -61,7 +69,7 @@ export function Sayfalama({
           disabled={sayfa >= sonSayfa}
           onClick={() => onSayfa(sayfa + 1)}
         >
-          Sonraki
+          {t("kayit.sayfalama.sonraki")}
         </Button>
       </div>
     </div>

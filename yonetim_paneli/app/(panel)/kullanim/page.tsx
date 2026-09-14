@@ -5,10 +5,11 @@ import { useState } from "react";
 import { BarChart3 } from "lucide-react";
 
 import { gecikmeBicimle, sayiBicimle } from "@/lib/bicim";
+import { useDil } from "@/lib/dil";
 import {
   GUN_SECENEKLERI,
   KIRILIMLAR,
-  KIRILIM_ETIKETI,
+  KIRILIM_ANAHTARI,
   kullanimOzetiGetir,
   kullanimZamanSerisiGetir,
   seriyiSirala,
@@ -17,6 +18,7 @@ import {
   type ZamanSerisiKaydi,
 } from "@/lib/kullanim";
 import { useUzakVeri } from "@/lib/kancalar";
+import type { SozlukAnahtari } from "@/lib/sozluk";
 import type { KullanimOzeti } from "@/lib/tipler";
 import { CubukGrafik, type CubukOlcusu } from "./grafik";
 import { VeriDurumu } from "@/components/loglar/veri-durumu";
@@ -34,32 +36,39 @@ import {
 } from "@/components/ui/table";
 import { Tabs } from "@/components/ui/tabs";
 
-const OLCU_ETIKETI: Record<CubukOlcusu, string> = {
-  istek: "İstek",
-  token: "Token",
+const OLCU_ANAHTARI: Record<CubukOlcusu, SozlukAnahtari> = {
+  istek: "kullanim.olcu.istek",
+  token: "kullanim.olcu.token",
 };
 
 function OzetKartlari({ ozet }: { ozet: KullanimOzeti }) {
+  const { t } = useDil();
+
   return (
     <div className="grid gap-4 md:grid-cols-3">
-      <StatCard label="Toplam istek" value={sayiBicimle(ozet.toplam_istek)} />
-      <StatCard label="Toplam token" value={sayiBicimle(ozet.toplam_token)} />
-      <StatCard label="Ortalama gecikme" value={gecikmeBicimle(ozet.ortalama_gecikme_ms)} />
-      <StatCard label="Başarılı" value={sayiBicimle(ozet.basarili)} />
-      <StatCard label="Hatalı" value={sayiBicimle(ozet.hatali)} />
-      <StatCard label="Kota aşımı" value={sayiBicimle(ozet.kota_asimi)} />
+      <StatCard label={t("kullanim.ozet.toplam_istek")} value={sayiBicimle(ozet.toplam_istek)} />
+      <StatCard label={t("kullanim.ozet.toplam_token")} value={sayiBicimle(ozet.toplam_token)} />
+      <StatCard
+        label={t("kullanim.ozet.ortalama_gecikme")}
+        value={gecikmeBicimle(ozet.ortalama_gecikme_ms)}
+      />
+      <StatCard label={t("kullanim.ozet.basarili")} value={sayiBicimle(ozet.basarili)} />
+      <StatCard label={t("kullanim.ozet.hatali")} value={sayiBicimle(ozet.hatali)} />
+      <StatCard label={t("kullanim.ozet.kota_asimi")} value={sayiBicimle(ozet.kota_asimi)} />
     </div>
   );
 }
 
 function KirilimTablosu({ seri }: { seri: ZamanSerisiKaydi[] }) {
+  const { t } = useDil();
+
   return (
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Kırılım</TableHead>
-          <TableHead className="text-right">İstek</TableHead>
-          <TableHead className="text-right">Token</TableHead>
+          <TableHead>{t("kullanim.kirilim.baslik")}</TableHead>
+          <TableHead className="text-right">{t("kullanim.olcu.istek")}</TableHead>
+          <TableHead className="text-right">{t("kullanim.olcu.token")}</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -76,6 +85,7 @@ function KirilimTablosu({ seri }: { seri: ZamanSerisiKaydi[] }) {
 }
 
 export default function KullanimSayfasi() {
+  const { t, dil } = useDil();
   const [gun, setGun] = useState<GunSecenegi>(30);
   const [kirilim, setKirilim] = useState<Kirilim>("bdm");
   const [olcu, setOlcu] = useState<CubukOlcusu>("token");
@@ -92,25 +102,25 @@ export default function KullanimSayfasi() {
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-4">
         <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">Kullanım</h1>
-          <p className="text-sm text-neutral-500">
-            İstek, token ve gecikme değerleri; model veya kullanıcı kırılımında.
-          </p>
+          <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">
+            {t("kullanim.baslik")}
+          </h1>
+          <p className="text-sm text-neutral-500">{t("kullanim.aciklama")}</p>
         </div>
 
         <Tabs
           className="w-fit"
           items={GUN_SECENEKLERI.map((secenek) => ({
             value: String(secenek),
-            label: `${secenek} gün`,
+            label: t("kullanim.gun", { gun: secenek }),
           }))}
           value={String(gun)}
           onValueChange={(deger) => setGun(Number(deger) as GunSecenegi)}
         />
       </header>
 
-      <section className="flex flex-col gap-4" aria-label="Kullanım özeti">
-        <h2 className="text-base font-semibold text-neutral-900">Özet</h2>
+      <section className="flex flex-col gap-4" aria-label={t("kullanim.ozet.aria")}>
+        <h2 className="text-base font-semibold text-neutral-900">{t("kullanim.ozet.baslik")}</h2>
         <Card className="rounded-2xl">
           <VeriDurumu
             yukleniyor={ozet.yukleniyor}
@@ -126,14 +136,16 @@ export default function KullanimSayfasi() {
         </Card>
       </section>
 
-      <section className="flex flex-col gap-4" aria-label="Kırılım grafiği">
+      <section className="flex flex-col gap-4" aria-label={t("kullanim.kirilim.aria")}>
         <div className="flex flex-wrap items-end justify-between gap-4">
-          <h2 className="text-base font-semibold text-neutral-900">Kırılım</h2>
+          <h2 className="text-base font-semibold text-neutral-900">
+            {t("kullanim.kirilim.baslik")}
+          </h2>
           <Tabs
             className="w-fit"
             items={KIRILIMLAR.map((secenek) => ({
               value: secenek,
-              label: KIRILIM_ETIKETI[secenek],
+              label: t(KIRILIM_ANAHTARI[secenek]),
             }))}
             value={kirilim}
             onValueChange={(deger) => setKirilim(deger as Kirilim)}
@@ -145,20 +157,23 @@ export default function KullanimSayfasi() {
             <div className="flex flex-col gap-1">
               <CardTitle className="flex items-center gap-2">
                 <BarChart3 aria-hidden className="size-4 text-neutral-500" />
-                {KIRILIM_ETIKETI[kirilim]} kullanım
+                {t("kullanim.grafik.baslik", { kirilim: t(KIRILIM_ANAHTARI[kirilim]) })}
               </CardTitle>
               <CardDescription>
-                Son {gun} günün {OLCU_ETIKETI[olcu].toLocaleLowerCase("tr")} toplamı.
+                {t("kullanim.grafik.aciklama", {
+                  gun,
+                  olcu: t(OLCU_ANAHTARI[olcu]).toLocaleLowerCase(dil),
+                })}
               </CardDescription>
             </div>
             <Select
-              aria-label="Ölçü"
+              aria-label={t("kullanim.olcu.aria")}
               className="w-36"
               value={olcu}
               onChange={(olay) => setOlcu(olay.target.value as CubukOlcusu)}
             >
-              <option value="token">Token</option>
-              <option value="istek">İstek</option>
+              <option value="token">{t("kullanim.olcu.token")}</option>
+              <option value="istek">{t("kullanim.olcu.istek")}</option>
             </Select>
           </CardHeader>
 
@@ -174,8 +189,8 @@ export default function KullanimSayfasi() {
               <CardContent>
                 <EmptyState
                   icon={<BarChart3 aria-hidden className="size-5" />}
-                  title="Bu aralıkta kullanım yok"
-                  description="Seçilen gün aralığında kayıtlı istek bulunmuyor."
+                  title={t("kullanim.bos.baslik")}
+                  description={t("kullanim.bos.aciklama")}
                 />
               </CardContent>
             )}

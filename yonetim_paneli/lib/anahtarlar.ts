@@ -1,6 +1,7 @@
 /** `kaynak/API.md` §7 API anahtarları istemcisi (yönetici/operatör). */
 
 import { istek } from "@/lib/api";
+import type { SozlukAnahtari } from "@/lib/sozluk";
 
 export type AnahtarDurumu = "aktif" | "iptal";
 
@@ -26,9 +27,10 @@ export type AnahtarIstegi = {
   izinli_modeller: string[];
 };
 
-export const ANAHTAR_DURUMU_ETIKETI: Record<AnahtarDurumu, string> = {
-  aktif: "Aktif",
-  iptal: "İptal edildi",
+/** Anahtar durumu etiketleri katalogdan gelir (spec §10.2); bu yalnız anahtar eşlemesidir. */
+export const ANAHTAR_DURUMU_ANAHTARI: Record<AnahtarDurumu, SozlukAnahtari> = {
+  aktif: "durum.aktif",
+  iptal: "anahtar.durum.iptal",
 };
 
 export function anahtarlariGetir(): Promise<ApiAnahtari[]> {

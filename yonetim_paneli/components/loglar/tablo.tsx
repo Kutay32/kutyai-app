@@ -1,9 +1,11 @@
 "use client";
 
-import type { LogKonusmasi } from "@/lib/tipler";
-import { sayiBicimle, tarihSaatBicimle } from "@/lib/bicim";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+
+import { sayiBicimle, tarihSaatBicimle } from "@/lib/bicim";
+import { useDil } from "@/lib/dil";
+import type { LogKonusmasi } from "@/lib/tipler";
 
 import {
   Table,
@@ -16,18 +18,19 @@ import {
 
 /** Konuşma kayıtları tablosu; satıra tıklama detay sayfasına götürür. */
 export function LogTablosu({ kayitlar }: { kayitlar: LogKonusmasi[] }) {
+  const { t } = useDil();
   const yonlendir = useRouter();
 
   return (
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Başlık</TableHead>
-          <TableHead>Kullanıcı</TableHead>
-          <TableHead>Model</TableHead>
-          <TableHead>Mesaj</TableHead>
-          <TableHead>Token (giriş/çıkış)</TableHead>
-          <TableHead>Tarih</TableHead>
+          <TableHead>{t("kayit.tablo.baslik")}</TableHead>
+          <TableHead>{t("kayit.tablo.kullanici")}</TableHead>
+          <TableHead>{t("kayit.tablo.model")}</TableHead>
+          <TableHead>{t("kayit.tablo.mesaj")}</TableHead>
+          <TableHead>{t("kayit.tablo.token")}</TableHead>
+          <TableHead>{t("kayit.tablo.tarih")}</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -46,7 +49,7 @@ export function LogTablosu({ kayitlar }: { kayitlar: LogKonusmasi[] }) {
                 href={`/loglar/${kayit.id}`}
                 className="rounded-md focus:border-neutral-900 focus:outline-none focus:ring-0"
               >
-                {kayit.baslik || "Başlıksız konuşma"}
+                {kayit.baslik || t("kayit.basliksiz")}
               </Link>
             </TableCell>
             <TableCell>{kayit.kullanici_eposta ?? "—"}</TableCell>

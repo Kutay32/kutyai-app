@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { Search, X } from "lucide-react";
 
+import { useDil } from "@/lib/dil";
 import type { LogFiltresi } from "@/lib/loglar";
 import { BASLANGIC_LOG_FILTRESI } from "@/lib/loglar";
 import type { Bdm, Kullanici } from "@/lib/tipler";
@@ -26,6 +27,7 @@ export type FiltreCubuguProps = {
 
 /** Kullanıcı, model, tarih aralığı ve tam metin filtrelerini tek satırda toplar. */
 export function FiltreCubugu({ filtre, kullanicilar, bdmler, onUygula }: FiltreCubuguProps) {
+  const { t } = useDil();
   const [taslak, setTaslak] = useState(filtre);
 
   const gonder = (olay: React.FormEvent<HTMLFormElement>) => {
@@ -42,10 +44,10 @@ export function FiltreCubugu({ filtre, kullanicilar, bdmler, onUygula }: FiltreC
     <form
       onSubmit={gonder}
       className="grid gap-4 rounded-2xl border border-neutral-200 bg-white p-4 md:grid-cols-4"
-      aria-label="Kayıt filtreleri"
+      aria-label={t("kayit.filtre.aria")}
     >
       {kullanicilar ? (
-        <Field label="Kullanıcı">
+        <Field label={t("kayit.filtre.kullanici")}>
           {({ id, ...erisim }) => (
             <Select
               id={id}
@@ -58,7 +60,7 @@ export function FiltreCubugu({ filtre, kullanicilar, bdmler, onUygula }: FiltreC
                 }))
               }
             >
-              <option value="">Tüm kullanıcılar</option>
+              <option value="">{t("kayit.filtre.tum_kullanicilar")}</option>
               {kullanicilar.map((kullanici) => (
                 <option key={kullanici.id} value={kullanici.id}>
                   {kullanici.eposta}
@@ -69,8 +71,8 @@ export function FiltreCubugu({ filtre, kullanicilar, bdmler, onUygula }: FiltreC
         </Field>
       ) : (
         <Field
-          label="Kullanıcı kimliği"
-          hint="Kullanıcı listesi yalnız yöneticilere açık; kimlik ile süzün."
+          label={t("kayit.filtre.kullanici_kimligi")}
+          hint={t("kayit.filtre.kullanici_kimligi.ipucu")}
         >
           {({ id, ...erisim }) => (
             <Input
@@ -79,7 +81,7 @@ export function FiltreCubugu({ filtre, kullanicilar, bdmler, onUygula }: FiltreC
               type="number"
               min={1}
               inputMode="numeric"
-              placeholder="ör. 4"
+              placeholder={t("kayit.filtre.ornek_kimlik")}
               value={taslak.kullanici_id ?? ""}
               onChange={(olay) =>
                 setTaslak((onceki) => ({
@@ -92,7 +94,7 @@ export function FiltreCubugu({ filtre, kullanicilar, bdmler, onUygula }: FiltreC
         </Field>
       )}
 
-      <Field label="Model">
+      <Field label={t("kayit.filtre.model")}>
         {({ id, ...erisim }) => (
           <Select
             id={id}
@@ -105,7 +107,7 @@ export function FiltreCubugu({ filtre, kullanicilar, bdmler, onUygula }: FiltreC
               }))
             }
           >
-            <option value="">Tüm modeller</option>
+            <option value="">{t("kayit.filtre.tum_modeller")}</option>
             {bdmler.map((bdm) => (
               <option key={bdm.id} value={bdm.id}>
                 {bdm.gorunen_ad}
@@ -115,7 +117,7 @@ export function FiltreCubugu({ filtre, kullanicilar, bdmler, onUygula }: FiltreC
         )}
       </Field>
 
-      <Field label="Başlangıç">
+      <Field label={t("kayit.filtre.baslangic")}>
         {({ id, ...erisim }) => (
           <Input
             id={id}
@@ -129,7 +131,7 @@ export function FiltreCubugu({ filtre, kullanicilar, bdmler, onUygula }: FiltreC
         )}
       </Field>
 
-      <Field label="Bitiş">
+      <Field label={t("kayit.filtre.bitis")}>
         {({ id, ...erisim }) => (
           <Input
             id={id}
@@ -141,13 +143,13 @@ export function FiltreCubugu({ filtre, kullanicilar, bdmler, onUygula }: FiltreC
         )}
       </Field>
 
-      <Field label="Metin arama" className="md:col-span-2">
+      <Field label={t("kayit.filtre.arama")} className="md:col-span-2">
         {({ id, ...erisim }) => (
           <Input
             id={id}
             {...erisim}
             type="search"
-            placeholder="Başlık veya mesaj içeriği"
+            placeholder={t("kayit.filtre.arama.ipucu")}
             value={taslak.arama}
             onChange={(olay) => setTaslak((onceki) => ({ ...onceki, arama: olay.target.value }))}
           />
@@ -157,11 +159,11 @@ export function FiltreCubugu({ filtre, kullanicilar, bdmler, onUygula }: FiltreC
       <div className="flex items-end gap-2 md:col-span-2">
         <Button type="submit">
           <Search aria-hidden className="size-4" />
-          Filtrele
+          {t("kayit.filtre.uygula")}
         </Button>
         <Button type="button" variant="ghost" onClick={temizle}>
           <X aria-hidden className="size-4" />
-          Temizle
+          {t("kayit.filtre.temizle")}
         </Button>
       </div>
     </form>

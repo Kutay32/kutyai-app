@@ -8,6 +8,7 @@ import { Kart } from "@/components/ui/kart";
 import { cn } from "@/lib/cn";
 import { ApiHatasi } from "@/lib/api";
 import { kisaTarihBicimle, sayiBicimle, tarihBicimle } from "@/lib/bicim";
+import { useDil } from "@/lib/dil";
 import {
   GUN_SECENEKLERI,
   VARSAYILAN_GUN,
@@ -15,6 +16,7 @@ import {
   kotaYuzdesi,
   seriYukseklikleri,
 } from "@/lib/kullanim";
+import type { SozlukAnahtari } from "@/lib/sozluk";
 import type { KisiselKullanim } from "@/lib/tipler";
 
 type OlcuAnahtari =
@@ -24,19 +26,21 @@ type OlcuAnahtari =
   | "cikti_token"
   | "ortalama_gecikme_ms";
 
-const OLCULER: { anahtar: OlcuAnahtari; etiket: string }[] = [
-  { anahtar: "toplam_istek", etiket: "Toplam istek" },
-  { anahtar: "toplam_token", etiket: "Toplam token" },
-  { anahtar: "girdi_token", etiket: "Girdi token" },
-  { anahtar: "cikti_token", etiket: "Çıktı token" },
-  { anahtar: "ortalama_gecikme_ms", etiket: "Ortalama gecikme (ms)" },
+const OLCULER: { anahtar: OlcuAnahtari; etiket: SozlukAnahtari }[] = [
+  { anahtar: "toplam_istek", etiket: "kullanim.olcu.toplam_istek" },
+  { anahtar: "toplam_token", etiket: "kullanim.olcu.toplam_token" },
+  { anahtar: "girdi_token", etiket: "kullanim.olcu.girdi_token" },
+  { anahtar: "cikti_token", etiket: "kullanim.olcu.cikti_token" },
+  { anahtar: "ortalama_gecikme_ms", etiket: "kullanim.olcu.ortalama_gecikme" },
 ];
 
 /** Ölçü kartları ve grafik yerine geçen yükleme iskeleti. */
 function Iskelet() {
+  const { t } = useDil();
+
   return (
     <div role="status" aria-live="polite" className="flex flex-col gap-6">
-      <span className="sr-only">Kullanım verileri yükleniyor</span>
+      <span className="sr-only">{t("kullanim.veri.yukleniyor")}</span>
       <div aria-hidden className="grid grid-cols-1 gap-4 md:grid-cols-3">
         {OLCULER.map((olcu) => (
           <Kart key={olcu.anahtar}>
@@ -76,10 +80,18 @@ function KotaCubugu({
   sifirlanma,
   sifirlanmaEtiketi,
 }: KotaCubuguOzellikleri) {
+  const { dil, t } = useDil();
   const yuzde = kotaYuzdesi(kullanilan, sinir);
   const doldu = yuzde !== null && yuzde >= 100;
-  const olcu = birim ? `${sayiBicimle(kullanilan)} ${birim}` : sayiBicimle(kullanilan);
-  const sinirMetni = sinir === null ? "Sınırsız" : birim ? `${sayiBicimle(sinir)} ${birim}` : sayiBicimle(sinir);
+  const olcu = birim
+    ? `${sayiBicimle(kullanilan, dil)} ${birim}`
+    : sayiBicimle(kullanilan, dil);
+  const sinirMetni =
+    sinir === null
+      ? t("kullanim.kota.sinirsiz")
+      : birim
+        ? `${sayiBicimle(sinir, dil)} ${birim}`
+        : sayiBicimle(sinir, dil);
 
   return (
     <div className="flex flex-col gap-2">
@@ -92,7 +104,7 @@ function KotaCubugu({
       {yuzde !== null ? (
         <div
           role="progressbar"
-          aria-label={`${etiket} kullanımı`}
+          aria-label={t("kullanim.kota.kullanim.etiket", { etiket })}
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={yuzde}
@@ -105,39 +117,44 @@ function KotaCubugu({
         </div>
       ) : null}
       <p className="text-[13px] text-neutral-500">
-        {sifirlanmaEtiketi} {tarihBicimle(sifirlanma)} tarihinde sıfırlanır.
+        {t("kullanim.kota.sifirlanma", {
+          etiket: sifirlanmaEtiketi,
+          tarih: tarihBicimle(sifirlanma, dil),
+        })}
       </p>
     </div>
   );
 }
 
 function KullanimIcerigi() {
+  const { dil, t } = useDil();
   const [gun, setGun] = useState(VARSAYILAN_GUN);
   const [kullanim, setKullanim] = useState<KisiselKullanim | null>(null);
   const [yukleniyor, setYukleniyor] = useState(true);
   const [hata, setHata] = useState<string | null>(null);
   const sonIstek = useRef(0);
 
-  const yukle = useCallback(async (seciliGun: number) => {
-    const sira = ++sonIstek.current;
-    setYukleniyor(true);
-    setHata(null);
-    try {
-      const yanit = await kisiselKullanimGetir(seciliGun);
-      if (sira !== sonIstek.current) return;
-      setKullanim(yanit);
-    } catch (yakalanan) {
-      if (sira !== sonIstek.current) return;
-      setKullanim(null);
-      setHata(
-        yakalanan instanceof ApiHatasi
-          ? yakalanan.message
-          : "Kullanım verileri alınamadı. Lütfen tekrar deneyin.",
-      );
-    } finally {
-      if (sira === sonIstek.current) setYukleniyor(false);
-    }
-  }, []);
+  const yukle = useCallback(
+    async (seciliGun: number) => {
+      const sira = ++sonIstek.current;
+      setYukleniyor(true);
+      setHata(null);
+      try {
+        const yanit = await kisiselKullanimGetir(seciliGun);
+        if (sira !== sonIstek.current) return;
+        setKullanim(yanit);
+      } catch (yakalanan) {
+        if (sira !== sonIstek.current) return;
+        setKullanim(null);
+        setHata(
+          yakalanan instanceof ApiHatasi ? yakalanan.message : t("kullanim.veri.hata"),
+        );
+      } finally {
+        if (sira === sonIstek.current) setYukleniyor(false);
+      }
+    },
+    [t],
+  );
 
   useEffect(() => {
     void yukle(gun);
@@ -149,7 +166,11 @@ function KullanimIcerigi() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Zaman aralığı">
+      <div
+        className="flex flex-wrap items-center gap-1"
+        role="group"
+        aria-label={t("kullanim.aralik")}
+      >
         {GUN_SECENEKLERI.map((secenek) => (
           <button
             key={secenek}
@@ -163,7 +184,7 @@ function KullanimIcerigi() {
                 : "border-neutral-200 text-neutral-500 hover:border-neutral-900 hover:text-neutral-900",
             )}
           >
-            Son {secenek} gün
+            {t("kullanim.gun", { gun: secenek })}
           </button>
         ))}
       </div>
@@ -172,7 +193,7 @@ function KullanimIcerigi() {
         <Kart role="alert" className="flex flex-col items-start gap-3 border-rose-200">
           <p className="text-[13px] text-rose-600">{hata}</p>
           <Buton tur="ikincil" boyut="kucuk" onClick={() => void yukle(gun)}>
-            Yeniden dene
+            {t("kullanim.yeniden.dene")}
           </Buton>
         </Kart>
       ) : yukleniyor ? (
@@ -182,9 +203,9 @@ function KullanimIcerigi() {
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             {OLCULER.map((olcu) => (
               <Kart key={olcu.anahtar}>
-                <p className="text-[13px] text-neutral-500">{olcu.etiket}</p>
+                <p className="text-[13px] text-neutral-500">{t(olcu.etiket)}</p>
                 <p className="mt-1 text-2xl text-neutral-900">
-                  {sayiBicimle(kullanim[olcu.anahtar])}
+                  {sayiBicimle(kullanim[olcu.anahtar], dil)}
                 </p>
               </Kart>
             ))}
@@ -192,65 +213,69 @@ function KullanimIcerigi() {
 
           <Kart className="flex flex-col gap-5">
             <div>
-              <h2 className="text-sm font-medium text-neutral-900">Kota kullanımı</h2>
+              <h2 className="text-sm font-medium text-neutral-900">{t("kullanim.kota.baslik")}</h2>
               <p className="mt-0.5 text-[13px] text-neutral-500">
-                Günlük istek ve aylık token sınırlarınız.
+                {t("kullanim.kota.aciklama")}
               </p>
             </div>
             {kullanim.kota ? (
               <>
                 <KotaCubugu
-                  etiket="Günlük istek"
+                  etiket={t("kullanim.kota.gunluk")}
                   kullanilan={kullanim.kota.kullanilan_gunluk}
                   sinir={kullanim.kota.gunluk_istek}
                   birim=""
                   sifirlanma={kullanim.kota.gun_sifirlanma}
-                  sifirlanmaEtiketi="Günlük sınır"
+                  sifirlanmaEtiketi={t("kullanim.kota.gunluk.sinir")}
                 />
                 <KotaCubugu
-                  etiket="Aylık token"
+                  etiket={t("kullanim.kota.aylik")}
                   kullanilan={kullanim.kota.kullanilan_aylik}
                   sinir={kullanim.kota.aylik_token}
-                  birim="token"
+                  birim={t("kullanim.birim.token")}
                   sifirlanma={kullanim.kota.ay_sifirlanma}
-                  sifirlanmaEtiketi="Aylık sınır"
+                  sifirlanmaEtiketi={t("kullanim.kota.aylik.sinir")}
                 />
               </>
             ) : (
-              <p className="text-[13px] text-neutral-500">
-                Hesabınız için tanımlı bir kota yok; kullanımınız sınırlandırılmıyor.
-              </p>
+              <p className="text-[13px] text-neutral-500">{t("kullanim.kota.yok")}</p>
             )}
           </Kart>
 
           <Kart className="flex flex-col gap-4">
             <div>
-              <h2 className="text-sm font-medium text-neutral-900">Günlük token kullanımı</h2>
+              <h2 className="text-sm font-medium text-neutral-900">{t("kullanim.seri.baslik")}</h2>
               <p className="mt-0.5 text-[13px] text-neutral-500">
-                Son {gun} günde gün başına işlenen token.
+                {t("kullanim.seri.aciklama", { gun })}
               </p>
             </div>
             {seri.length === 0 ? (
-              <p className="text-[13px] text-neutral-500">Bu aralıkta kayıtlı kullanım yok.</p>
+              <p className="text-[13px] text-neutral-500">{t("kullanim.seri.bos")}</p>
             ) : (
               <div className="flex flex-col gap-2">
                 <div
                   role="img"
-                  aria-label={`Günlük token grafiği: ${seri.length} gün, en yüksek gün ${sayiBicimle(enYuksekToken)} token`}
+                  aria-label={t("kullanim.grafik.etiket", {
+                    gun: seri.length,
+                    token: sayiBicimle(enYuksekToken, dil),
+                  })}
                   className="flex h-40 items-end gap-1"
                 >
                   {seri.map((nokta, sira) => (
                     <div
                       key={nokta.tarih}
-                      title={`${nokta.tarih}: ${sayiBicimle(nokta.token)} token`}
+                      title={t("kullanim.grafik.nokta", {
+                        tarih: nokta.tarih,
+                        token: sayiBicimle(nokta.token, dil),
+                      })}
                       className="min-w-0 flex-1 rounded-t-md bg-neutral-900"
                       style={{ height: `${yukseklikler[sira]}%` }}
                     />
                   ))}
                 </div>
                 <div className="flex justify-between text-[13px] text-neutral-500">
-                  <span>{kisaTarihBicimle(seri[0]?.tarih)}</span>
-                  <span>{kisaTarihBicimle(seri[seri.length - 1]?.tarih)}</span>
+                  <span>{kisaTarihBicimle(seri[0]?.tarih, dil)}</span>
+                  <span>{kisaTarihBicimle(seri[seri.length - 1]?.tarih, dil)}</span>
                 </div>
               </div>
             )}
@@ -262,14 +287,14 @@ function KullanimIcerigi() {
 }
 
 export default function KullanimSayfasi() {
+  const { t } = useDil();
+
   return (
     <Korumali>
       <div className="mx-auto w-full max-w-5xl p-4 md:p-8">
         <div className="mb-6">
-          <h1 className="marka-serif text-2xl text-neutral-900">Kullanım</h1>
-          <p className="mt-1 text-sm text-neutral-500">
-            İstek, token ve gecikme özetiniz. Yalnızca kendi kullanımınız gösterilir.
-          </p>
+          <h1 className="marka-serif text-2xl text-neutral-900">{t("kullanim.baslik")}</h1>
+          <p className="mt-1 text-sm text-neutral-500">{t("kullanim.aciklama")}</p>
         </div>
         <KullanimIcerigi />
       </div>

@@ -1,0 +1,353 @@
+# KutyAI Helm değerleri (tasarım spec §11).
+#
+# Bu chart, dagitim/docker-compose.yml ile BİREBİR AYNI ortam değişkeni adlarını,
+# portları, sağlık uçlarını ve kalıcı hacim yollarını kullanır. Compose servisi
+# adlarının Kubernetes karşılıkları (DNS etiketleri nokta kabul etmez); "kök"
+# <release>-kutyai'dir, release adı "kutyai" içeriyorsa yalnız <release> olur:
+#   arka.uc         -> <kök>-arka-uc
+#   onuc            -> <kök>-onuc
+#   yonetim_paneli  -> <kök>-panel
+#
+# SIR KURALI: Bu dosyada hiçbir gizli değer düz metin olarak TUTULMAZ.
+# `config` sırsız ayarlar içindir; sırlar `secrets.values` (boş bırakılırsa
+# secret şablonu üretir) ya da `secrets.existingSecret` ile verilir.
+
+# --- Ad ve ad alanı ----------------------------------------------------------
+nameOverride: ""            # chart adını ez
+fullnameOverride: ""        # kaynak adı kökünü tümüyle ez
+
+namespace:
+  # true: chart bir Namespace nesnesi de üretir (GitOps/Argo kurulumu).
+  # Önerilen yol Helm'e bırakmaktır:
+  #   helm install kutyai dagitim/helm/kutyai -n kutyai --create-namespace
+  # Aynı ad alanına kurup --create-namespace kullanırsanız bunu false bırakın.
+  create: false
+  name: ""                  # boş -> .Release.Namespace
+
+# --- İmaj çekme ---------------------------------------------------------------
+imagePullSecrets: []        # [{name: regcred}]
+
+serviceAccount:
+  create: true
+  name: ""                  # boş -> <release>-kutyai
+  automountToken: false     # uygulama Kubernetes API'sini kullanmaz
+  annotations: {}
+
+# --- Sırsız ayarlar (ConfigMap) ----------------------------------------------
+# Anahtarlar doğrudan KUTYAI_* ortam değişkeni adlarıdır; dagitim/.env.ornek ve
+# dagitim/docker-compose.yml ile aynı adlar kullanılır. Yeni bir değişken
+# eklerseniz buraya yazmanız yeterlidir (ConfigMap'e olduğu gibi geçer).
+config:
+  KUTYAI_ORTAM: "uretim"
+  # Varsayılan: compose ile aynı — SQLite, /veri hacmi. Parola içeren PostgreSQL
+  # adresi kullanacaksanız buraya DEĞİL, `secrets.values.KUTYAI_VERITABANI_URL`
+  # altına yazın (ConfigMap küme içinde düz metindir).
+  KUTYAI_VERITABANI_URL: "sqlite+aiosqlite:////veri/kutyai.db"
+  KUTYAI_ERISIM_OMRU_DK: "15"
+  KUTYAI_YENILEME_OMRU_GUN: "30"
+  KUTYAI_ONUC_URL: "http://kutyai.local"
+  KUTYAI_PANEL_URL: "http://panel.kutyai.local"
+  KUTYAI_CORS_KAYNAKLAR: "http://kutyai.local,http://panel.kutyai.local"
+  KUTYAI_SAKLAMA_GUN: "90"
+  KUTYAI_MASKELEME_AKTIF: "true"
+  KUTYAI_ORAN_SINIRI_ISTEK_DK: "60"
+  KUTYAI_ORAN_SINIRI_KIMLIK_DK: "10"
+  # Ingress arkasında gerçek istemci IP'si X-Forwarded-For'dan okunur.
+  KUTYAI_GUVENILIR_VEKIL: "true"
+  KUTYAI_SMTP_HOST: ""
+  KUTYAI_SMTP_PORT: "587"
+  KUTYAI_SMTP_KULLANICI: ""
+  KUTYAI_SMTP_GONDEREN: "KutyAI <bildirim@kutyai.local>"
+  KUTYAI_SMTP_TLS: "true"
+  KUTYAI_DOCKER_SOKETI: ""
+  KUTYAI_IMAGE_ONBELLEK: "vllm/vllm-openai:latest,ollama/ollama:latest"
+  KUTYAI_HF_ONBELLEK: ""
+  KUTYAI_DOSYA_MAKS_MB: "25"
+  # Yüklenen dosyalar kalıcı hacimde tutulur (compose: bdm_veritabani/dosyalar).
+  KUTYAI_DOSYA_DIZINI: "/veri/dosyalar"
+  KUTYAI_DOSYA_BAGLAM_KR: "12000"
+  KUTYAI_ARAC_YEREL_IZIN: "false"
+  KUTYAI_ARAC_MAKS_TUR: "4"
+  KUTYAI_RAG_UST_K: "4"
+  KUTYAI_ODEME_SAGLAYICI: "yerel"
+  KUTYAI_SSO_OTOMATIK_UYELIK: "true"
+  KUTYAI_SSO_YENIDEN_YONLENDIRME: ""
+
+# --- Sırlar (Secret) ---------------------------------------------------------
+secrets:
+  # false yapıp existingSecret de boş bırakırsanız şablon açık bir hatayla durur.
+  create: true
+  # Doluysa chart Secret ÜRETMEZ; tüm anahtarlar bu Secret'ta bulunmalıdır.
+  # Üretimde önerilen yol: sırları kendi araçlarınızla (SealedSecrets, SOPS,
+  # Vault CSI, External Secrets) yönetip yalnız Secret adını buraya yazmak.
+  existingSecret: ""
+  # Anahtarlar KUTYAI_* ortam değişkeni adlarıdır. BOŞ bırakılan bir anahtar
+  # Secret'a yazılmaz — iki istisna aşağıda belirtilmiştir.
+  values:
+    # Boş -> rastgele üretilir (64 karakter). Yükseltmede mevcut değer korunur.
+    KUTYAI_GIZLI_ANAHTAR: ""
+    # Boş -> rastgele Fernet anahtarı üretilir (32 bayt, urlsafe base64).
+    # Fernet anahtarı değişirse kayıtlı şifreli veriler AÇILAMAZ: üretimde
+    # kendi anahtarınızı verin ya da üretilen değeri kasada saklayın.
+    # Üret: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    KUTYAI_SIFRELEME_ANAHTARI: ""
+    KUTYAI_SMTP_SIFRE: ""
+    KUTYAI_STRIPE_GIZLI_ANAHTAR: ""
+    KUTYAI_STRIPE_WEBHOOK_SIRRI: ""
+    KUTYAI_ARAC_IMZA_ANAHTARI: ""
+    # Parola içeren PostgreSQL adresi (ConfigMap'te düz metin olmasın diye burada):
+    # KUTYAI_VERITABANI_URL: "postgresql+asyncpg://kutyai:PAROLA@postgres:5432/kutyai"
+    KUTYAI_VERITABANI_URL: ""
+
+# --- Tarayıcıdan görünen API adresi -----------------------------------------
+# NEXT_PUBLIC_API_URL olarak onuc ve panel konteynerlerine verilir. ÖNEMLİ:
+# bu değer imaj DERLENİRKEN istemci paketine gömülür; çalışma zamanında
+# değiştirmek sunucu bileşenlerini etkiler, tarayıcı paketini etkilemez.
+# Uzak kümede imajı doğru adresle derleyin (bkz. README §Üretim notları).
+browserApiUrl: "http://localhost:8000/api/v1"
+
+# --- arka.uc (FastAPI) --------------------------------------------------------
+arkauc:
+  replicaCount: 1
+  image:
+    repository: kutyai/arkauc
+    tag: ""                 # boş -> .Chart.AppVersion
+    pullPolicy: IfNotPresent
+  containerPort: 8000
+  service:
+    type: ClusterIP
+    port: 8000
+    annotations: {}
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  # Sağlık uçları (arkauc/app/api/sistem.py): /api/v1/saglik (canlılık),
+  # /api/v1/saglik/hazir (veritabanı + konteyner sürücüsü). Compose ile aynı.
+  livenessProbe:
+    path: /api/v1/saglik
+    initialDelaySeconds: 20
+    periodSeconds: 20
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readinessProbe:
+    path: /api/v1/saglik
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+  # HPA VARSAYILAN OLARAK KAPALIDIR: varsayılan veritabanı SQLite ve /veri hacmi
+  # ReadWriteOnce'tur. SQLite çok pod ile paylaşılamaz; ayrıca yüklenen dosyalar
+  # da (/veri/dosyalar) pod'lar arasında paylaşılmalıdır. Çok replika/otomatik
+  # ölçekleme için: harici PostgreSQL (secrets.values.KUTYAI_VERITABANI_URL) +
+  # pod'lar arası paylaşılabilir hacim (ReadWriteMany; ör. NFS/CephFS):
+  #   --set arkauc.autoscaling.enabled=true --set arkauc.replicaCount=2
+  #   --set arkauc.persistence.data.accessModes[0]=ReadWriteMany
+  # HPA etkinken Deployment.spec.replicas yazılmaz (sahibi HPA olur).
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+    behavior: {}            # autoscaling/v2 behavior bloğu (ör. ölçek küçültme politikası)
+  persistence:
+    # SQLite veritabanı + yüklenen dosyalar. SQLite kullanırken KAPATMAYIN.
+    data:
+      enabled: true
+      size: 5Gi
+      accessModes: [ReadWriteOnce]
+      storageClassName: ""  # boş -> kümenin varsayılan StorageClass'ı
+      existingClaim: ""     # doluysa PVC üretilmez, bu iddia kullanılır
+    # HuggingFace model önbelleği (opsiyonel). Etkinleştirilirse
+    # KUTYAI_HF_ONBELLEK=<dataPath>/hf-onbellek olarak da verilir.
+    # NOT: BDM konteynerleri bu yolu DOCKER HOST üzerinde arar; Kubernetes'te
+    # konteyner içi docker soketi olmadan BDM başlatılamaz (bkz. dockerSocket).
+    hfCache:
+      enabled: false
+      size: 50Gi
+      accessModes: [ReadWriteOnce]
+      storageClassName: ""
+      existingClaim: ""
+  # Kalıcı veri kökü (compose: kutyai-veri volume -> /veri).
+  dataPath: /veri
+  # /var/run/docker.sock bağlama. VARSAYILAN KAPALI: soket erişimi düğüm
+  # üzerinde root yetkisi demektir ve güvenilmeyen iş yükü çalıştırılmamalıdır.
+  # Etkinleştirirseniz non-root kullanıcı soket grubunda olmalıdır
+  # (securityContext.runAsUser/fsGroup ayarlarını gözden geçirin).
+  dockerSocket:
+    enabled: false
+    hostPath: /var/run/docker.sock
+    type: Socket
+  # ReadWriteOnce hacimde iki pod aynı anda bağlanamayabilir; tek replikada
+  # takılırsanız `type: Recreate` kullanın.
+  strategy:
+    type: RollingUpdate
+    maxSurge: 1
+    maxUnavailable: 0
+  # Sohbet/hazırlama SSE akışları için: yeni pod hazır olana kadar eskisi yaşasın.
+  terminationGracePeriodSeconds: 60
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001          # PVC'yi bu gruba devreder (non-root yazabilsin)
+    readOnlyRootFilesystem: false   # uygulama /tmp kullanır
+    dropAllCapabilities: true
+  extraEnv: []              # [{name: KUTYAI_X, value: "y"}] (envFrom'u ezer)
+
+# --- onuc (son kullanıcı arayüzü) -------------------------------------------
+onuc:
+  replicaCount: 1
+  image:
+    repository: kutyai/onuc
+    tag: ""
+    pullPolicy: IfNotPresent
+  containerPort: 3000
+  browserApiUrl: ""         # boş -> global browserApiUrl
+  service:
+    type: ClusterIP
+    port: 3000
+    annotations: {}
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  # Compose ile aynı sağlık kontrolü: kök yol "/" (giriş sayfasına yönlendirir).
+  livenessProbe:
+    path: /
+    initialDelaySeconds: 20
+    periodSeconds: 30
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readinessProbe:
+    path: /
+    initialDelaySeconds: 10
+    periodSeconds: 15
+    timeoutSeconds: 5
+    failureThreshold: 3
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  # Node imajı root çalışır ve next start .next/cache'ine yazabilir; non-root
+  # için imajda USER + chown gerekir (bkz. README §Üretim notları).
+  securityContext:
+    runAsNonRoot: false
+    runAsUser: ""
+    runAsGroup: ""
+    fsGroup: ""
+    readOnlyRootFilesystem: false
+    dropAllCapabilities: true
+  extraEnv: []
+
+# --- yonetim_paneli ----------------------------------------------------------
+panel:
+  replicaCount: 1
+  image:
+    repository: kutyai/yonetim-paneli
+    tag: ""
+    pullPolicy: IfNotPresent
+  containerPort: 3001
+  browserApiUrl: ""         # boş -> global browserApiUrl
+  service:
+    type: ClusterIP
+    port: 3001
+    annotations: {}
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  livenessProbe:
+    path: /
+    initialDelaySeconds: 20
+    periodSeconds: 30
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readinessProbe:
+    path: /
+    initialDelaySeconds: 10
+    periodSeconds: 15
+    timeoutSeconds: 5
+    failureThreshold: 3
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  securityContext:
+    runAsNonRoot: false
+    runAsUser: ""
+    runAsGroup: ""
+    fsGroup: ""
+    readOnlyRootFilesystem: false
+    dropAllCapabilities: true
+  extraEnv: []
+
+# --- Ingress -----------------------------------------------------------------
+# Yollar dagitim/nginx.conf ile aynı düzendedir: /api -> arka.uc (yol korunur),
+# / -> onuc, panel için ayrı alan adı önerilir (panel imajı basePath ile
+# derlenmediği için /panel öneki statik varlıkları kırar; nginx.conf aynı notu taşır).
+ingress:
+  enabled: true
+  className: ""             # ör. nginx
+  annotations: {}           # ör. {cert-manager.io/cluster-issuer: letsencrypt}
+  hosts:
+    - host: kutyai.local
+      paths:
+        - path: /api
+          pathType: Prefix
+          service: arka-uc  # arka-uc | onuc | panel
+          port: 8000
+        - path: /
+          pathType: Prefix
+          service: onuc
+          port: 3000
+    - host: panel.kutyai.local
+      paths:
+        - path: /
+          pathType: Prefix
+          service: panel
+          port: 3001
+  # Tek alan adı altında /panel öneki isterseniz nginx ingress'te yeniden yazma
+  # gerekir (path: /panel(/|$)(.*) + rewrite-target: /$2, pathType: ImplementationSpecific).
+  tls:
+    enabled: false
+    secretName: kutyai-tls
+
+# --- Alembic göçü (Job) ------------------------------------------------------
+# Compose karşılığı: docker compose exec arkauc python -m alembic upgrade head
+# Helm hook'u `post-install,pre-upgrade`: yükseltmede yeni sürüm açılmadan önce
+# koşar; ilk kurulumda ise PVC ve iş yükleri oluştuktan sonra (pre-install
+# aşamasında chart'ın PVC'si henüz yoktur, Job pod'u Pending kalırdı).
+migration:
+  enabled: true
+  image:
+    repository: ""          # boş -> arkauc imajı
+    tag: ""
+    pullPolicy: IfNotPresent
+  backoffLimit: 3
+  activeDeadlineSeconds: 600
+  hookWeight: "-5"
+  # SQLite kullanırken göç pod'una /veri hacmini bağlar. Harici PostgreSQL'de
+  # false yapın (ReadWriteOnce hacmi göç pod'una bağlamak gereksizdir).
+  mountDataVolume: true
+  annotations: {}
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi

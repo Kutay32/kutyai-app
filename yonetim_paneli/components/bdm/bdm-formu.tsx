@@ -4,7 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 
 import { ApiHatasi } from "@/lib/api";
 import { adresHatasi, zorunluHatasi } from "@/lib/dogrulama";
+import { useDil } from "@/lib/dil";
 import { useUzakVeri } from "@/lib/kancalar";
+import { aktifDil, ceviri } from "@/lib/sozluk";
 import {
   bdmGuncelle,
   bdmOlustur,
@@ -64,14 +66,19 @@ export type BdmFormuProps = {
 
 function sayiHatasi(deger: string, etiket: string, alt: number, ust: number): string | null {
   const sayi = Number(deger);
-  if (!deger.trim() || !Number.isFinite(sayi)) return `${etiket} sayı olmalıdır.`;
-  if (sayi < alt || sayi > ust) return `${etiket} ${alt} ile ${ust} arasında olmalıdır.`;
+  if (!deger.trim() || !Number.isFinite(sayi)) {
+    return ceviri("bdm.hata.sayi", aktifDil(), { alan: etiket });
+  }
+  if (sayi < alt || sayi > ust) {
+    return ceviri("bdm.hata.sayi_aralik", aktifDil(), { alan: etiket, alt, ust });
+  }
   return null;
 }
 
 /** BDM oluşturma/düzenleme formu; sağlayıcı seçimine göre alanları uyarlar (§8). */
 export function BdmFormu({ mod, baslangic, onKaydedildi }: BdmFormuProps) {
   const { showToast } = useToast();
+  const { t } = useDil();
   const saglayicilar = useUzakVeri<SaglayiciBilgisi[]>(saglayicilariGetir, []);
 
   const [veri, setVeri] = useState<FormVerisi>(() =>
@@ -140,27 +147,40 @@ export function BdmFormu({ mod, baslangic, onKaydedildi }: BdmFormuProps) {
       if (mesaj) bulunan[alan] = mesaj;
     };
 
-    const adHatasi = zorunluHatasi(veri.gorunen_ad, "Görünen ad");
+    const adHatasi = zorunluHatasi(veri.gorunen_ad, t("bdm.alan.gorunen_ad"));
     ekle(
       "gorunen_ad",
-      adHatasi ?? (veri.gorunen_ad.trim().length < 2 ? "Görünen ad en az 2 karakter olmalıdır." : null),
+      adHatasi ??
+        (veri.gorunen_ad.trim().length < 2 ? t("bdm.form.gorunen_ad.kisa") : null),
     );
-    ekle("saglayici", veri.saglayici ? null : "Sağlayıcı seçimi zorunludur.");
-    ekle("upstream_model", zorunluHatasi(veri.upstream_model, "Upstream model"));
+    ekle("saglayici", veri.saglayici ? null : t("bdm.form.saglayici.zorunlu"));
+    ekle(
+      "upstream_model",
+      zorunluHatasi(veri.upstream_model, t("bdm.alan.upstream_model")),
+    );
 
     const temel = veri.temel_url.trim();
     if (temel) ekle("temel_url", adresHatasi(temel));
     else if (secili && !secili.varsayilan_temel_url) {
-      ekle("temel_url", "Bu sağlayıcı için temel adres zorunludur.");
+      ekle("temel_url", t("bdm.form.temel_url.zorunlu"));
     }
 
     if (mod === "yeni" && secili?.api_anahtari_gerekir) {
-      ekle("api_anahtari", zorunluHatasi(veri.api_anahtari, "API anahtarı"));
+      ekle("api_anahtari", zorunluHatasi(veri.api_anahtari, t("bdm.alan.api_anahtari")));
     }
 
-    ekle("baglam_penceresi", sayiHatasi(veri.baglam_penceresi, "Bağlam penceresi", 128, 2_000_000));
-    ekle("maks_cikti", sayiHatasi(veri.maks_cikti, "Maksimum çıktı", 16, 200_000));
-    ekle("sicaklik_varsayilan", sayiHatasi(veri.sicaklik_varsayilan, "Sıcaklık", 0, 2));
+    ekle(
+      "baglam_penceresi",
+      sayiHatasi(veri.baglam_penceresi, t("bdm.alan.baglam_penceresi"), 128, 2_000_000),
+    );
+    ekle(
+      "maks_cikti",
+      sayiHatasi(veri.maks_cikti, t("bdm.alan.maks_cikti"), 16, 200_000),
+    );
+    ekle(
+      "sicaklik_varsayilan",
+      sayiHatasi(veri.sicaklik_varsayilan, t("bdm.alan.sicaklik"), 0, 2),
+    );
 
     return bulunan;
   }
@@ -170,7 +190,7 @@ export function BdmFormu({ mod, baslangic, onKaydedildi }: BdmFormuProps) {
     const bulunan = alanHatalari();
     setHatalar(bulunan);
     if (Object.keys(bulunan).length > 0) {
-      setGenelHata("Kaydetmek için işaretli alanları düzeltin.");
+      setGenelHata(t("bdm.form.duzelt"));
       return;
     }
 
@@ -192,7 +212,7 @@ export function BdmFormu({ mod, baslangic, onKaydedildi }: BdmFormuProps) {
     try {
       if (mod === "yeni") {
         const kayit = await bdmOlustur({ ...govde, slug: veri.slug.trim() || undefined });
-        showToast("BDM oluşturuldu.", "success");
+        showToast(t("bdm.form.olusturuldu"), "success");
         onKaydedildi(kayit);
         return;
       }
@@ -201,7 +221,7 @@ export function BdmFormu({ mod, baslangic, onKaydedildi }: BdmFormuProps) {
       const guncelleme: Partial<BdmGirdisi> = { ...govde };
       if (!govde.api_anahtari) delete guncelleme.api_anahtari;
       const kayit = await bdmGuncelle(baslangic?.id ?? 0, guncelleme);
-      showToast("Değişiklikler kaydedildi.", "success");
+      showToast(t("bdm.form.kaydedildi"), "success");
       onKaydedildi(kayit);
     } catch (hata) {
       const mesaj =
@@ -209,7 +229,7 @@ export function BdmFormu({ mod, baslangic, onKaydedildi }: BdmFormuProps) {
           ? hata.message
           : hata instanceof Error
             ? hata.message
-            : "Kayıt tamamlanamadı.";
+            : t("bdm.hata.kayit");
       if (hata instanceof ApiHatasi && hata.kod === "cakisma") {
         setHatalar((onceki) => ({ ...onceki, slug: mesaj }));
       }
@@ -223,8 +243,8 @@ export function BdmFormu({ mod, baslangic, onKaydedildi }: BdmFormuProps) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Model bilgileri</CardTitle>
-          <CardDescription>Sağlayıcı listesi yükleniyor…</CardDescription>
+          <CardTitle>{t("bdm.form.model.baslik")}</CardTitle>
+          <CardDescription>{t("bdm.form.yukleniyor")}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           <Skeleton className="h-10 w-full" />
@@ -237,56 +257,59 @@ export function BdmFormu({ mod, baslangic, onKaydedildi }: BdmFormuProps) {
 
   if (saglayicilar.hata) {
     return (
-      <Alert tone="danger" title="Sağlayıcı listesi alınamadı">
+      <Alert tone="danger" title={t("bdm.form.saglayicilar.alinamadi")}>
         <p>{saglayicilar.hata}</p>
         <Button variant="secondary" size="sm" className="mt-2" onClick={saglayicilar.yenile}>
-          Yeniden dene
+          {t("bdm.yeniden_dene")}
         </Button>
       </Alert>
     );
   }
 
   const gpuUyarisi = secili ? gpuGerekir(secili.ad) : false;
+  // `{kod}` yer tutucusu çalışma zamanında teknik kimlikle doldurulur.
+  const gpuParcalari = t("bdm.form.gpu.aciklama", { ad: secili?.gorunen_ad ?? "" }).split(
+    "{kod}",
+  );
 
   return (
     <form onSubmit={gonder} className="flex flex-col gap-4" noValidate>
       {genelHata ? <Alert tone="danger">{genelHata}</Alert> : null}
 
       {gpuUyarisi ? (
-        <Alert tone="warning" title="GPU gerektiren sağlayıcı">
+        <Alert tone="warning" title={t("bdm.form.gpu.baslik")}>
           <p>
-            {secili?.gorunen_ad} GPU üzerinde çalışır. GPU çalışma zamanı yoksa hazırlama
-            ve başlatma uçları <span className="font-medium">503 surucu_yok</span> döner.
+            {gpuParcalari[0]}
+            <span className="font-medium">503 surucu_yok</span>
+            {gpuParcalari[1]}
           </p>
         </Alert>
       ) : null}
 
       <Card>
         <CardHeader>
-          <CardTitle>Model bilgileri</CardTitle>
-          <CardDescription>
-            Görünen ad müşteriye gösterilir; slug boş bırakılırsa addan üretilir.
-          </CardDescription>
+          <CardTitle>{t("bdm.form.model.baslik")}</CardTitle>
+          <CardDescription>{t("bdm.form.model.aciklama")}</CardDescription>
         </CardHeader>
         <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <Field label="Görünen ad" required error={hatalar.gorunen_ad}>
+          <Field label={t("bdm.alan.gorunen_ad")} required error={hatalar.gorunen_ad}>
             {(props) => (
               <Input
                 {...props}
                 invalid={props.invalid}
                 value={veri.gorunen_ad}
                 onChange={(olay) => guncelle("gorunen_ad", olay.target.value)}
-                placeholder="Yerel Llama 3"
+                placeholder={t("bdm.form.gorunen_ad.ipucu")}
               />
             )}
           </Field>
 
           <Field
-            label="Slug"
+            label={t("bdm.alan.slug")}
             hint={
               mod === "duzenle"
-                ? "Slug oluşturulduktan sonra değiştirilemez."
-                : "Boş bırakılırsa görünen addan üretilir."
+                ? t("bdm.form.slug.ipucu.duzenle")
+                : t("bdm.form.slug.ipucu.yeni")
             }
             error={hatalar.slug}
           >
@@ -302,7 +325,7 @@ export function BdmFormu({ mod, baslangic, onKaydedildi }: BdmFormuProps) {
             )}
           </Field>
 
-          <Field label="Sağlayıcı" required error={hatalar.saglayici}>
+          <Field label={t("bdm.alan.saglayici")} required error={hatalar.saglayici}>
             {(props) => (
               <Select
                 {...props}
@@ -310,7 +333,7 @@ export function BdmFormu({ mod, baslangic, onKaydedildi }: BdmFormuProps) {
                 value={veri.saglayici}
                 onChange={(olay) => saglayiciSec(olay.target.value)}
               >
-                <option value="">Seçiniz…</option>
+                <option value="">{t("bdm.form.seciniz")}</option>
                 {saglayiciListesi.map((bilgi) => (
                   <option key={bilgi.ad} value={bilgi.ad}>
                     {bilgi.gorunen_ad}
@@ -320,7 +343,7 @@ export function BdmFormu({ mod, baslangic, onKaydedildi }: BdmFormuProps) {
             )}
           </Field>
 
-          <Field label="Upstream model" required error={hatalar.upstream_model}>
+          <Field label={t("bdm.alan.upstream_model")} required error={hatalar.upstream_model}>
             {(props) => (
               <Input
                 {...props}
@@ -333,11 +356,11 @@ export function BdmFormu({ mod, baslangic, onKaydedildi }: BdmFormuProps) {
           </Field>
 
           <Field
-            label="Temel adres"
+            label={t("bdm.alan.temel_adres")}
             hint={
               secili?.varsayilan_temel_url
-                ? `Varsayılan: ${secili.varsayilan_temel_url}`
-                : "Bu sağlayıcı için adresi siz girmelisiniz."
+                ? t("bdm.form.temel_adres.varsayilan", { adres: secili.varsayilan_temel_url })
+                : t("bdm.form.temel_adres.zorunlu")
             }
             error={hatalar.temel_url}
             className="md:col-span-2"
@@ -355,12 +378,14 @@ export function BdmFormu({ mod, baslangic, onKaydedildi }: BdmFormuProps) {
 
           {secili?.api_anahtari_gerekir ? (
             <Field
-              label="API anahtarı"
+              label={t("bdm.alan.api_anahtari")}
               required={mod === "yeni"}
               hint={
                 mod === "duzenle"
-                  ? `Boş bırakılırsa değişmez. Mevcut: ${baslangic?.api_anahtari_maskeli || "tanımsız"}`
-                  : "Sağlayıcı anahtarı şifrelenerek saklanır."
+                  ? t("bdm.form.api_anahtari.mevcut", {
+                      maske: baslangic?.api_anahtari_maskeli || t("bdm.tanimsiz"),
+                    })
+                  : t("bdm.form.api_anahtari.ipucu")
               }
               error={hatalar.api_anahtari}
               className="md:col-span-2"
@@ -379,7 +404,7 @@ export function BdmFormu({ mod, baslangic, onKaydedildi }: BdmFormuProps) {
             </Field>
           ) : null}
 
-          <Field label="Açıklama" error={hatalar.aciklama} className="md:col-span-2">
+          <Field label={t("bdm.alan.aciklama")} error={hatalar.aciklama} className="md:col-span-2">
             {(props) => (
               <Textarea
                 {...props}
@@ -387,7 +412,7 @@ export function BdmFormu({ mod, baslangic, onKaydedildi }: BdmFormuProps) {
                 rows={2}
                 value={veri.aciklama}
                 onChange={(olay) => guncelle("aciklama", olay.target.value)}
-                placeholder="Kısa bir açıklama"
+                placeholder={t("bdm.form.aciklama.ipucu")}
               />
             )}
           </Field>
@@ -396,15 +421,13 @@ export function BdmFormu({ mod, baslangic, onKaydedildi }: BdmFormuProps) {
 
       <Card>
         <CardHeader>
-          <CardTitle>Üretim parametreleri</CardTitle>
-          <CardDescription>
-            Varsayılanlar sohbet isteklerinde kullanılır; istek başına geçersiz kılınabilir.
-          </CardDescription>
+          <CardTitle>{t("bdm.form.parametreler.baslik")}</CardTitle>
+          <CardDescription>{t("bdm.form.parametreler.aciklama")}</CardDescription>
         </CardHeader>
         <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <Field
-            label="Bağlam penceresi"
-            hint="128 – 2.000.000"
+            label={t("bdm.alan.baglam_penceresi")}
+            hint={t("bdm.form.baglam_penceresi.ipucu")}
             error={hatalar.baglam_penceresi}
           >
             {(props) => (
@@ -418,7 +441,11 @@ export function BdmFormu({ mod, baslangic, onKaydedildi }: BdmFormuProps) {
             )}
           </Field>
 
-          <Field label="Maksimum çıktı" hint="16 – 200.000" error={hatalar.maks_cikti}>
+          <Field
+            label={t("bdm.alan.maks_cikti")}
+            hint={t("bdm.form.maks_cikti.ipucu")}
+            error={hatalar.maks_cikti}
+          >
             {(props) => (
               <Input
                 {...props}
@@ -430,7 +457,11 @@ export function BdmFormu({ mod, baslangic, onKaydedildi }: BdmFormuProps) {
             )}
           </Field>
 
-          <Field label="Sıcaklık" hint="0 – 2" error={hatalar.sicaklik_varsayilan}>
+          <Field
+            label={t("bdm.alan.sicaklik")}
+            hint={t("bdm.form.sicaklik.ipucu")}
+            error={hatalar.sicaklik_varsayilan}
+          >
             {(props) => (
               <Input
                 {...props}
@@ -443,7 +474,11 @@ export function BdmFormu({ mod, baslangic, onKaydedildi }: BdmFormuProps) {
             )}
           </Field>
 
-          <Field label="Sistem istemi" className="md:col-span-3" error={hatalar.sistem_istemi}>
+          <Field
+            label={t("bdm.alan.sistem_istemi")}
+            className="md:col-span-3"
+            error={hatalar.sistem_istemi}
+          >
             {(props) => (
               <Textarea
                 {...props}
@@ -451,7 +486,7 @@ export function BdmFormu({ mod, baslangic, onKaydedildi }: BdmFormuProps) {
                 rows={4}
                 value={veri.sistem_istemi}
                 onChange={(olay) => guncelle("sistem_istemi", olay.target.value)}
-                placeholder="Sen yardımcı bir asistansın…"
+                placeholder={t("bdm.form.sistem_istemi.ipucu")}
               />
             )}
           </Field>
@@ -460,7 +495,7 @@ export function BdmFormu({ mod, baslangic, onKaydedildi }: BdmFormuProps) {
 
       <div className="flex items-center gap-2">
         <Button type="submit" loading={gonderiliyor}>
-          {mod === "yeni" ? "BDM oluştur" : "Değişiklikleri kaydet"}
+          {mod === "yeni" ? t("bdm.form.olustur") : t("bdm.form.kaydet")}
         </Button>
       </div>
     </form>

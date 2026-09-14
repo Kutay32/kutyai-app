@@ -2,6 +2,7 @@
 
 import { TriangleAlert } from "lucide-react";
 
+import { useDil } from "@/lib/dil";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import type { SurucuDurumu } from "@/lib/tipler";
@@ -18,14 +19,16 @@ export type GpuSeridiProps = {
  * devre dışı olduğunu gerekçesiyle birlikte açıklar.
  */
 export function GpuSeridi({ surucu, yukleniyor, hata, yenile }: GpuSeridiProps) {
+  const { t } = useDil();
+
   if (yukleniyor) return null;
 
   if (hata || !surucu) {
     return (
-      <Alert tone="warning" title="Çalışma zamanı durumu okunamadı">
-        <p>{hata ?? "Sürücü bilgisi alınamadı."}</p>
+      <Alert tone="warning" title={t("bdm.gpu.okunamadi")}>
+        <p>{hata ?? t("bdm.gpu.surucu_yok")}</p>
         <Button variant="secondary" size="sm" className="mt-2" onClick={yenile}>
-          Yeniden dene
+          {t("bdm.yeniden_dene")}
         </Button>
       </Alert>
     );
@@ -34,17 +37,11 @@ export function GpuSeridi({ surucu, yukleniyor, hata, yenile }: GpuSeridiProps) 
   if (surucu.gpu) return null;
 
   return (
-    <Alert tone="warning" title="GPU bulunamadı">
-      <p>
-        {surucu.mesaj.trim() ||
-          "Bu ortamda GPU çalışma zamanı bulunamadı; GPU gerektiren modeller başlatılamaz."}
-      </p>
+    <Alert tone="warning" title={t("bdm.gpu.bulunamadi")}>
+      <p>{surucu.mesaj.trim() || t("bdm.gpu.mesaj")}</p>
       <p className="flex items-center gap-1.5">
         <TriangleAlert aria-hidden className="size-4 shrink-0" />
-        <span>
-          vLLM ve TGI için başlatma düğmeleri devre dışı. GPU gerektirmeyen Ollama
-          sağlayıcısını kullanabilirsiniz.
-        </span>
+        <span>{t("bdm.gpu.devredisi")}</span>
       </p>
     </Alert>
   );

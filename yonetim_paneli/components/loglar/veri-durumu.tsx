@@ -2,6 +2,7 @@
 
 import { RefreshCw } from "lucide-react";
 
+import { useDil } from "@/lib/dil";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -15,6 +16,8 @@ export type VeriDurumuProps = {
 
 /** Uzak veri bloğunun yükleniyor/hata/gövde durumlarını tek yerde toplar. */
 export function VeriDurumu({ yukleniyor, hata, yenile, children }: VeriDurumuProps) {
+  const { t } = useDil();
+
   if (yukleniyor) {
     return (
       <div aria-busy className="flex flex-col gap-2 p-4">
@@ -28,11 +31,11 @@ export function VeriDurumu({ yukleniyor, hata, yenile, children }: VeriDurumuPro
   if (hata) {
     return (
       <div className="p-4">
-        <Alert tone="danger" title="Veri alınamadı">
+        <Alert tone="danger" title={t("kayit.veri.hata")}>
           <p>{hata}</p>
           <Button variant="secondary" size="sm" className="mt-2" onClick={yenile}>
             <RefreshCw aria-hidden className="size-4" />
-            Yeniden dene
+            {t("kayit.veri.yenile")}
           </Button>
         </Alert>
       </div>

@@ -1,0 +1,107 @@
+{{- /*
+Alembic göçü (spec §11: "migration Job").
+Compose karşılığı:
+  docker compose exec arkauc python -m alembic upgrade head
+(bkz. dagitim/OKUBENI.md §8, kaynak/ISLETIM.md §4). Compose'da uygulama şemayı
+açılışta da kurar (`bdm_veritabani/oturum.py` -> Taban.metadata.create_all);
+göçler de create_all/checkfirst kullandığı için bu Job TEKRAR ÇALIŞTIRILABİLİR.
+
+Hook sırası neden `post-install,pre-upgrade`:
+  - ilk kurulumda chart'ın PVC'si (kutyai-veri) pre-install aşamasında HENÜZ
+    oluşturulmamıştır; pre-install bir Job bu hacmi bağlayamaz ve pod Pending
+    kalır. Bu yüzden kurulumda göç, kaynaklar oluşturulduktan sonra koşar
+    (uygulama da şemayı açılışta kurabildiği için yarış güvenlidir).
+  - yükseltmede `pre-upgrade` ile YENİ sürüm açılmadan önce koşar; şema önce
+    yükseltilir (`hook-weight: -5`).
+Başarısız göç kurulumu/yükseltmeyi durdurur. Kapatmak için `migration.enabled=false`.
+*/ -}}
+{{- if .Values.migration.enabled }}
+{{- $depo := .Values.migration.image.repository | default .Values.arkauc.image.repository }}
+{{- $etiket := .Values.migration.image.tag | default (.Values.arkauc.image.tag | default .Chart.AppVersion) }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "kutyai.tamAd" . }}-goc
+  namespace: {{ include "kutyai.namespace" . }}
+  labels:
+    {{- include "kutyai.etiketler" (dict "kok" $ "bilesen" "goc") | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,pre-upgrade
+    "helm.sh/hook-weight": {{ .Values.migration.hookWeight | quote }}
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    {{- with .Values.migration.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  backoffLimit: {{ .Values.migration.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.migration.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "kutyai.etiketler" (dict "kok" $ "bilesen" "goc") | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      {{- if or .Values.serviceAccount.create .Values.serviceAccount.name }}
+      serviceAccountName: {{ include "kutyai.serviceAccountAd" . }}
+      {{- end }}
+      automountServiceAccountToken: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- if .Values.arkauc.securityContext.runAsNonRoot }}
+        runAsNonRoot: true
+        {{- end }}
+        {{- with .Values.arkauc.securityContext.runAsUser }}
+        runAsUser: {{ . }}
+        {{- end }}
+        {{- with .Values.arkauc.securityContext.runAsGroup }}
+        runAsGroup: {{ . }}
+        {{- end }}
+        {{- with .Values.arkauc.securityContext.fsGroup }}
+        fsGroup: {{ . }}
+        {{- end }}
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: goc
+          image: {{ include "kutyai.imaj" (dict "repository" $depo "tag" $etiket "appVersion" .Chart.AppVersion) }}
+          imagePullPolicy: {{ .Values.migration.image.pullPolicy | default .Values.arkauc.image.pullPolicy }}
+          command:
+            - python
+            - -m
+            - alembic
+            - upgrade
+            - head
+          # Aynı ortam: KUTYAI_VERITABANI_URL (ConfigMap / gerekirse Secret).
+          envFrom:
+            - configMapRef:
+                name: {{ include "kutyai.configmapAd" . }}
+            - secretRef:
+                name: {{ include "kutyai.secretAd" . }}
+          resources:
+            {{- toYaml .Values.migration.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            {{- if .Values.arkauc.securityContext.dropAllCapabilities }}
+            capabilities:
+              drop:
+                - ALL
+            {{- end }}
+            readOnlyRootFilesystem: false
+          {{- if and .Values.arkauc.persistence.data.enabled .Values.migration.mountDataVolume }}
+          volumeMounts:
+            # SQLite dosyası /veri altında. Harici PostgreSQL kullanıyorsanız
+            # migration.mountDataVolume=false yapın: ReadWriteOnce hacmi göç
+            # pod'una bağlamak çok düğümlü kümede gereksiz bekleme yaratır.
+            - name: veri
+              mountPath: {{ .Values.arkauc.dataPath }}
+          {{- end }}
+      {{- if and .Values.arkauc.persistence.data.enabled .Values.migration.mountDataVolume }}
+      volumes:
+        - name: veri
+          persistentVolumeClaim:
+            claimName: {{ default (printf "%s-veri" (include "kutyai.tamAd" .)) .Values.arkauc.persistence.data.existingClaim }}
+      {{- end }}
+{{- end }}

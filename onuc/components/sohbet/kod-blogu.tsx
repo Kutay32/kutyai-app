@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, Copy } from "lucide-react";
 
+import { useDil } from "@/lib/dil";
+
 /** Panoya kopyalar; Clipboard API yoksa gizli alan + `execCommand` yedeği kullanır. */
 async function panoyaKopyala(metin: string): Promise<boolean> {
   try {
@@ -36,7 +38,8 @@ export type KodBloguOzellikleri = {
 };
 
 /** Sohbet yanıtındaki kod bloğu ve panoya kopyalama düğmesi. */
-export function KodBlogu({ dil, metin }: KodBloguOzellikleri) {
+export function KodBlogu({ dil: kodDili, metin }: KodBloguOzellikleri) {
+  const { t } = useDil();
   const [kopyalandi, setKopyalandi] = useState(false);
   const zamanlayici = useRef<number | undefined>(undefined);
 
@@ -58,7 +61,7 @@ export function KodBlogu({ dil, metin }: KodBloguOzellikleri) {
     <figure className="my-3 overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50">
       <figcaption className="flex items-center justify-between gap-2 border-b border-neutral-200 px-3 py-1.5">
         <span className="font-mono text-[11px] tracking-wide text-neutral-500 uppercase">
-          {dil ?? "kod"}
+          {kodDili ?? t("sohbet.kod.etiket")}
         </span>
         <button
           type="button"
@@ -70,7 +73,7 @@ export function KodBlogu({ dil, metin }: KodBloguOzellikleri) {
           ) : (
             <Copy aria-hidden className="size-3" />
           )}
-          {kopyalandi ? "Kopyalandı" : "Kopyala"}
+          {kopyalandi ? t("sohbet.kod.kopyalandi") : t("sohbet.kod.kopyala")}
         </button>
       </figcaption>
       <pre className="overflow-x-auto p-3 text-[13px] leading-relaxed">

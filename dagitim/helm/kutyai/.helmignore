@@ -1,0 +1,16 @@
+# Paket dışı bırakılacak kalıplar (helm package).
+.DS_Store
+.git/
+.gitignore
+.hg/
+.hgignore
+.svn/
+*.swp
+*.bak
+*.tmp
+*.orig
+*~
+.project
+.idea/
+*.tmproj
+.vscode/

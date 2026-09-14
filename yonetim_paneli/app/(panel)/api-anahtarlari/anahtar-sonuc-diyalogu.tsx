@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import { Check, Copy } from "lucide-react";
 
+import { useDil } from "@/lib/dil";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 
@@ -32,6 +33,7 @@ function geciciAlanlaKopyala(metin: string): void {
  * tek çıkış yolu kullanıcının kaydettiğini onaylamasıdır.
  */
 export function AnahtarSonucDiyalogu({ ad, tamAnahtar, onKapat }: AnahtarSonucDiyaloguProps) {
+  const { t } = useDil();
   const [kopyalandi, setKopyalandi] = useState(false);
   const [kopyalamaHatasi, setKopyalamaHatasi] = useState<string | null>(null);
 
@@ -53,7 +55,7 @@ export function AnahtarSonucDiyalogu({ ad, tamAnahtar, onKapat }: AnahtarSonucDi
       setKopyalandi(true);
       setKopyalamaHatasi(null);
     } catch {
-      setKopyalamaHatasi("Kopyalanamadı; anahtarı elle seçip kopyalayın.");
+      setKopyalamaHatasi(t("anahtar.sonuc.kopyalama_hatasi"));
     }
   };
 
@@ -69,16 +71,14 @@ export function AnahtarSonucDiyalogu({ ad, tamAnahtar, onKapat }: AnahtarSonucDi
       >
         <div className="flex flex-col gap-1 border-b border-neutral-200 p-4">
           <h2 id="anahtar-sonuc-baslik" className="text-base font-semibold text-neutral-900">
-            API anahtarı oluşturuldu
+            {t("anahtar.sonuc.baslik")}
           </h2>
           <p className="text-sm text-neutral-500">{ad}</p>
         </div>
 
         <div className="flex flex-col gap-4 p-4">
-          <Alert tone="danger" title="Bu anahtar bir daha gösterilmeyecek">
-            Sunucu tam anahtarı yalnızca bu yanıtta döndürür. Şimdi kopyalayıp
-            güvenli bir yere kaydedin; bu pencere kapandıktan sonra anahtarı
-            yeniden görüntülemenin bir yolu yoktur.
+          <Alert tone="danger" title={t("anahtar.sonuc.uyari.baslik")}>
+            {t("anahtar.sonuc.uyari.metin")}
           </Alert>
 
           <p className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 font-mono text-sm break-all text-neutral-900 select-all">
@@ -97,12 +97,12 @@ export function AnahtarSonucDiyalogu({ ad, tamAnahtar, onKapat }: AnahtarSonucDi
             onClick={() => void kopyala()}
           >
             {kopyalandi ? <Check aria-hidden className="size-4" /> : <Copy aria-hidden className="size-4" />}
-            {kopyalandi ? "Kopyalandı" : "Kopyala"}
+            {kopyalandi ? t("anahtar.sonuc.kopyalandi") : t("anahtar.sonuc.kopyala")}
           </Button>
         </div>
 
         <div className="flex items-center justify-end gap-2 border-t border-neutral-200 p-4">
-          <Button onClick={onKapat}>Kaydettim, kapat</Button>
+          <Button onClick={onKapat}>{t("anahtar.sonuc.kaydettim")}</Button>
         </div>
       </div>
     </div>

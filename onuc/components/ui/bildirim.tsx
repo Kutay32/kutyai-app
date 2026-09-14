@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useMemo, useRef, useState } fro
 import { CheckCircle2, Info, X, XCircle } from "lucide-react";
 
 import { cn } from "@/lib/cn";
+import { useDil } from "@/lib/dil";
 
 export type BildirimTuru = "basari" | "hata" | "bilgi";
 
@@ -37,6 +38,7 @@ function TurSimgesi({ tur }: { tur: BildirimTuru }) {
 }
 
 export function BildirimSaglayici({ children }: { children: React.ReactNode }) {
+  const { t } = useDil();
   const [kayitlar, setKayitlar] = useState<BildirimKaydi[]>([]);
   const sayac = useRef(0);
 
@@ -81,7 +83,7 @@ export function BildirimSaglayici({ children }: { children: React.ReactNode }) {
             <button
               type="button"
               onClick={() => kapat(kayit.id)}
-              aria-label="Bildirimi kapat"
+              aria-label={t("genel.bildirim.kapat")}
               className="rounded-md border border-transparent p-1 text-neutral-400 transition-colors hover:border-neutral-200 hover:text-neutral-900 focus:border-neutral-900 focus:ring-0"
             >
               <X aria-hidden className="size-3.5" />

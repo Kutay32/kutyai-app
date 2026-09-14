@@ -1,0 +1,62 @@
+KutyAI kuruldu — release: {{ .Release.Name }} · chart: {{ .Chart.Name }}-{{ .Chart.Version }} · ad alanı: {{ include "kutyai.namespace" . }}
+
+Bileşenler
+  arka.uc (API)          Deployment/Service  {{ include "kutyai.bilesenAdi" (dict "kok" $ "bilesen" "arka-uc") }}  ({{ .Values.arkauc.service.port }})
+  onuc (son kullanıcı)   Deployment/Service  {{ include "kutyai.bilesenAdi" (dict "kok" $ "bilesen" "onuc") }}  ({{ .Values.onuc.service.port }})
+  yonetim_paneli         Deployment/Service  {{ include "kutyai.bilesenAdi" (dict "kok" $ "bilesen" "panel") }}  ({{ .Values.panel.service.port }})
+{{- if .Values.migration.enabled }}
+  Alembic göçü           Job (hook)          {{ include "kutyai.tamAd" . }}-goc  (post-install/pre-upgrade)
+{{- end }}
+{{- if .Values.namespace.create }}
+  Namespace              (chart tarafından yönetiliyor: {{ include "kutyai.namespace" . }})
+{{- end }}
+
+Durum
+  kubectl get pods,svc,pvc -n {{ include "kutyai.namespace" . }}
+  kubectl logs -n {{ include "kutyai.namespace" . }} deploy/{{ include "kutyai.bilesenAdi" (dict "kok" $ "bilesen" "arka-uc") }} -f
+
+Erişim
+{{- if .Values.ingress.enabled }}
+  Ingress etkin. Alan adlarını DNS/hosts dosyanızda çözümleyin:
+{{- range .Values.ingress.hosts }}
+    http{{ if $.Values.ingress.tls.enabled }}s{{ end }}://{{ .host }}{{ if .paths }}{{ (index .paths 0).path }}{{ end }}
+{{- end }}
+{{- else }}
+  Ingress kapalı. Yerelden erişim için:
+    kubectl port-forward -n {{ include "kutyai.namespace" . }} svc/{{ include "kutyai.bilesenAdi" (dict "kok" $ "bilesen" "arka-uc") }} {{ .Values.arkauc.service.port }}:{{ .Values.arkauc.service.port }}
+    kubectl port-forward -n {{ include "kutyai.namespace" . }} svc/{{ include "kutyai.bilesenAdi" (dict "kok" $ "bilesen" "onuc") }} {{ .Values.onuc.service.port }}:{{ .Values.onuc.service.port }}
+    kubectl port-forward -n {{ include "kutyai.namespace" . }} svc/{{ include "kutyai.bilesenAdi" (dict "kok" $ "bilesen" "panel") }} {{ .Values.panel.service.port }}:{{ .Values.panel.service.port }}
+{{- end }}
+
+Sağlık uçları (compose ile aynı sözleşme)
+  Canlılık    GET /api/v1/saglik        -> {"durum":"ayakta",...}
+  Hazırlık    GET /api/v1/saglik/hazir  -> veritabanı + konteyner sürücüsü
+  Kurulum     GET /api/v1/saglik/kurulum
+  API belge   GET /api/docs
+
+{{- if .Values.secrets.existingSecret }}
+Sırlar
+  Kendi Secret'ınız kullanılıyor: {{ .Values.secrets.existingSecret }} (chart sır üretmedi).
+{{- else if .Values.secrets.create }}
+Sırlar
+  Secret `{{ include "kutyai.tamAd" . }}` üretildi; boş bırakılan sırlar rastgele oluşturuldu.
+  Değerleri okuyun ve KASADA saklayın (Fernet anahtarı yedeksiz kaybolursa şifreli veri açılamaz):
+    kubectl get secret {{ include "kutyai.tamAd" . }} -n {{ include "kutyai.namespace" . }} -o jsonpath='{.data.KUTYAI_SIFRELEME_ANAHTARI}' | base64 -d
+{{- end }}
+
+ÖNEMLİ NOTLAR
+  1) Veritabanı: KUTYAI_VERITABANI_URL = {{ .Values.config.KUTYAI_VERITABANI_URL }}
+     Varsayılan SQLite + ReadWriteOnce hacimdir; arka.uc TEK replikada çalışmalıdır.
+     Çok replika/HPA için harici PostgreSQL verin:
+       --set secrets.values.KUTYAI_VERITABANI_URL=postgresql+asyncpg://kullanici:parola@sunucu:5432/kutyai
+       --set arkauc.autoscaling.enabled=true
+  2) Tarayıcı API adresi NEXT_PUBLIC_API_URL={{ .Values.browserApiUrl }} imaj DERLENİRKEN
+     gömülür. Uzak kümede imajı gerçek alan adıyla derleyin (dagitim/OKUBENI.md §4).
+  3) BDM konteynerleri (vLLM/TGI/ollama) için /var/run/docker.sock gerekir.
+     Varsayılan KAPALI (arka.uc.dockerSocket.enabled=false); açmadan önce
+     kaynak/ISLETIM.md §Güvenlik ve dagitim/OKUBENI.md §11'i okuyun.
+  4) Kalıcı veri: PVC {{ include "kutyai.tamAd" . }}-veri ({{ .Values.arkauc.dataPath }}) —
+     uninstall sırasında korunur (helm.sh/resource-policy: keep). Yedekleme: kaynak/ISLETIM.md §4.
+
+Yükseltme:  helm upgrade {{ .Release.Name }} <chart> -n {{ include "kutyai.namespace" . }} [--set ...]
+Kaldırma:   helm uninstall {{ .Release.Name }} -n {{ include "kutyai.namespace" . }}

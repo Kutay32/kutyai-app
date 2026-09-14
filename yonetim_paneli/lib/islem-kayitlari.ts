@@ -2,6 +2,7 @@
 
 import { istek } from "@/lib/api";
 import { gunSiniriIso } from "@/lib/loglar";
+import { aktifDil, ceviri, type SozlukAnahtari } from "@/lib/sozluk";
 import type { Sayfa } from "@/lib/tipler";
 
 export const VARSAYILAN_ISLEM_SAYFA_BOYUTU = 25;
@@ -42,25 +43,28 @@ export const BASLANGIC_ISLEM_FILTRESI: IslemFiltresi = {
   boyut: VARSAYILAN_ISLEM_SAYFA_BOYUTU,
 };
 
-/** `ayrinti` anahtarlarının okunur karşılıkları; bilinmeyen anahtar olduğu gibi yazılır. */
-export const AYRINTI_ETIKETI: Record<string, string> = {
-  ad: "Ad",
-  anahtarlar: "Değişen ayarlar",
-  api_anahtari_id: "API anahtarı no",
-  baslik: "Başlık",
-  bdm_id: "BDM no",
-  bdm_slug: "BDM slug",
-  durum: "Durum",
-  eposta: "E-posta",
-  gecersiz: "Geçersiz değerler",
-  gun: "Gün",
-  izinli_modeller: "İzinli modeller",
-  konusma_id: "Konuşma no",
-  kullanici_id: "Kullanıcı no",
-  marka_adi: "Marka adı",
-  rol: "Rol",
-  silinen: "Silinen kayıt",
-  slug: "Slug",
+/**
+ * `ayrinti` anahtarlarının katalog anahtarı karşılıkları (spec §10.2); bilinmeyen
+ * anahtar olduğu gibi yazılır.
+ */
+export const AYRINTI_ANAHTARI: Record<string, SozlukAnahtari> = {
+  ad: "islem.alan.ad",
+  anahtarlar: "islem.alan.anahtarlar",
+  api_anahtari_id: "islem.alan.api_anahtari_id",
+  baslik: "islem.alan.baslik",
+  bdm_id: "islem.alan.bdm_id",
+  bdm_slug: "islem.alan.bdm_slug",
+  durum: "islem.alan.durum",
+  eposta: "islem.alan.eposta",
+  gecersiz: "islem.alan.gecersiz",
+  gun: "islem.alan.gun",
+  izinli_modeller: "islem.alan.izinli_modeller",
+  konusma_id: "islem.alan.konusma_id",
+  kullanici_id: "islem.alan.kullanici_id",
+  marka_adi: "islem.alan.marka_adi",
+  rol: "islem.alan.rol",
+  silinen: "islem.alan.silinen",
+  slug: "islem.alan.slug",
 };
 
 /** Ayrıntı değerini tek satırda okunur biçime çevirir. */
@@ -68,7 +72,9 @@ export function ayrintiDegeri(deger: unknown): string {
   if (deger === null || deger === undefined) return "—";
   if (Array.isArray(deger)) return deger.length > 0 ? deger.map(ayrintiDegeri).join(", ") : "—";
   if (typeof deger === "object") return JSON.stringify(deger);
-  if (typeof deger === "boolean") return deger ? "Evet" : "Hayır";
+  if (typeof deger === "boolean") {
+    return ceviri(deger ? "islem.evet" : "islem.hayir", aktifDil());
+  }
   return String(deger);
 }
 

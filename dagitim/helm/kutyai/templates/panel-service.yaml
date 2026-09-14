@@ -1,0 +1,23 @@
+{{- /*
+yonetim_paneli Service (spec §11). Port compose ile aynı: 3001.
+*/ -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kutyai.bilesenAdi" (dict "kok" $ "bilesen" "panel") }}
+  namespace: {{ include "kutyai.namespace" . }}
+  labels:
+    {{- include "kutyai.etiketler" (dict "kok" $ "bilesen" "panel") | nindent 4 }}
+  {{- with .Values.panel.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.panel.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.panel.service.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "kutyai.seciciler" (dict "kok" $ "bilesen" "panel") | nindent 4 }}

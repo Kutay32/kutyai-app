@@ -5,6 +5,7 @@ import { useState } from "react";
 import { MessageSquare } from "lucide-react";
 
 import { istek } from "@/lib/api";
+import { useDil } from "@/lib/dil";
 import {
   BASLANGIC_LOG_FILTRESI,
   LOG_SAYFA_BOYUTLARI,
@@ -26,6 +27,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 const KULLANICI_SECIM_BOYUTU = 200;
 
 export default function LoglarSayfasi() {
+  const { t } = useDil();
   const [filtre, setFiltre] = useState<LogFiltresi>(BASLANGIC_LOG_FILTRESI);
 
   const kayitlar = useUzakVeri<Sayfa<LogKonusmasi>>(
@@ -46,11 +48,9 @@ export default function LoglarSayfasi() {
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-1">
         <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">
-          Konuşma Kayıtları
+          {t("kayit.loglar.baslik")}
         </h1>
-        <p className="text-sm text-neutral-500">
-          Kayıtlar maskelenmiş olarak saklanır; filtreleyin, indirin ve yönetin.
-        </p>
+        <p className="text-sm text-neutral-500">{t("kayit.loglar.aciklama")}</p>
       </header>
 
       <FiltreCubugu
@@ -86,8 +86,8 @@ export default function LoglarSayfasi() {
             <div className="p-4">
               <EmptyState
                 icon={<MessageSquare aria-hidden className="size-5" />}
-                title="Kayıt bulunamadı"
-                description="Bu filtrelerle eşleşen konuşma yok. Filtreleri gevşetmeyi deneyin."
+                title={t("kayit.loglar.bos.baslik")}
+                description={t("kayit.loglar.bos.aciklama")}
               />
             </div>
           )}

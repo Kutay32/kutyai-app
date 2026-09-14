@@ -15,6 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { AdimGostergesi } from "@/components/kurulum/adim-gostergesi";
 import { ApiHatasi, istek } from "@/lib/api";
+import { useDil } from "@/lib/dil";
 import {
   adresHatasi,
   epostaHatasi,
@@ -30,8 +31,6 @@ import type {
   Saglayici,
   SaglayiciBilgisi,
 } from "@/lib/tipler";
-
-const ADIMLAR = ["Şirket Bilgisi", "Yönetici Hesabı", "İlk BDM", "Özet"];
 
 type AlanAdi =
   | "marka_adi"
@@ -71,6 +70,15 @@ function OzetSatiri({ etiket, deger }: { etiket: string; deger: string }) {
 
 export default function KurulumSayfasi() {
   const router = useRouter();
+  const { t } = useDil();
+
+  // Adım başlıkları aktif dilde; göstergeye ve adım sınırı denetimlerine bu liste verilir.
+  const adimlar = [
+    t("kurulum.adim.sirket"),
+    t("kurulum.adim.yonetici"),
+    t("kurulum.adim.bdm"),
+    t("kurulum.adim.ozet"),
+  ];
 
   const [adim, setAdim] = useState(0);
   const [veri, setVeri] = useState<FormVerisi>(BASLANGIC);
@@ -147,23 +155,23 @@ export default function KurulumSayfasi() {
     };
 
     if (sira === 0) {
-      ekle("marka_adi", zorunluHatasi(veri.marka_adi, "Marka adı"));
+      ekle("marka_adi", zorunluHatasi(veri.marka_adi, t("genel.marka_adi")));
     }
 
     if (sira === 1) {
-      ekle("ad_soyad", zorunluHatasi(veri.ad_soyad, "Ad soyad"));
+      ekle("ad_soyad", zorunluHatasi(veri.ad_soyad, t("genel.ad_soyad")));
       ekle("eposta", epostaHatasi(veri.eposta));
       ekle("parola", parolaHatasi(veri.parola));
       ekle("parola_tekrar", parolaTekrarHatasi(veri.parola, veri.parola_tekrar));
     }
 
     if (sira === 2) {
-      ekle("saglayici", veri.saglayici ? null : "Sağlayıcı seçimi zorunludur.");
-      ekle("gorunen_ad", zorunluHatasi(veri.gorunen_ad, "Görünen ad"));
+      ekle("saglayici", veri.saglayici ? null : t("kurulum.saglayici.zorunlu"));
+      ekle("gorunen_ad", zorunluHatasi(veri.gorunen_ad, t("kurulum.gorunen_ad")));
       ekle("temel_url", adresHatasi(veri.temel_url));
-      ekle("upstream_model", zorunluHatasi(veri.upstream_model, "Upstream model"));
+      ekle("upstream_model", zorunluHatasi(veri.upstream_model, t("kurulum.upstream_model")));
       if (seciliSaglayici?.api_anahtari_gerekir) {
-        ekle("api_anahtari", zorunluHatasi(veri.api_anahtari, "API anahtarı"));
+        ekle("api_anahtari", zorunluHatasi(veri.api_anahtari, t("kurulum.api_anahtari")));
       }
     }
 
@@ -175,9 +183,9 @@ export default function KurulumSayfasi() {
    * Liste alınamadığında `<select>` hiç render edilmediği için alan hatası görünmez olurdu.
    */
   function saglayiciEngeli(): string | null {
-    if (saglayicilar.yukleniyor) return "Sağlayıcı listesi yükleniyor, lütfen bekleyin.";
+    if (saglayicilar.yukleniyor) return t("kurulum.saglayici.yukleniyor");
     if (saglayicilar.hata) {
-      return "Sağlayıcı listesi alınamadı. “Yeniden dene” ile listeyi yükleyip tekrar deneyin.";
+      return t("kurulum.saglayici.yuklenemedi", { dugme: t("genel.yeniden_dene") });
     }
     return null;
   }
@@ -194,7 +202,7 @@ export default function KurulumSayfasi() {
     const bulunan = adimHatalari(adim);
     setHatalar(bulunan);
     if (Object.keys(bulunan).length > 0) return;
-    setAdim((sira) => Math.min(sira + 1, ADIMLAR.length - 1));
+    setAdim((sira) => Math.min(sira + 1, adimlar.length - 1));
   }
 
   function geri() {
@@ -216,7 +224,7 @@ export default function KurulumSayfasi() {
       if (Object.keys(bulunan).length > 0) {
         setHatalar(bulunan);
         setAdim(sira);
-        setGenelHata("Kurulumu tamamlamak için işaretli alanları düzeltin.");
+        setGenelHata(t("kurulum.hata.alanlar"));
         return;
       }
     }
@@ -247,10 +255,7 @@ export default function KurulumSayfasi() {
       const yanit = await istek<KurulumYaniti>("/kurulum", { yontem: "POST", govde, jeton: null });
       if (yanit.dogrulama && !yanit.dogrulama.basarili) {
         // Hesap ve model oluşturuldu; bağlantı doğrulanamadı, kullanıcı bilgilendirilir.
-        setUyari(
-          yanit.dogrulama.mesaj.trim() ||
-            "Sağlayıcı adresini, model kimliğini ve varsa API anahtarını denetleyin.",
-        );
+        setUyari(yanit.dogrulama.mesaj.trim() || t("kurulum.uyari.yedek"));
         return;
       }
       router.replace("/giris?kurulum=tamam");
@@ -259,7 +264,7 @@ export default function KurulumSayfasi() {
         router.replace("/giris");
         return;
       }
-      setGenelHata(hata instanceof Error ? hata.message : "Kurulum tamamlanamadı.");
+      setGenelHata(hata instanceof Error ? hata.message : t("kurulum.hata.genel"));
     } finally {
       setGonderiliyor(false);
     }
@@ -270,7 +275,7 @@ export default function KurulumSayfasi() {
       <main className="flex min-h-screen items-center justify-center bg-neutral-50 p-4">
         <div className="flex items-center gap-2 text-sm text-neutral-500">
           <Spinner />
-          Yükleniyor…
+          {t("genel.yukleniyor")}
         </div>
       </main>
     );
@@ -282,24 +287,19 @@ export default function KurulumSayfasi() {
         <header className="flex flex-col gap-1">
           <Brand markaAdi="KutyAI" className="text-3xl" />
           <h1 className="text-xl font-semibold tracking-tight text-neutral-900">
-            Kurulum Sihirbazı
+            {t("kurulum.baslik")}
           </h1>
-          <p className="text-sm text-neutral-500">
-            Dört adımda platformu çalışır hâle getirin.
-          </p>
+          <p className="text-sm text-neutral-500">{t("kurulum.aciklama")}</p>
         </header>
 
-        <AdimGostergesi adimlar={ADIMLAR} aktif={adim} />
+        <AdimGostergesi adimlar={adimlar} aktif={adim} />
 
         {genelHata ? <Alert tone="danger">{genelHata}</Alert> : null}
 
         {uyari ? (
-          <Alert tone="warning" title="Model bağlantısı doğrulanamadı">
+          <Alert tone="warning" title={t("kurulum.uyari.baslik")}>
             <p>{uyari}</p>
-            <p>
-              Yönetici hesabı ve model kaydı oluşturuldu; giriş yapıp model ayarlarını
-              denetleyebilirsiniz.
-            </p>
+            <p>{t("kurulum.uyari.metin")}</p>
           </Alert>
         ) : null}
 
@@ -307,16 +307,14 @@ export default function KurulumSayfasi() {
           <div className="flex flex-col gap-4 p-4">
             {adim === 0 ? (
               <>
-                <p className="text-sm text-neutral-500">
-                  Panelde ve kullanıcı arayüzünde görünecek marka adını girin.
-                </p>
-                <Field label="Marka adı" required error={hatalar.marka_adi}>
+                <p className="text-sm text-neutral-500">{t("kurulum.sirket.aciklama")}</p>
+                <Field label={t("genel.marka_adi")} required error={hatalar.marka_adi}>
                   {(alan) => (
                     <Input
                       {...alan}
                       value={veri.marka_adi}
                       onChange={(olay) => guncelle("marka_adi", olay.target.value)}
-                      placeholder="Acme AI"
+                      placeholder={t("kurulum.marka_adi.ornek")}
                     />
                   )}
                 </Field>
@@ -325,21 +323,19 @@ export default function KurulumSayfasi() {
 
             {adim === 1 ? (
               <>
-                <p className="text-sm text-neutral-500">
-                  Bu hesap yönetici yetkisiyle oluşturulur ve panele giriş yapabilir.
-                </p>
-                <Field label="Ad soyad" required error={hatalar.ad_soyad}>
+                <p className="text-sm text-neutral-500">{t("kurulum.yonetici.aciklama")}</p>
+                <Field label={t("genel.ad_soyad")} required error={hatalar.ad_soyad}>
                   {(alan) => (
                     <Input
                       {...alan}
                       autoComplete="name"
                       value={veri.ad_soyad}
                       onChange={(olay) => guncelle("ad_soyad", olay.target.value)}
-                      placeholder="Ayşe Yılmaz"
+                      placeholder={t("kurulum.ad_soyad.ornek")}
                     />
                   )}
                 </Field>
-                <Field label="E-posta" required error={hatalar.eposta}>
+                <Field label={t("genel.eposta")} required error={hatalar.eposta}>
                   {(alan) => (
                     <Input
                       {...alan}
@@ -347,14 +343,14 @@ export default function KurulumSayfasi() {
                       autoComplete="username"
                       value={veri.eposta}
                       onChange={(olay) => guncelle("eposta", olay.target.value)}
-                      placeholder="admin@sirket.com"
+                      placeholder={t("kurulum.eposta.ornek")}
                     />
                   )}
                 </Field>
                 <Field
-                  label="Parola"
+                  label={t("genel.parola")}
                   required
-                  hint="En az 8 karakter."
+                  hint={t("kurulum.parola.ipucu")}
                   error={hatalar.parola}
                 >
                   {(alan) => (
@@ -367,7 +363,7 @@ export default function KurulumSayfasi() {
                     />
                   )}
                 </Field>
-                <Field label="Parola tekrar" required error={hatalar.parola_tekrar}>
+                <Field label={t("genel.parola_tekrar")} required error={hatalar.parola_tekrar}>
                   {(alan) => (
                     <Input
                       {...alan}
@@ -383,9 +379,7 @@ export default function KurulumSayfasi() {
 
             {adim === 2 ? (
               <>
-                <p className="text-sm text-neutral-500">
-                  Platformun ilk modelini tanımlayın. Kurulum sonunda bağlantı doğrulanır.
-                </p>
+                <p className="text-sm text-neutral-500">{t("kurulum.bdm.aciklama")}</p>
 
                 {saglayicilar.yukleniyor ? (
                   <div className="flex flex-col gap-2">
@@ -395,21 +389,21 @@ export default function KurulumSayfasi() {
                 ) : null}
 
                 {saglayicilar.hata ? (
-                  <Alert tone="danger" title="Sağlayıcı listesi alınamadı">
-                    <p>Sağlayıcı listesi alınamadı. Sunucu ayakta mı?</p>
+                  <Alert tone="danger" title={t("kurulum.saglayici.hata.baslik")}>
+                    <p>{t("kurulum.saglayici.hata.metin")}</p>
                     <Button
                       variant="secondary"
                       size="sm"
                       className="mt-2"
                       onClick={saglayicilar.yenile}
                     >
-                      Yeniden dene
+                      {t("genel.yeniden_dene")}
                     </Button>
                   </Alert>
                 ) : null}
 
                 {!saglayicilar.yukleniyor && !saglayicilar.hata ? (
-                  <Field label="Sağlayıcı" required error={hatalar.saglayici}>
+                  <Field label={t("kurulum.saglayici.baslik")} required error={hatalar.saglayici}>
                     {(alan) => (
                       <Select
                         {...alan}
@@ -429,24 +423,22 @@ export default function KurulumSayfasi() {
                 {seciliSaglayici ? (
                   <p className="text-sm text-neutral-500">
                     {seciliSaglayici.aciklama}
-                    {seciliSaglayici.gpu_gerekir
-                      ? " Bu sağlayıcı GPU gerektirir; sunucuda GPU yoksa başlatma 503 surucu_yok ile başarısız olur."
-                      : null}
+                    {seciliSaglayici.gpu_gerekir ? t("kurulum.saglayici.gpu_notu") : null}
                   </p>
                 ) : null}
 
-                <Field label="Görünen ad" required error={hatalar.gorunen_ad}>
+                <Field label={t("kurulum.gorunen_ad")} required error={hatalar.gorunen_ad}>
                   {(alan) => (
                     <Input
                       {...alan}
                       value={veri.gorunen_ad}
                       onChange={(olay) => guncelle("gorunen_ad", olay.target.value)}
-                      placeholder="Yerel Llama 3"
+                      placeholder={t("kurulum.gorunen_ad.ornek")}
                     />
                   )}
                 </Field>
 
-                <Field label="Temel adres" required error={hatalar.temel_url}>
+                <Field label={t("kurulum.temel_adres")} required error={hatalar.temel_url}>
                   {(alan) => (
                     <Input
                       {...alan}
@@ -458,9 +450,9 @@ export default function KurulumSayfasi() {
                 </Field>
 
                 <Field
-                  label="Upstream model"
+                  label={t("kurulum.upstream_model")}
                   required
-                  hint="Sağlayıcıdaki model kimliği (ör. llama3, gpt-4o-mini)."
+                  hint={t("kurulum.upstream_model.ipucu")}
                   error={hatalar.upstream_model}
                 >
                   {(alan) => (
@@ -475,9 +467,9 @@ export default function KurulumSayfasi() {
 
                 {seciliSaglayici?.api_anahtari_gerekir ? (
                   <Field
-                    label="API anahtarı"
+                    label={t("kurulum.api_anahtari")}
                     required
-                    hint="Anahtar şifrelenerek saklanır ve bir daha gösterilmez."
+                    hint={t("kurulum.api_anahtari.ipucu")}
                     error={hatalar.api_anahtari}
                   >
                     {(alan) => (
@@ -496,24 +488,28 @@ export default function KurulumSayfasi() {
 
             {adim === 3 ? (
               <>
-                <p className="text-sm text-neutral-500">
-                  Bilgileri kontrol edin. Onayladığınızda yönetici hesabı ve ilk model
-                  oluşturulur, ardından model bağlantısı doğrulanır.
-                </p>
+                <p className="text-sm text-neutral-500">{t("kurulum.ozet.aciklama")}</p>
                 <dl className="flex flex-col">
-                  <OzetSatiri etiket="Marka adı" deger={veri.marka_adi} />
-                  <OzetSatiri etiket="Yönetici" deger={veri.ad_soyad} />
-                  <OzetSatiri etiket="E-posta" deger={veri.eposta} />
+                  <OzetSatiri etiket={t("genel.marka_adi")} deger={veri.marka_adi} />
+                  <OzetSatiri etiket={t("kurulum.ozet.yonetici")} deger={veri.ad_soyad} />
+                  <OzetSatiri etiket={t("genel.eposta")} deger={veri.eposta} />
                   <OzetSatiri
-                    etiket="Sağlayıcı"
+                    etiket={t("kurulum.saglayici.baslik")}
                     deger={seciliSaglayici?.gorunen_ad ?? veri.saglayici}
                   />
-                  <OzetSatiri etiket="Model adı" deger={veri.gorunen_ad} />
-                  <OzetSatiri etiket="Temel adres" deger={veri.temel_url} />
-                  <OzetSatiri etiket="Upstream model" deger={veri.upstream_model} />
+                  <OzetSatiri etiket={t("kurulum.ozet.model_adi")} deger={veri.gorunen_ad} />
+                  <OzetSatiri etiket={t("kurulum.temel_adres")} deger={veri.temel_url} />
                   <OzetSatiri
-                    etiket="API anahtarı"
-                    deger={seciliSaglayici?.api_anahtari_gerekir ? "Girildi" : "Gerekmiyor"}
+                    etiket={t("kurulum.upstream_model")}
+                    deger={veri.upstream_model}
+                  />
+                  <OzetSatiri
+                    etiket={t("kurulum.api_anahtari")}
+                    deger={
+                      seciliSaglayici?.api_anahtari_gerekir
+                        ? t("kurulum.ozet.girildi")
+                        : t("kurulum.ozet.gerekmiyor")
+                    }
                   />
                 </dl>
               </>
@@ -522,17 +518,17 @@ export default function KurulumSayfasi() {
 
           <div className="flex items-center justify-between gap-2 border-t border-neutral-200 p-4">
             <Button variant="secondary" onClick={geri} disabled={adim === 0 || gonderiliyor}>
-              Geri
+              {t("genel.geri")}
             </Button>
-            {adim < ADIMLAR.length - 1 ? (
-              <Button onClick={ilerle}>İleri</Button>
+            {adim < adimlar.length - 1 ? (
+              <Button onClick={ilerle}>{t("genel.ileri")}</Button>
             ) : uyari ? (
               <Button onClick={() => router.replace("/giris?kurulum=tamam")}>
-                Giriş sayfasına git
+                {t("kurulum.giris_git")}
               </Button>
             ) : (
               <Button onClick={bitir} loading={gonderiliyor}>
-                Kurulumu tamamla
+                {t("kurulum.tamamla")}
               </Button>
             )}
           </div>

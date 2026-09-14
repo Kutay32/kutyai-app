@@ -3,6 +3,7 @@
 import { RefreshCw } from "lucide-react";
 
 import { Buton } from "@/components/ui/buton";
+import { useDil } from "@/lib/dil";
 
 export type HataBandiOzellikleri = {
   mesaj: string;
@@ -11,6 +12,8 @@ export type HataBandiOzellikleri = {
 
 /** Hata bandı: sunucudan gelen `hata.mesaj` ve tekrarlama eylemi. */
 export function HataBandi({ mesaj, onYenidenDene = null }: HataBandiOzellikleri) {
+  const { t } = useDil();
+
   return (
     <div
       role="alert"
@@ -20,7 +23,7 @@ export function HataBandi({ mesaj, onYenidenDene = null }: HataBandiOzellikleri)
       {onYenidenDene ? (
         <Buton tur="ikincil" boyut="kucuk" onClick={onYenidenDene}>
           <RefreshCw aria-hidden className="size-3.5" />
-          Yeniden dene
+          {t("sohbet.yeniden.dene")}
         </Buton>
       ) : null}
     </div>
@@ -57,26 +60,26 @@ export function SohbetBosDurumu({
   modelVar: boolean;
   onYenile: () => void;
 }) {
+  const { t } = useDil();
+  const [modelOnce, modelSonra] = t("sohbet.bos.model.metin").split("{durum}");
+
   return (
     <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
       <h2 className="marka-serif text-2xl text-neutral-900">
-        {modelVar ? "Sohbete başlayın" : "Kullanılabilir model yok"}
+        {modelVar ? t("sohbet.bos.baslik") : t("sohbet.bos.model.baslik")}
       </h2>
       {modelVar ? (
-        <p className="max-w-md text-sm text-neutral-500">
-          Seçtiğiniz modelle mesajlaşmaya başlayın. Yanıtlar yazıldıkça akış hâlinde
-          görünür; dilediğiniz an durdurabilirsiniz.
-        </p>
+        <p className="max-w-md text-sm text-neutral-500">{t("sohbet.bos.metin")}</p>
       ) : (
         <>
           <p className="max-w-md text-sm text-neutral-500">
-            Sohbet için en az bir modelin <strong className="font-medium">hazır</strong>{" "}
-            durumda olması gerekir. Yöneticiniz model hazırladığında bu listeyi
-            yenileyebilirsiniz.
+            {modelOnce}
+            <strong className="font-medium">{t("sohbet.bos.model.vurgu")}</strong>
+            {modelSonra}
           </p>
           <Buton tur="ikincil" boyut="kucuk" onClick={onYenile}>
             <RefreshCw aria-hidden className="size-3.5" />
-            Modelleri yenile
+            {t("sohbet.model.yenile")}
           </Buton>
         </>
       )}

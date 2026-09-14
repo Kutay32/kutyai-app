@@ -19,7 +19,8 @@ import {
   type DurumYaniti,
   type SaglikYaniti,
 } from "@/lib/bdm";
-import { BDM_DURUMU_ETIKETI, BDM_DURUMU_TONU } from "@/lib/etiketler";
+import { useDil } from "@/lib/dil";
+import { BDM_DURUMU_ANAHTARI, BDM_DURUMU_TONU } from "@/lib/etiketler";
 import { useUzakVeri } from "@/lib/kancalar";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -40,6 +41,7 @@ export type SekmeCalismaProps = {
 /** Çalışma sekmesi: başlat/durdur/yeniden başlat, durum ve sağlık yoklaması (§11). */
 export function SekmeCalisma({ bdm, onDurumDegisti }: SekmeCalismaProps) {
   const { showToast } = useToast();
+  const { dil, t } = useDil();
   const surucu = useUzakVeri(surucuDurumuGetir, []);
 
   const [durum, setDurum] = useState<DurumYaniti | null>(null);
@@ -61,13 +63,13 @@ export function SekmeCalisma({ bdm, onDurumDegisti }: SekmeCalismaProps) {
       setDurum(yeniDurum);
       setSaglik(yeniSaglik);
       setHata(null);
-      setSonYoklama(new Date().toLocaleTimeString("tr-TR"));
+      setSonYoklama(new Date().toLocaleTimeString(dil === "tr" ? "tr-TR" : "en-US"));
     } catch (sebep) {
       setHata(hataMesaji(sebep));
     } finally {
       setYukleniyor(false);
     }
-  }, [bdm.id]);
+  }, [bdm.id, dil]);
 
   useEffect(() => {
     let iptal = false;
@@ -93,7 +95,7 @@ export function SekmeCalisma({ bdm, onDurumDegisti }: SekmeCalismaProps) {
       if (eylem === "baslat") await bdmBaslat(bdm.id);
       else if (eylem === "durdur") await bdmDurdur(bdm.id);
       else await bdmYenidenBaslat(bdm.id);
-      showToast("İşlem tamamlandı.", "success");
+      showToast(t("bdm.bildirim.islem_tamam"), "success");
       setSayac((onceki) => onceki + 1);
       onDurumDegisti();
     } catch (sebep) {
@@ -115,39 +117,52 @@ export function SekmeCalisma({ bdm, onDurumDegisti }: SekmeCalismaProps) {
     <div className="flex flex-col gap-4">
       {eylemHatasi ? <Alert tone="danger">{eylemHatasi}</Alert> : null}
       {hata ? (
-        <Alert tone="warning" title="Durum okunamadı">
+        <Alert tone="warning" title={t("bdm.calisma.durum_okunamadi")}>
           <p>{hata}</p>
         </Alert>
       ) : null}
 
       <Card>
         <CardHeader>
-          <CardTitle>Çalışma durumu</CardTitle>
-          <CardDescription>
-            Durum ve sağlık sekme görünürken 10 saniyede bir yoklanır.
-          </CardDescription>
+          <CardTitle>{t("bdm.calisma.baslik")}</CardTitle>
+          <CardDescription>{t("bdm.calisma.aciklama")}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
             <StatCard
-              label="Durum"
-              value={BDM_DURUMU_ETIKETI[durum?.durum ?? bdm.durum]}
-              hint={sonYoklama ? `Son yoklama: ${sonYoklama}` : yukleniyor ? "Yoklanıyor…" : undefined}
+              label={t("bdm.alan.durum")}
+              value={t(BDM_DURUMU_ANAHTARI[durum?.durum ?? bdm.durum])}
+              hint={
+                sonYoklama
+                  ? t("bdm.calisma.son_yoklama", { zaman: sonYoklama })
+                  : yukleniyor
+                    ? t("bdm.calisma.yoklaniyor")
+                    : undefined
+              }
             />
             <StatCard
-              label="Konteyner kimliği"
+              label={t("bdm.alan.konteyner")}
               value={durum?.konteyner_id ?? bdm.konteyner?.konteyner_id ?? "—"}
             />
-            <StatCard label="Sağlık" value={saglik?.hazir ? "Hazır" : saglik?.calisiyor ? "Ayakta" : "Kapalı"} />
+            <StatCard
+              label={t("bdm.alan.saglik")}
+              value={
+                saglik?.hazir
+                  ? t("bdm.saglik.hazir")
+                  : saglik?.calisiyor
+                    ? t("bdm.saglik.ayakta")
+                    : t("bdm.saglik.kapali")
+              }
+            />
           </div>
 
           <div className="flex flex-wrap items-center gap-2 text-sm text-neutral-700">
-            <span>Durum rozeti:</span>
+            <span>{t("bdm.calisma.rozet")}</span>
             <Badge tone={BDM_DURUMU_TONU[durum?.durum ?? bdm.durum]}>
-              {BDM_DURUMU_ETIKETI[durum?.durum ?? bdm.durum]}
+              {t(BDM_DURUMU_ANAHTARI[durum?.durum ?? bdm.durum])}
             </Badge>
             <Badge tone={saglikTonu}>
-              {saglik?.mesaj ?? "Sağlık bilgisi bekleniyor…"}
+              {saglik?.mesaj ?? t("bdm.calisma.saglik_bekleniyor")}
             </Badge>
           </div>
 
@@ -159,7 +174,7 @@ export function SekmeCalisma({ bdm, onDurumDegisti }: SekmeCalismaProps) {
               onClick={() => void eylemCalistir("baslat")}
             >
               <Play aria-hidden className="size-4" />
-              Başlat
+              {t("bdm.eylem.baslat")}
             </Button>
             <Button
               variant="secondary"
@@ -168,7 +183,7 @@ export function SekmeCalisma({ bdm, onDurumDegisti }: SekmeCalismaProps) {
               onClick={() => void eylemCalistir("durdur")}
             >
               <Square aria-hidden className="size-4" />
-              Durdur
+              {t("bdm.eylem.durdur")}
             </Button>
             <Button
               variant="secondary"
@@ -178,22 +193,19 @@ export function SekmeCalisma({ bdm, onDurumDegisti }: SekmeCalismaProps) {
               onClick={() => void eylemCalistir("yeniden-baslat")}
             >
               <RotateCcw aria-hidden className="size-4" />
-              Yeniden başlat
+              {t("bdm.eylem.yeniden_baslat")}
             </Button>
           </div>
 
           {engel ? (
-            <Alert tone="warning" title="GPU gerekli">
+            <Alert tone="warning" title={t("bdm.calisma.gpu_gerekli")}>
               <p>{engel}</p>
-              <p>Başlatma ve yeniden başlatma düğmeleri bu nedenle devre dışı.</p>
+              <p>{t("bdm.calisma.gpu_devredisi")}</p>
             </Alert>
           ) : null}
 
           {!baslatilir && !durdurulur && !engel ? (
-            <p className="text-xs text-neutral-500">
-              Bu durumdan başlatma yapılamaz; önce Hazırlama sekmesinden bağlantıyı doğrulayın
-              veya Durdu durumuna geçin.
-            </p>
+            <p className="text-xs text-neutral-500">{t("bdm.calisma.baslatilamaz")}</p>
           ) : null}
         </CardContent>
       </Card>

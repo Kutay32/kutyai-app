@@ -11,6 +11,7 @@ import { BuyukKart } from "@/components/ui/kart";
 import { Yukleniyor } from "@/components/ui/yukleniyor";
 import { ApiHatasi, apiFetch } from "@/lib/api";
 import { baglantidanJeton } from "@/lib/baglanti";
+import { useDil } from "@/lib/dil";
 import type { MesajYaniti } from "@/lib/tipler";
 
 type Mod = "istek" | "sifirla";
@@ -22,6 +23,7 @@ function hataMesaji(yakalanan: unknown, varsayilan: string): string {
 
 function SifirlamaIcerigi() {
   const aramaParametreleri = useSearchParams();
+  const { t } = useDil();
   const baglantiJetonu = aramaParametreleri.get("jeton") ?? "";
   const [mod, setMod] = useState<Mod>(baglantiJetonu ? "sifirla" : "istek");
   const [eposta, setEposta] = useState("");
@@ -54,7 +56,7 @@ function SifirlamaIcerigi() {
       if (jetonCevap) setJeton(jetonCevap);
       setBasari(yanit.mesaj);
     } catch (yakalanan) {
-      setHata(hataMesaji(yakalanan, "İstek gönderilemedi. Lütfen tekrar deneyin."));
+      setHata(hataMesaji(yakalanan, t("sifre.istek.hata")));
     } finally {
       setGonderiliyor(false);
     }
@@ -65,11 +67,11 @@ function SifirlamaIcerigi() {
     setHata(null);
     setBasari(null);
     if (yeniParola.length < 8) {
-      setHata("Parola en az 8 karakter olmalı.");
+      setHata(t("kayit.parola.kisa"));
       return;
     }
     if (yeniParola !== yeniParolaTekrar) {
-      setHata("Parolalar birbiriyle eşleşmiyor.");
+      setHata(t("kayit.parola.eslesmiyor"));
       return;
     }
     setGonderiliyor(true);
@@ -82,7 +84,7 @@ function SifirlamaIcerigi() {
       });
       setBasari(yanit.mesaj);
     } catch (yakalanan) {
-      setHata(hataMesaji(yakalanan, "Parola sıfırlanamadı. Lütfen tekrar deneyin."));
+      setHata(hataMesaji(yakalanan, t("sifre.sifirlama.hata")));
     } finally {
       setGonderiliyor(false);
     }
@@ -95,12 +97,14 @@ function SifirlamaIcerigi() {
 
   return (
     <BuyukKart className="p-6">
-      <h1 className="marka-serif text-2xl text-neutral-900">Parola sıfırlama</h1>
-      <p className="mt-1 text-sm text-neutral-500">
-        E-posta ile sıfırlama bağlantısı isteyin veya elinizdeki jetonla yeni parola belirleyin.
-      </p>
+      <h1 className="marka-serif text-2xl text-neutral-900">{t("sifre.baslik")}</h1>
+      <p className="mt-1 text-sm text-neutral-500">{t("sifre.aciklama")}</p>
 
-      <div role="tablist" aria-label="Parola sıfırlama yöntemi" className="mt-5 flex gap-1 border-b border-neutral-100">
+      <div
+        role="tablist"
+        aria-label={t("sifre.yontem")}
+        className="mt-5 flex gap-1 border-b border-neutral-100"
+      >
         <button
           type="button"
           role="tab"
@@ -110,7 +114,7 @@ function SifirlamaIcerigi() {
           onClick={() => modDegistir("istek")}
           className={`-mb-px rounded-md border-b-2 px-3 py-2 text-[13px] transition-colors focus:border-neutral-900 focus:ring-0 ${sekmeSinifi(mod === "istek")}`}
         >
-          Bağlantı iste
+          {t("sifre.sekme.istek")}
         </button>
         <button
           type="button"
@@ -121,7 +125,7 @@ function SifirlamaIcerigi() {
           onClick={() => modDegistir("sifirla")}
           className={`-mb-px rounded-md border-b-2 px-3 py-2 text-[13px] transition-colors focus:border-neutral-900 focus:ring-0 ${sekmeSinifi(mod === "sifirla")}`}
         >
-          Jetonla sıfırla
+          {t("sifre.sekme.sifirla")}
         </button>
       </div>
 
@@ -147,7 +151,7 @@ function SifirlamaIcerigi() {
           className="mt-6 flex flex-col gap-4"
         >
           <Alan
-            etiket="E-posta"
+            etiket={t("kayit.eposta")}
             type="email"
             name="eposta"
             autoComplete="email"
@@ -157,7 +161,7 @@ function SifirlamaIcerigi() {
           />
           <Buton type="submit" yukleniyor={gonderiliyor} className="mt-1 w-full">
             <Mail aria-hidden className="size-4" />
-            Sıfırlama bağlantısı gönder
+            {t("sifre.baglanti.gonder")}
           </Buton>
         </form>
       ) : (
@@ -169,26 +173,26 @@ function SifirlamaIcerigi() {
           className="mt-6 flex flex-col gap-4"
         >
           <Alan
-            etiket="Sıfırlama jetonu"
+            etiket={t("sifre.jeton")}
             name="jeton"
             autoComplete="one-time-code"
             value={jeton}
             onChange={(olay) => setJeton(olay.target.value)}
-            yardim="Bağlantıdaki jeton otomatik doldurulur."
+            yardim={t("sifre.jeton.yardim")}
             required
           />
           <Alan
-            etiket="Yeni parola"
+            etiket={t("sifre.yeni.parola")}
             type="password"
             name="yeni_parola"
             autoComplete="new-password"
-            yardim="En az 8 karakter."
+            yardim={t("kayit.parola.yardim")}
             value={yeniParola}
             onChange={(olay) => setYeniParola(olay.target.value)}
             required
           />
           <Alan
-            etiket="Yeni parola (tekrar)"
+            etiket={t("sifre.yeni.parola.tekrar")}
             type="password"
             name="yeni_parola_tekrar"
             autoComplete="new-password"
@@ -197,14 +201,14 @@ function SifirlamaIcerigi() {
             required
           />
           <Buton type="submit" yukleniyor={gonderiliyor} className="mt-1 w-full">
-            Parolayı sıfırla
+            {t("sifre.buton")}
           </Buton>
         </form>
       )}
 
       <div className="mt-6 border-t border-neutral-100 pt-4 text-[13px] text-neutral-500">
         <Link href="/giris" className="rounded-md hover:text-neutral-900">
-          Giriş sayfasına dön
+          {t("sifre.giris.don")}
         </Link>
       </div>
     </BuyukKart>
@@ -216,7 +220,7 @@ export default function SifreSifirlaSayfasi() {
     <Suspense
       fallback={
         <BuyukKart className="p-6">
-          <Yukleniyor etiket="Yükleniyor" />
+          <Yukleniyor />
         </BuyukKart>
       }
     >

@@ -1,5 +1,7 @@
 /** API sözleşmesindeki ortak tipler (kaynak/API.md §2). */
 
+import type { SozlukAnahtari } from "@/lib/sozluk";
+
 export type Rol = "yonetici" | "operator" | "izleyici" | "son_kullanici";
 export type KullaniciDurumu = "aktif" | "beklemede" | "pasif";
 
@@ -57,15 +59,15 @@ export type KisiselKullanim = {
   seri: KullanimSerisiNoktasi[];
 };
 
-export const ROL_ETIKETLERI: Record<Rol, string> = {
-  yonetici: "Yönetici",
-  operator: "Operatör",
-  izleyici: "İzleyici",
-  son_kullanici: "Son kullanıcı",
+export const ROL_ANAHTARLARI: Record<Rol, SozlukAnahtari> = {
+  yonetici: "rol.yonetici",
+  operator: "rol.operator",
+  izleyici: "rol.izleyici",
+  son_kullanici: "rol.son_kullanici",
 };
 
-export const DURUM_ETIKETLERI: Record<KullaniciDurumu, string> = {
-  aktif: "Aktif",
-  beklemede: "Beklemede",
-  pasif: "Pasif",
+export const DURUM_ANAHTARLARI: Record<KullaniciDurumu, SozlukAnahtari> = {
+  aktif: "durum.aktif",
+  beklemede: "durum.beklemede",
+  pasif: "durum.pasif",
 };

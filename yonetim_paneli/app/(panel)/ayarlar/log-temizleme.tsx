@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Trash2 } from "lucide-react";
 
 import { hataMesaji } from "@/lib/api";
+import { useDil } from "@/lib/dil";
 import { loglariTemizle } from "@/lib/loglar";
 import { TEHLIKELI_GUN_SECENEKLERI } from "@/lib/ayarlar";
 import { Alert } from "@/components/ui/alert";
@@ -24,6 +25,7 @@ export type LogTemizlemeKartiProps = {
 /** Saklama süresini aşan kayıtları silen tehlikeli işlem (yalnız yönetici). */
 export function LogTemizlemeKarti({ saklamaGunu, onTemizlendi }: LogTemizlemeKartiProps) {
   const { showToast } = useToast();
+  const { t } = useDil();
   const [gun, setGun] = useState("");
   const [onayAcik, setOnayAcik] = useState(false);
   const [siliniyor, setSiliniyor] = useState(false);
@@ -34,7 +36,7 @@ export function LogTemizlemeKarti({ saklamaGunu, onTemizlendi }: LogTemizlemeKar
     setHata(null);
     try {
       const sonuc = await loglariTemizle(gun ? Number(gun) : null);
-      showToast(`${sonuc.silinen} konuşma kaydı silindi.`, "success");
+      showToast(t("ayarlar.log.silindi", { sayi: sonuc.silinen }), "success");
       setOnayAcik(false);
       onTemizlendi();
     } catch (sebep) {
@@ -46,21 +48,18 @@ export function LogTemizlemeKarti({ saklamaGunu, onTemizlendi }: LogTemizlemeKar
 
   const hedef =
     gun === ""
-      ? `saklama süresini (${saklamaGunu} gün) aşan tüm kayıtlar`
-      : `${gun} günden eski tüm kayıtlar`;
+      ? t("ayarlar.log.hedef.saklama", { gun: saklamaGunu })
+      : t("ayarlar.log.hedef.gun", { gun });
 
   return (
     <>
       <Card className="rounded-2xl border-rose-200">
         <CardHeader>
-          <CardTitle className="text-rose-900">Tehlikeli bölge</CardTitle>
-          <CardDescription>
-            Saklama süresini aşan konuşma kayıtlarını kalıcı olarak siler. İşlem
-            geri alınamaz ve yalnız yönetici tarafından yürütülebilir.
-          </CardDescription>
+          <CardTitle className="text-rose-900">{t("ayarlar.log.baslik")}</CardTitle>
+          <CardDescription>{t("ayarlar.log.aciklama")}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap items-end gap-4">
-          <Field label="Silinecek kayıt yaşı" className="w-full md:w-64">
+          <Field label={t("ayarlar.log.yas")} className="w-full md:w-64">
             {({ id, ...erisim }) => (
               <Select
                 id={id}
@@ -68,10 +67,10 @@ export function LogTemizlemeKarti({ saklamaGunu, onTemizlendi }: LogTemizlemeKar
                 value={gun}
                 onChange={(olay) => setGun(olay.target.value)}
               >
-                <option value="">Saklama süresi ({saklamaGunu} gün)</option>
+                <option value="">{t("ayarlar.log.saklama_secenegi", { gun: saklamaGunu })}</option>
                 {TEHLIKELI_GUN_SECENEKLERI.map((secenek) => (
                   <option key={secenek} value={secenek}>
-                    {secenek} günden eski
+                    {t("ayarlar.log.gunden_eski", { gun: secenek })}
                   </option>
                 ))}
               </Select>
@@ -86,7 +85,7 @@ export function LogTemizlemeKarti({ saklamaGunu, onTemizlendi }: LogTemizlemeKar
             }}
           >
             <Trash2 aria-hidden className="size-4" />
-            Kayıtları temizle
+            {t("ayarlar.log.temizle")}
           </Button>
         </CardContent>
       </Card>
@@ -96,25 +95,27 @@ export function LogTemizlemeKarti({ saklamaGunu, onTemizlendi }: LogTemizlemeKar
         onClose={() => {
           if (!siliniyor) setOnayAcik(false);
         }}
-        title="Kayıtları temizle"
-        description="Silinen kayıtlar geri getirilemez."
+        title={t("ayarlar.log.temizle")}
+        description={t("ayarlar.log.onay.aciklama")}
         footer={
           <>
             <Button variant="ghost" onClick={() => setOnayAcik(false)} disabled={siliniyor}>
-              Vazgeç
+              {t("genel.vazgec")}
             </Button>
             <Button variant="danger" loading={siliniyor} onClick={() => void temizle()}>
-              Kalıcı olarak sil
+              {t("ayarlar.log.kalici_sil")}
             </Button>
           </>
         }
       >
         {hata ? (
-          <Alert tone="danger" title="Temizlenemedi">
+          <Alert tone="danger" title={t("ayarlar.log.hata.baslik")}>
             {hata}
           </Alert>
         ) : (
-          <p className="text-sm text-neutral-600">{hedef} silinecek.</p>
+          <p className="text-sm text-neutral-600">
+            {t("ayarlar.log.onay.soru", { hedef })}
+          </p>
         )}
       </Dialog>
     </>

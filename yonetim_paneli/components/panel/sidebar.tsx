@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { cn } from "@/lib/cn";
+import { useDil } from "@/lib/dil";
 import { GORUNUR_MENU } from "@/components/panel/menu";
 
 export type SidebarProps = {
@@ -19,9 +20,10 @@ function aktifMi(yol: string, href: string): boolean {
 /** Sol menü listesi; masaüstünde sabit sütun, mobilde çekmece içinde kullanılır. */
 export function Sidebar({ onNavigate, className }: SidebarProps) {
   const yol = usePathname();
+  const { t } = useDil();
 
   return (
-    <nav aria-label="Ana menü" className={cn("flex flex-col gap-1 p-4", className)}>
+    <nav aria-label={t("genel.menu.ana")} className={cn("flex flex-col gap-1 p-4", className)}>
       {GORUNUR_MENU.map((oge) => {
         const aktif = aktifMi(yol, oge.href);
         const Ikon = oge.ikon;
@@ -39,7 +41,7 @@ export function Sidebar({ onNavigate, className }: SidebarProps) {
             )}
           >
             <Ikon aria-hidden className="size-4 shrink-0" />
-            {oge.etiket}
+            {t(oge.anahtar)}
           </Link>
         );
       })}

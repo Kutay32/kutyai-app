@@ -5,8 +5,9 @@ import { useState } from "react";
 import { TriangleAlert } from "lucide-react";
 
 import { hataMesaji } from "@/lib/api";
+import { useDil } from "@/lib/dil";
 import { epostaHatasi, parolaHatasi, zorunluHatasi } from "@/lib/dogrulama";
-import { KULLANICI_DURUMU_ETIKETI, ROL_ETIKETI } from "@/lib/etiketler";
+import { KULLANICI_DURUMU_ANAHTARI, ROL_ANAHTARI } from "@/lib/etiketler";
 import {
   KULLANICI_DURUMLARI,
   ROLLER,
@@ -36,6 +37,7 @@ export function PersonelEkleDiyalogu({
   onKapat: () => void;
   onEklendi: () => void;
 }) {
+  const { t } = useDil();
   const { showToast } = useToast();
   const [eposta, setEposta] = useState("");
   const [adSoyad, setAdSoyad] = useState("");
@@ -62,7 +64,7 @@ export function PersonelEkleDiyalogu({
     olay.preventDefault();
     const yeni: EkleHatalari = {
       eposta: epostaHatasi(eposta) ?? undefined,
-      ad_soyad: zorunluHatasi(adSoyad, "Ad soyad") ?? undefined,
+      ad_soyad: zorunluHatasi(adSoyad, t("kullanicilar.ad_soyad")) ?? undefined,
       parola: parolaHatasi(parola) ?? undefined,
     };
     setHatalar(yeni);
@@ -90,22 +92,22 @@ export function PersonelEkleDiyalogu({
     <Dialog
       open={acik}
       onClose={kapat}
-      title={olusan ? "Personel eklendi" : "Yeni personel"}
+      title={olusan ? t("kullanicilar.ekle.basarili.baslik") : t("kullanicilar.ekle.baslik")}
       description={
         olusan
-          ? "Geçici parolayı kullanıcıya iletin."
-          : "Kullanıcı hemen aktif ve e-posta doğrulanmış olarak açılır."
+          ? t("kullanicilar.ekle.basarili.aciklama")
+          : t("kullanicilar.ekle.aciklama")
       }
       footer={
         olusan ? (
-          <Button onClick={kapat}>Anladım, kapat</Button>
+          <Button onClick={kapat}>{t("kullanicilar.ekle.anladim")}</Button>
         ) : (
           <>
             <Button variant="ghost" onClick={kapat} disabled={gonderiliyor}>
-              Vazgeç
+              {t("kullanicilar.vazgec")}
             </Button>
             <Button type="submit" form="personel-ekle-formu" loading={gonderiliyor}>
-              Personel ekle
+              {t("kullanicilar.ekle.gonder")}
             </Button>
           </>
         )
@@ -113,18 +115,19 @@ export function PersonelEkleDiyalogu({
     >
       {olusan ? (
         <div className="flex flex-col gap-4">
-          <Alert tone="warning" title="Bu parola bir daha gösterilmez">
-            Parolayı şimdi kopyalayıp kullanıcıya iletin; bu pencere kapandıktan
-            sonra yeniden görüntülenemez.
+          <Alert tone="warning" title={t("kullanicilar.ekle.parola.uyari.baslik")}>
+            {t("kullanicilar.ekle.parola.uyari.metin")}
           </Alert>
           <dl className="flex flex-col gap-3">
             <div className="flex flex-col gap-1">
-              <dt className="text-xs tracking-wide text-neutral-500 uppercase">E-posta</dt>
+              <dt className="text-xs tracking-wide text-neutral-500 uppercase">
+                {t("kullanicilar.eposta")}
+              </dt>
               <dd className="text-sm text-neutral-900">{olusan.eposta}</dd>
             </div>
             <div className="flex flex-col gap-1">
               <dt className="text-xs tracking-wide text-neutral-500 uppercase">
-                Geçici parola
+                {t("kullanicilar.gecici_parola")}
               </dt>
               <dd className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 font-mono text-sm break-all text-neutral-900 select-all">
                 {olusan.parola}
@@ -135,12 +138,12 @@ export function PersonelEkleDiyalogu({
       ) : (
         <form id="personel-ekle-formu" onSubmit={gonder} className="flex flex-col gap-4">
           {sunucuHatasi ? (
-            <Alert tone="danger" title="Personel eklenemedi">
+            <Alert tone="danger" title={t("kullanicilar.ekle.hata.baslik")}>
               {sunucuHatasi}
             </Alert>
           ) : null}
 
-          <Field label="E-posta" error={hatalar.eposta} required>
+          <Field label={t("kullanicilar.eposta")} error={hatalar.eposta} required>
             {({ id, invalid, ...erisim }) => (
               <Input
                 id={id}
@@ -154,7 +157,7 @@ export function PersonelEkleDiyalogu({
             )}
           </Field>
 
-          <Field label="Ad soyad" error={hatalar.ad_soyad} required>
+          <Field label={t("kullanicilar.ad_soyad")} error={hatalar.ad_soyad} required>
             {({ id, invalid, ...erisim }) => (
               <Input
                 id={id}
@@ -167,9 +170,9 @@ export function PersonelEkleDiyalogu({
           </Field>
 
           <Field
-            label="Geçici parola"
+            label={t("kullanicilar.gecici_parola")}
             error={hatalar.parola}
-            hint="En az 8 karakter; kullanıcı ilk girişten sonra değiştirebilir."
+            hint={t("kullanicilar.ekle.parola.ipucu")}
             required
           >
             {({ id, invalid, ...erisim }) => (
@@ -186,13 +189,13 @@ export function PersonelEkleDiyalogu({
                   onClick={() => setParola(geciciParolaUret())}
                   className="shrink-0"
                 >
-                  Üret
+                  {t("kullanicilar.ekle.parola.uret")}
                 </Button>
               </div>
             )}
           </Field>
 
-          <Field label="Rol">
+          <Field label={t("kullanicilar.rol")}>
             {({ id, ...erisim }) => (
               <Select
                 id={id}
@@ -202,7 +205,7 @@ export function PersonelEkleDiyalogu({
               >
                 {ROLLER.map((secenek) => (
                   <option key={secenek} value={secenek}>
-                    {ROL_ETIKETI[secenek]}
+                    {t(ROL_ANAHTARI[secenek])}
                   </option>
                 ))}
               </Select>
@@ -223,6 +226,7 @@ export function KullaniciDuzenleDiyalogu({
   onKapat: () => void;
   onKaydedildi: () => void;
 }) {
+  const { t } = useDil();
   const { showToast } = useToast();
   const [adSoyad, setAdSoyad] = useState(kullanici.ad_soyad);
   const [rol, setRol] = useState<Rol>(kullanici.rol);
@@ -237,7 +241,7 @@ export function KullaniciDuzenleDiyalogu({
     if (durum !== kullanici.durum) degisiklikler.durum = durum;
 
     if (Object.keys(degisiklikler).length === 0) {
-      showToast("Değişiklik yok.", "info");
+      showToast(t("kullanicilar.duzenle.degisiklik_yok"), "info");
       onKapat();
       return;
     }
@@ -246,7 +250,7 @@ export function KullaniciDuzenleDiyalogu({
     setHata(null);
     try {
       await kullaniciGuncelle(kullanici.id, degisiklikler);
-      showToast("Kullanıcı güncellendi.", "success");
+      showToast(t("kullanicilar.duzenle.basarili"), "success");
       onKaydedildi();
       onKapat();
     } catch (sebep) {
@@ -262,27 +266,27 @@ export function KullaniciDuzenleDiyalogu({
       onClose={() => {
         if (!kaydediliyor) onKapat();
       }}
-      title="Kullanıcıyı düzenle"
+      title={t("kullanicilar.duzenle.baslik")}
       description={kullanici.eposta}
       footer={
         <>
           <Button variant="ghost" onClick={onKapat} disabled={kaydediliyor}>
-            Vazgeç
+            {t("kullanicilar.vazgec")}
           </Button>
           <Button loading={kaydediliyor} onClick={() => void kaydet()}>
-            Kaydet
+            {t("kullanicilar.kaydet")}
           </Button>
         </>
       }
     >
       <div className="flex flex-col gap-4">
         {hata ? (
-          <Alert tone="danger" title="Güncellenemedi">
+          <Alert tone="danger" title={t("kullanicilar.duzenle.hata.baslik")}>
             {hata}
           </Alert>
         ) : null}
 
-        <Field label="Ad soyad">
+        <Field label={t("kullanicilar.ad_soyad")}>
           {({ id, ...erisim }) => (
             <Input
               id={id}
@@ -293,7 +297,7 @@ export function KullaniciDuzenleDiyalogu({
           )}
         </Field>
 
-        <Field label="Rol">
+        <Field label={t("kullanicilar.rol")}>
           {({ id, ...erisim }) => (
             <Select
               id={id}
@@ -303,14 +307,14 @@ export function KullaniciDuzenleDiyalogu({
             >
               {ROLLER.map((secenek) => (
                 <option key={secenek} value={secenek}>
-                  {ROL_ETIKETI[secenek]}
+                  {t(ROL_ANAHTARI[secenek])}
                 </option>
               ))}
             </Select>
           )}
         </Field>
 
-        <Field label="Durum">
+        <Field label={t("kullanicilar.durum")}>
           {({ id, ...erisim }) => (
             <Select
               id={id}
@@ -320,7 +324,7 @@ export function KullaniciDuzenleDiyalogu({
             >
               {KULLANICI_DURUMLARI.map((secenek) => (
                 <option key={secenek} value={secenek}>
-                  {KULLANICI_DURUMU_ETIKETI[secenek]}
+                  {t(KULLANICI_DURUMU_ANAHTARI[secenek])}
                 </option>
               ))}
             </Select>
@@ -340,6 +344,7 @@ export function PasiflestirDiyalogu({
   onKapat: () => void;
   onPasiflestirildi: () => void;
 }) {
+  const { t } = useDil();
   const { showToast } = useToast();
   const [isleniyor, setIsleniyor] = useState(false);
   const [hata, setHata] = useState<string | null>(null);
@@ -349,7 +354,7 @@ export function PasiflestirDiyalogu({
     setHata(null);
     try {
       await kullaniciPasiflestir(kullanici.id);
-      showToast(`${kullanici.eposta} pasifleştirildi.`, "success");
+      showToast(t("kullanicilar.pasiflestir.basarili", { eposta: kullanici.eposta }), "success");
       onPasiflestirildi();
       onKapat();
     } catch (sebep) {
@@ -360,35 +365,40 @@ export function PasiflestirDiyalogu({
     }
   };
 
+  const [pasiflestirmeOnce, pasiflestirmeSonra] = t("kullanicilar.pasiflestir.metin").split(
+    "{baglanti}",
+  );
+
   return (
     <Dialog
       open
       onClose={() => {
         if (!isleniyor) onKapat();
       }}
-      title="Kullanıcıyı pasifleştir"
-      description="Kayıt silinmez; açık oturumlar iptal edilir."
+      title={t("kullanicilar.pasiflestir.baslik")}
+      description={t("kullanicilar.pasiflestir.aciklama")}
       footer={
         <>
           <Button variant="ghost" onClick={onKapat} disabled={isleniyor}>
-            Vazgeç
+            {t("kullanicilar.vazgec")}
           </Button>
           <Button variant="danger" loading={isleniyor} onClick={() => void pasiflestir()}>
-            Pasifleştir
+            {t("kullanicilar.pasiflestir")}
           </Button>
         </>
       }
     >
       {hata ? (
-        <Alert tone="danger" title="Pasifleştirilemedi">
+        <Alert tone="danger" title={t("kullanicilar.pasiflestir.hata.baslik")}>
           {hata}
         </Alert>
       ) : (
         <div className="flex items-start gap-2 text-sm text-neutral-600">
           <TriangleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-amber-600" />
           <p>
-            <span className="font-medium text-neutral-900">{kullanici.eposta}</span> hesabı
-            pasifleştirilecek ve mevcut oturumları kapatılacak.
+            {pasiflestirmeOnce}
+            <span className="font-medium text-neutral-900">{kullanici.eposta}</span>
+            {pasiflestirmeSonra}
           </p>
         </div>
       )}

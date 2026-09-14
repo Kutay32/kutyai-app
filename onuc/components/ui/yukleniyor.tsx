@@ -4,9 +4,10 @@ import { forwardRef } from "react";
 import { Loader2 } from "lucide-react";
 
 import { cn } from "@/lib/cn";
+import { useDil } from "@/lib/dil";
 
 export type YukleniyorOzellikleri = React.HTMLAttributes<HTMLSpanElement> & {
-  /** Ekran okuyucuya ve görünür metne yazılan etiket. */
+  /** Ekran okuyucuya ve görünür metne yazılan etiket; verilmezse katalogdan gelir. */
   etiket?: string;
   boyut?: "kucuk" | "orta" | "buyuk";
 };
@@ -19,9 +20,11 @@ const BOYUT_SINIFLARI = {
 
 /** Dönen gösterge; `prefers-reduced-motion` tercihinde dönme durur. */
 export const Yukleniyor = forwardRef<HTMLSpanElement, YukleniyorOzellikleri>(function Yukleniyor(
-  { className, etiket = "Yükleniyor", boyut = "orta", ...kalan },
+  { className, etiket, boyut = "orta", ...kalan },
   ref,
 ) {
+  const { t } = useDil();
+
   return (
     <span
       ref={ref}
@@ -31,7 +34,7 @@ export const Yukleniyor = forwardRef<HTMLSpanElement, YukleniyorOzellikleri>(fun
       {...kalan}
     >
       <Loader2 aria-hidden className={cn("animate-spin", BOYUT_SINIFLARI[boyut])} />
-      <span className="text-[13px]">{etiket}</span>
+      <span className="text-[13px]">{etiket ?? t("genel.yukleniyor")}</span>
     </span>
   );
 });
@@ -42,7 +45,7 @@ export type YukleniyorDurumuOzellikleri = React.HTMLAttributes<HTMLDivElement> &
 
 /** Kart/panel ortasında tek başına duran yükleme durumu. */
 export const YukleniyorDurumu = forwardRef<HTMLDivElement, YukleniyorDurumuOzellikleri>(
-  function YukleniyorDurumu({ className, etiket = "Yükleniyor", ...kalan }, ref) {
+  function YukleniyorDurumu({ className, etiket, ...kalan }, ref) {
     return (
       <div ref={ref} className={cn("flex items-center justify-center py-10", className)} {...kalan}>
         <Yukleniyor etiket={etiket} />

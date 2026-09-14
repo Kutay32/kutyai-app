@@ -6,6 +6,8 @@ import { Menu, Plus } from "lucide-react";
 import { Buton } from "@/components/ui/buton";
 import { Yukleniyor } from "@/components/ui/yukleniyor";
 import { ApiHatasi, apiFetch } from "@/lib/api";
+import { kucukHarfeCevir } from "@/lib/bicim";
+import { useDil } from "@/lib/dil";
 import {
   seciliModeliAl,
   seciliModeliKaydet,
@@ -28,9 +30,9 @@ export type SohbetEkraniOzellikleri = {
   baslangicKonusmaId?: number | null;
 };
 
-function hataMesaji(hata: unknown): string {
+function hataMesaji(hata: unknown, varsayilan: string): string {
   if (hata instanceof ApiHatasi) return hata.message;
-  return "Beklenmeyen bir hata oluştu. Lütfen tekrar deneyin.";
+  return varsayilan;
 }
 
 /** Yalnız `kullanici`/`asistan` rolleri gösterilir (API.md §9). */
@@ -69,6 +71,7 @@ function sonKullaniciMetni(liste: GorunumMesaji[]): string | null {
  * sırasında bileşen yeniden bağlanmaz.
  */
 export function SohbetEkrani({ baslangicKonusmaId = null }: SohbetEkraniOzellikleri) {
+  const { dil, t } = useDil();
   const [modeller, setModeller] = useState<BdmOzet[] | null>(null);
   const [seciliModelId, setSeciliModelId] = useState<number | null>(null);
   const [konusmalar, setKonusmalar] = useState<KonusmaOzeti[]>([]);
@@ -111,7 +114,7 @@ export function SohbetEkrani({ baslangicKonusmaId = null }: SohbetEkraniOzellikl
     } catch (yakalanan) {
       setModeller([]);
       setHata({
-        mesaj: hataMesaji(yakalanan),
+        mesaj: hataMesaji(yakalanan, t("sohbet.hata.beklenmeyen")),
         yenidenDene: () => void modelleriYukle(),
       });
     }
@@ -145,7 +148,7 @@ export function SohbetEkrani({ baslangicKonusmaId = null }: SohbetEkraniOzellikl
     } catch (yakalanan) {
       setMesajlar([]);
       setHata({
-        mesaj: hataMesaji(yakalanan),
+        mesaj: hataMesaji(yakalanan, t("sohbet.hata.beklenmeyen")),
         yenidenDene: () => void konusmayiAc(id),
       });
     } finally {
@@ -200,7 +203,7 @@ export function SohbetEkrani({ baslangicKonusmaId = null }: SohbetEkraniOzellikl
     const temiz = metin.trim();
     if (!temiz || iptalRef.current || seciliModelId === null) {
       if (seciliModelId === null) {
-        setHata({ mesaj: "Sohbet için önce bir model seçin.", yenidenDene: null });
+        setHata({ mesaj: t("sohbet.hata.model.gerekli"), yenidenDene: null });
       }
       return;
     }
@@ -259,7 +262,7 @@ export function SohbetEkrani({ baslangicKonusmaId = null }: SohbetEkraniOzellikl
       if (iptal.signal.aborted) {
         asistaniGuncelle(asistanId, { akisHalinde: false, durduruldu: true });
       } else {
-        const mesaj = hataMesaji(yakalanan);
+        const mesaj = hataMesaji(yakalanan, t("sohbet.hata.beklenmeyen"));
         setHata({ mesaj, yenidenDene: () => void gonder(temiz, { yenidenUret: true }) });
         asistaniGuncelle(asistanId, { akisHalinde: false, hatali: true });
       }
@@ -310,12 +313,12 @@ export function SohbetEkrani({ baslangicKonusmaId = null }: SohbetEkraniOzellikl
   /* ------------------------------------------------------------------ görünüm */
 
   const suzulmus = useMemo(() => {
-    const terim = arama.trim().toLocaleLowerCase("tr");
+    const terim = kucukHarfeCevir(arama.trim(), dil);
     if (!terim) return konusmalar;
     return konusmalar.filter((konusma) =>
-      `${konusma.baslik} ${konusma.bdm_ad}`.toLocaleLowerCase("tr").includes(terim),
+      kucukHarfeCevir(`${konusma.baslik} ${konusma.bdm_ad}`, dil).includes(terim),
     );
-  }, [konusmalar, arama]);
+  }, [dil, konusmalar, arama]);
 
   const modelVar = (modeller?.length ?? 0) > 0;
   const icerikIskeleti = modeller === null || gecmisYukleniyor;
@@ -347,10 +350,10 @@ export function SohbetEkrani({ baslangicKonusmaId = null }: SohbetEkraniOzellikl
               boyut="kucuk"
               className="md:hidden"
               onClick={() => setCekimAcik(true)}
-              aria-label="Konuşma listesini aç"
+              aria-label={t("sohbet.liste.ac")}
             >
               <Menu aria-hidden className="size-3.5" />
-              Konuşmalar
+              {t("sohbet.liste.baslik")}
             </Buton>
             <ModelSecici
               modeller={modeller ?? []}
@@ -360,10 +363,10 @@ export function SohbetEkrani({ baslangicKonusmaId = null }: SohbetEkraniOzellikl
             />
           </div>
           <div className="flex items-center gap-2">
-            {gonderiliyor ? <Yukleniyor etiket="Yanıt üretiliyor" boyut="kucuk" /> : null}
+            {gonderiliyor ? <Yukleniyor etiket={t("sohbet.uretiliyor")} boyut="kucuk" /> : null}
             <Buton tur="ikincil" boyut="kucuk" className="hidden md:inline-flex" onClick={yeniSohbet}>
               <Plus aria-hidden className="size-3.5" />
-              Yeni sohbet
+              {t("sohbet.liste.yeni")}
             </Buton>
           </div>
         </header>
@@ -379,7 +382,7 @@ export function SohbetEkrani({ baslangicKonusmaId = null }: SohbetEkraniOzellikl
           onScroll={kaydirmaDinle}
           role="log"
           aria-busy={gonderiliyor || undefined}
-          aria-label="Konuşma"
+          aria-label={t("sohbet.gorunum.etiket")}
           className="min-h-0 flex-1 overflow-y-auto"
         >
           {icerikIskeleti ? (
@@ -421,14 +424,14 @@ export function SohbetEkrani({ baslangicKonusmaId = null }: SohbetEkraniOzellikl
         <div className="fixed inset-0 z-50 flex md:hidden">
           <button
             type="button"
-            aria-label="Konuşma listesini kapat"
+            aria-label={t("sohbet.liste.kapat")}
             onClick={() => setCekimAcik(false)}
             className="absolute inset-0 cursor-default bg-neutral-900/40"
           />
           <aside
             role="dialog"
             aria-modal="true"
-            aria-label="Konuşmalar"
+            aria-label={t("sohbet.liste.baslik")}
             className="relative z-10 flex h-full w-80 max-w-[85%] flex-col border-r border-neutral-200 bg-white"
           >
             {liste}

@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
 
 import { BildirimSaglayici } from "@/components/ui/bildirim";
+import { DilSaglayici } from "@/lib/dil";
+import { ceviri } from "@/lib/sozluk";
+import { dilOku } from "@/lib/sunucu-dil";
 
 import "./globals.css";
 
@@ -24,22 +27,29 @@ const instrumentSerif = Instrument_Serif({
   display: "swap",
 });
 
-export const metadata: Metadata = {
-  title: {
-    default: "KutyAI",
-    template: "%s · KutyAI",
-  },
-  description: "Kurumsal büyük dil modeli platformu.",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const dil = await dilOku();
+  return {
+    title: {
+      default: "KutyAI",
+      template: "%s · KutyAI",
+    },
+    description: ceviri("genel.aciklama", dil),
+  };
+}
 
-export default function KokDuzen({ children }: { children: React.ReactNode }) {
+export default async function KokDuzen({ children }: { children: React.ReactNode }) {
+  const dil = await dilOku();
+
   return (
     <html
-      lang="tr"
+      lang={dil}
       className={`${geist.variable} ${geistMono.variable} ${instrumentSerif.variable}`}
     >
       <body className="min-h-dvh bg-white text-neutral-900 antialiased">
-        <BildirimSaglayici>{children}</BildirimSaglayici>
+        <DilSaglayici baslangicDili={dil}>
+          <BildirimSaglayici>{children}</BildirimSaglayici>
+        </DilSaglayici>
       </body>
     </html>
   );

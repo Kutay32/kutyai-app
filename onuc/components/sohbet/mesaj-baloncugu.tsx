@@ -5,6 +5,7 @@ import { RefreshCw } from "lucide-react";
 
 import { Buton } from "@/components/ui/buton";
 import { cn } from "@/lib/cn";
+import { useDil } from "@/lib/dil";
 import type { GorunumMesaji } from "@/lib/sohbet";
 
 import { MarkdownGorunumu } from "./markdown-gorunumu";
@@ -30,6 +31,7 @@ export const MesajBaloncugu = memo(function MesajBaloncugu({
   gonderiliyor,
   onYenidenUret,
 }: MesajBaloncuguOzellikleri) {
+  const { t } = useDil();
   const kullaniciMi = mesaj.rol === "kullanici";
   const eylemlerGorunur = sonMu && !gonderiliyor;
 
@@ -58,7 +60,7 @@ export const MesajBaloncugu = memo(function MesajBaloncugu({
               ) : null}
               {!mesaj.icerik && mesaj.akisHalinde ? (
                 <p className="text-sm text-neutral-500" role="status">
-                  Yanıt hazırlanıyor…
+                  {t("sohbet.mesaj.hazirlaniyor")}
                 </p>
               ) : null}
             </>
@@ -66,16 +68,21 @@ export const MesajBaloncugu = memo(function MesajBaloncugu({
         </div>
 
         {mesaj.durduruldu ? (
-          <p className="px-1 text-[11px] text-neutral-500">Üretim durduruldu.</p>
+          <p className="px-1 text-[11px] text-neutral-500">{t("sohbet.mesaj.durduruldu")}</p>
         ) : null}
         {mesaj.hatali ? (
-          <p className="px-1 text-[11px] text-rose-600">Yanıt tamamlanamadı.</p>
+          <p className="px-1 text-[11px] text-rose-600">{t("sohbet.mesaj.hatali")}</p>
         ) : null}
 
         {eylemlerGorunur ? (
-          <Buton tur="hayalet" boyut="kucuk" onClick={onYenidenUret} aria-label="Yanıtı yeniden üret">
+          <Buton
+            tur="hayalet"
+            boyut="kucuk"
+            onClick={onYenidenUret}
+            aria-label={t("sohbet.mesaj.yeniden.etiket")}
+          >
             <RefreshCw aria-hidden className="size-3.5" />
-            {kullaniciMi ? "Yanıtı yeniden üret" : "Yeniden üret"}
+            {kullaniciMi ? t("sohbet.mesaj.yeniden.kullanici") : t("sohbet.mesaj.yeniden")}
           </Buton>
         ) : null}
       </div>

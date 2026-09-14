@@ -4,6 +4,7 @@ import { useId, useRef, useState } from "react";
 import { Send, Square } from "lucide-react";
 
 import { Buton } from "@/components/ui/buton";
+import { useDil } from "@/lib/dil";
 
 export type SohbetGirdisiOzellikleri = {
   /** Bir yanıt akmakta. */
@@ -24,6 +25,7 @@ export function SohbetGirdisi({
   onGonder,
   onDurdur,
 }: SohbetGirdisiOzellikleri) {
+  const { t } = useDil();
   const [metin, setMetin] = useState("");
   const alanRef = useRef<HTMLTextAreaElement>(null);
   const alanId = useId();
@@ -55,7 +57,7 @@ export function SohbetGirdisi({
     <div className="flex flex-col gap-2">
       <div className="flex items-end gap-2 rounded-2xl border border-neutral-200 p-2 transition-colors focus-within:border-neutral-900">
         <label htmlFor={alanId} className="sr-only">
-          Mesajınız
+          {t("sohbet.girdi.etiket")}
         </label>
         <textarea
           ref={alanRef}
@@ -67,14 +69,21 @@ export function SohbetGirdisi({
             yukseklikAyarla(olay.target);
           }}
           onKeyDown={tusaBasildi}
-          placeholder={gonderilebilir ? "Mesajınızı yazın…" : "Önce bir model seçin"}
+          placeholder={
+            gonderilebilir ? t("sohbet.girdi.ipucu") : t("sohbet.girdi.model.secin")
+          }
           disabled={!gonderilebilir}
           className="max-h-40 min-h-10 w-full resize-none bg-transparent px-2 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none disabled:cursor-not-allowed disabled:text-neutral-500"
         />
         {gonderiliyor ? (
-          <Buton tur="ikincil" boyut="kucuk" onClick={onDurdur} aria-label="Üretimi durdur">
+          <Buton
+            tur="ikincil"
+            boyut="kucuk"
+            onClick={onDurdur}
+            aria-label={t("sohbet.girdi.durdur.etiket")}
+          >
             <Square aria-hidden className="size-3.5" />
-            Durdur
+            {t("sohbet.girdi.durdur")}
           </Buton>
         ) : (
           <Buton
@@ -83,13 +92,11 @@ export function SohbetGirdisi({
             disabled={!gonderilebilir || metin.trim().length === 0}
           >
             <Send aria-hidden className="size-3.5" />
-            Gönder
+            {t("sohbet.girdi.gonder")}
           </Buton>
         )}
       </div>
-      <p className="px-1 text-[11px] text-neutral-500">
-        Enter ile gönder · Shift+Enter yeni satır · Esc ile üretimi durdur
-      </p>
+      <p className="px-1 text-[11px] text-neutral-500">{t("sohbet.girdi.kisayol")}</p>
     </div>
   );
 }

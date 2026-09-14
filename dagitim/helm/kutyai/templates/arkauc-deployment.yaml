@@ -1,0 +1,164 @@
+{{- /*
+arka.uc Deployment (spec §11). Compose karşılığı: docker-compose.yml `arka.uc`
+servisi — aynı imaj, aynı port (8000), aynı ortam değişkenleri (KUTYAI_*),
+aynı sağlık uçları (/api/v1/saglik), aynı kalıcı hacim (/veri).
+
+Not: `spec.replicas` yalnızca HPA KAPALIYKEN yazılır; HPA açıkken replika
+sayısının sahibi HPA'dır (GitOps ile çakışma olmasın).
+*/ -}}
+{{- $ad := include "kutyai.bilesenAdi" (dict "kok" $ "bilesen" "arka-uc") }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $ad }}
+  namespace: {{ include "kutyai.namespace" . }}
+  labels:
+    {{- include "kutyai.etiketler" (dict "kok" $ "bilesen" "arka-uc") | nindent 4 }}
+spec:
+  {{- if not .Values.arkauc.autoscaling.enabled }}
+  replicas: {{ .Values.arkauc.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "kutyai.seciciler" (dict "kok" $ "bilesen" "arka-uc") | nindent 6 }}
+  strategy:
+    type: {{ .Values.arkauc.strategy.type }}
+    {{- if eq .Values.arkauc.strategy.type "RollingUpdate" }}
+    rollingUpdate:
+      maxSurge: {{ .Values.arkauc.strategy.maxSurge }}
+      maxUnavailable: {{ .Values.arkauc.strategy.maxUnavailable }}
+    {{- end }}
+  template:
+    metadata:
+      labels:
+        {{- include "kutyai.etiketler" (dict "kok" $ "bilesen" "arka-uc") | nindent 8 }}
+      annotations:
+        # Yapılandırma ya da sır değişince pod'lar kendiliğinden yenilenir.
+        checksum/yapilandirma: {{ include (print $.Template.BasePath "/configmap.yaml") $ | sha256sum }}
+        checksum/sirlar: {{ include (print $.Template.BasePath "/secret.yaml") $ | sha256sum }}
+        {{- with .Values.arkauc.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- if or .Values.serviceAccount.create .Values.serviceAccount.name }}
+      serviceAccountName: {{ include "kutyai.serviceAccountAd" . }}
+      {{- end }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountToken }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- if .Values.arkauc.securityContext.runAsNonRoot }}
+        runAsNonRoot: true
+        {{- end }}
+        {{- with .Values.arkauc.securityContext.runAsUser }}
+        runAsUser: {{ . }}
+        {{- end }}
+        {{- with .Values.arkauc.securityContext.runAsGroup }}
+        runAsGroup: {{ . }}
+        {{- end }}
+        {{- with .Values.arkauc.securityContext.fsGroup }}
+        fsGroup: {{ . }}
+        {{- end }}
+        seccompProfile:
+          type: RuntimeDefault
+      # SSE akışları (sohbet, hazırlama ilerlemesi) yarıda kesilmesin.
+      terminationGracePeriodSeconds: {{ .Values.arkauc.terminationGracePeriodSeconds }}
+      containers:
+        - name: arka-uc
+          image: {{ include "kutyai.imaj" (dict "repository" .Values.arkauc.image.repository "tag" .Values.arkauc.image.tag "appVersion" .Chart.AppVersion) }}
+          imagePullPolicy: {{ .Values.arkauc.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.arkauc.containerPort }}
+              protocol: TCP
+          # Sırsız ayarlar ConfigMap'ten, sırlar Secret'tan. Aynı anahtar iki
+          # kaynakta varsa SON kaynak kazanır: sırlar (secretRef) kazanır.
+          envFrom:
+            - configMapRef:
+                name: {{ include "kutyai.configmapAd" . }}
+            - secretRef:
+                name: {{ include "kutyai.secretAd" . }}
+          {{- if or .Values.arkauc.persistence.hfCache.enabled .Values.arkauc.extraEnv }}
+          env:
+            {{- if .Values.arkauc.persistence.hfCache.enabled }}
+            - name: KUTYAI_HF_ONBELLEK
+              value: {{ printf "%s/hf-onbellek" .Values.arkauc.dataPath | quote }}
+            {{- end }}
+            {{- with .Values.arkauc.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- end }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.arkauc.livenessProbe.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.arkauc.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.arkauc.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.arkauc.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.arkauc.livenessProbe.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.arkauc.readinessProbe.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.arkauc.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.arkauc.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.arkauc.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.arkauc.readinessProbe.failureThreshold }}
+          resources:
+            {{- toYaml .Values.arkauc.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            {{- if .Values.arkauc.securityContext.dropAllCapabilities }}
+            capabilities:
+              drop:
+                - ALL
+            {{- end }}
+            readOnlyRootFilesystem: {{ .Values.arkauc.securityContext.readOnlyRootFilesystem }}
+          {{- if or .Values.arkauc.persistence.data.enabled .Values.arkauc.persistence.hfCache.enabled .Values.arkauc.dockerSocket.enabled }}
+          volumeMounts:
+            {{- if .Values.arkauc.persistence.data.enabled }}
+            - name: veri
+              mountPath: {{ .Values.arkauc.dataPath }}
+            {{- end }}
+            {{- if .Values.arkauc.persistence.hfCache.enabled }}
+            - name: hf-onbellek
+              mountPath: {{ printf "%s/hf-onbellek" .Values.arkauc.dataPath }}
+            {{- end }}
+            {{- if .Values.arkauc.dockerSocket.enabled }}
+            - name: docker-soketi
+              mountPath: {{ .Values.arkauc.dockerSocket.hostPath }}
+            {{- end }}
+          {{- end }}
+      {{- if or .Values.arkauc.persistence.data.enabled .Values.arkauc.persistence.hfCache.enabled .Values.arkauc.dockerSocket.enabled }}
+      volumes:
+        {{- if .Values.arkauc.persistence.data.enabled }}
+        - name: veri
+          persistentVolumeClaim:
+            claimName: {{ default (printf "%s-veri" (include "kutyai.tamAd" .)) .Values.arkauc.persistence.data.existingClaim }}
+        {{- end }}
+        {{- if .Values.arkauc.persistence.hfCache.enabled }}
+        - name: hf-onbellek
+          persistentVolumeClaim:
+            claimName: {{ default (printf "%s-hf-onbellek" (include "kutyai.tamAd" .)) .Values.arkauc.persistence.hfCache.existingClaim }}
+        {{- end }}
+        {{- if .Values.arkauc.dockerSocket.enabled }}
+        - name: docker-soketi
+          hostPath:
+            path: {{ .Values.arkauc.dockerSocket.hostPath }}
+            type: {{ .Values.arkauc.dockerSocket.type }}
+        {{- end }}
+      {{- end }}
+      {{- with .Values.arkauc.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.arkauc.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.arkauc.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

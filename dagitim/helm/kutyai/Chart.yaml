@@ -1,0 +1,21 @@
+apiVersion: v2
+name: kutyai
+description: >-
+  KutyAI — kurumsal BDM platformu (arka.uc FastAPI, onuc son kullanıcı arayüzü,
+  yonetim_paneli). Docker Compose dağıtımının Kubernetes/Helm karşılığı
+  (tasarım spec §11).
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.25.0-0"
+keywords:
+  - kutyai
+  - bdm
+  - llm
+  - fastapi
+  - nextjs
+annotations:
+  # Chart kaynağı: dagitim/ (docker-compose.yml) ile aynı ortam değişkeni adları,
+  # portlar, sağlık uçları ve kalıcı hacim yollarını kullanır.
+  kutyai/tasarim-spec: "kaynak/spec/2026-09-12-kutyai-genisleme-tasarim.md §11"
+  kutyai/compose-kaynagi: "dagitim/docker-compose.yml"

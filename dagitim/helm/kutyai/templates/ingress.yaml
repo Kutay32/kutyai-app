@@ -1,0 +1,47 @@
+{{- /*
+Ingress (spec §11). Yol düzeni dagitim/nginx.conf ile aynıdır:
+  /api  -> arka.uc (yol KORUNUR: /api/v1/saglik aynen gider)
+  /     -> onuc
+  panel -> ayrı alan adı (aynı düzen: /panel öneki statik varlıkları kırar)
+Host'lar ve yollar values.yaml `ingress.hosts` altında özelleştirilir.
+*/ -}}
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "kutyai.tamAd" . }}
+  namespace: {{ include "kutyai.namespace" . }}
+  labels:
+    {{- include "kutyai.etiketler" (dict "kok" $ "bilesen" "ingress") | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        {{- range .Values.ingress.hosts }}
+        - {{ .host | quote }}
+        {{- end }}
+      secretName: {{ .Values.ingress.tls.secretName }}
+  {{- end }}
+  rules:
+    {{- range .Values.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path | quote }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                name: {{ include "kutyai.bilesenAdi" (dict "kok" $ "bilesen" .service) }}
+                port:
+                  number: {{ .port }}
+          {{- end }}
+    {{- end }}
+{{- end }}

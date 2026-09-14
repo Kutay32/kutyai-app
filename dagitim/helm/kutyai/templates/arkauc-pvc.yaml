@@ -1,0 +1,31 @@
+{{- /*
+Kalıcı veri hacmi (spec §11): SQLite veritabanı + yüklenen dosyalar.
+Compose karşılığı: docker-compose.yml `volumes: kutyai-veri:/veri`
+(KUTYAI_VERITABANI_URL=sqlite+aiosqlite:////veri/kutyai.db,
+ KUTYAI_DOSYA_DIZINI=/veri/dosyalar).
+
+storageClassName boş bırakılırsa kümenin varsayılan StorageClass'ı kullanılır.
+existingClaim verilmişse PVC üretilmez (hacim dışarıdan yönetilir).
+SQLite bu hacmi paylaşamaz: ReadWriteOnce + tek replika (bkz. values.yaml).
+*/ -}}
+{{- if and .Values.arkauc.persistence.data.enabled (not .Values.arkauc.persistence.data.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "kutyai.tamAd" . }}-veri
+  namespace: {{ include "kutyai.namespace" . }}
+  labels:
+    {{- include "kutyai.etiketler" (dict "kok" $ "bilesen" "arka-uc") | nindent 4 }}
+  annotations:
+    # Üretimde `helm uninstall` veriyi silmesin (İŞLETİM §4 yedekleme yordamı).
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    {{- toYaml .Values.arkauc.persistence.data.accessModes | nindent 4 }}
+  {{- with .Values.arkauc.persistence.data.storageClassName }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.arkauc.persistence.data.size }}
+{{- end }}

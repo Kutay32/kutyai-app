@@ -7,13 +7,14 @@ import { Copy, MoreHorizontal, Pencil, Play, Square, Trash2 } from "lucide-react
 
 import { cn } from "@/lib/cn";
 import { baslatilabilir, durdurulabilir, type BdmKaydi } from "@/lib/bdm";
+import { useDil } from "@/lib/dil";
 import { FOCUS_RING } from "@/components/ui/stiller";
 
 export type SatirMenusuProps = {
   bdm: BdmKaydi;
   /** Silme ve kopyalama yalnız yöneticide (API.md §8). */
   yonetici: boolean;
-  /** GPU gerektiren sağlayıcıda GPU yoksa başlatmayı engelleyen Türkçe gerekçe. */
+  /** GPU gerektiren sağlayıcıda GPU yoksa başlatmayı engelleyen gerekçe. */
   gpuGerekcesi: string | null;
   islemde: boolean;
   onKopyala: () => void;
@@ -83,6 +84,7 @@ export function SatirMenusu({
 }: SatirMenusuProps) {
   const [acik, setAcik] = useState(false);
   const kap = useRef<HTMLDivElement>(null);
+  const { t } = useDil();
 
   useEffect(() => {
     if (!acik) return;
@@ -104,19 +106,21 @@ export function SatirMenusu({
   const baslatGerekcesi =
     gpuGerekcesi ??
     (calisiyor
-      ? "Bu model zaten çalışıyor."
+      ? t("bdm.menu.zaten_calisiyor")
       : baslatilabilir(bdm.durum)
         ? null
         : bdm.durum === "taslak"
-          ? "Önce Hazırlama sekmesinden bağlantıyı doğrulayın."
-          : "Hata durumundaki model önce durdurulmalıdır.");
-  const durdurGerekcesi = durdurulabilir(bdm.durum) ? null : "Bu model çalışmıyor.";
-  const kopyalaGerekcesi = yonetici ? null : "Kopyalama yalnız yönetici rolünde yapılabilir.";
+          ? t("bdm.menu.once_dogrula")
+          : t("bdm.menu.once_durdur"));
+  const durdurGerekcesi = durdurulabilir(bdm.durum) ? null : t("bdm.menu.calismiyor");
+  const kopyalaGerekcesi = yonetici ? null : t("bdm.menu.kopyala_yetki");
   const silGerekcesi = !yonetici
-    ? "Silme yalnız yönetici rolünde yapılabilir."
+    ? t("bdm.menu.sil_yetki")
     : calisiyor
-      ? "Çalışan model silinemez; önce durdurun."
+      ? t("bdm.menu.sil_calisiyor")
       : null;
+
+  const menuEtiketi = t("bdm.menu.etiket", { ad: bdm.gorunen_ad });
 
   return (
     <div ref={kap} className="relative inline-flex justify-end">
@@ -124,7 +128,7 @@ export function SatirMenusu({
         type="button"
         aria-haspopup="menu"
         aria-expanded={acik}
-        aria-label={`${bdm.gorunen_ad} işlemleri`}
+        aria-label={menuEtiketi}
         disabled={islemde}
         onClick={() => setAcik((onceki) => !onceki)}
         className={cn(
@@ -138,7 +142,7 @@ export function SatirMenusu({
       {acik ? (
         <div
           role="menu"
-          aria-label={`${bdm.gorunen_ad} işlemleri`}
+          aria-label={menuEtiketi}
           className="absolute top-9 right-0 z-20 flex w-64 flex-col gap-0.5 rounded-lg border border-neutral-200 bg-white p-1"
         >
           <MenuOgesi
@@ -146,7 +150,7 @@ export function SatirMenusu({
             href={`/bdm/${bdm.id}`}
             onClick={() => setAcik(false)}
           >
-            Düzenle
+            {t("bdm.eylem.duzenle")}
           </MenuOgesi>
 
           <MenuOgesi
@@ -157,7 +161,7 @@ export function SatirMenusu({
               onKopyala();
             }}
           >
-            Kopyala
+            {t("bdm.eylem.kopyala")}
           </MenuOgesi>
 
           {calisiyor || bdm.durum === "hata" ? (
@@ -169,7 +173,7 @@ export function SatirMenusu({
                 onDurum("durdur");
               }}
             >
-              Durdur
+              {t("bdm.eylem.durdur")}
             </MenuOgesi>
           ) : (
             <MenuOgesi
@@ -180,7 +184,7 @@ export function SatirMenusu({
                 onDurum("baslat");
               }}
             >
-              Çalıştır
+              {t("bdm.eylem.calistir")}
             </MenuOgesi>
           )}
 
@@ -192,7 +196,7 @@ export function SatirMenusu({
               onSil();
             }}
           >
-            Sil
+            {t("bdm.eylem.sil")}
           </MenuOgesi>
         </div>
       ) : null}

@@ -8,6 +8,7 @@ import { Trash2 } from "lucide-react";
 
 import { hataMesaji } from "@/lib/api";
 import { bdmSil, type BdmKaydi } from "@/lib/bdm";
+import { useDil } from "@/lib/dil";
 import { kullaniciOku } from "@/lib/oturum";
 import { BdmFormu } from "@/components/bdm/bdm-formu";
 import { Alert } from "@/components/ui/alert";
@@ -25,6 +26,7 @@ export type SekmeGenelProps = {
 export function SekmeGenel({ bdm, onGuncellendi }: SekmeGenelProps) {
   const router = useRouter();
   const { showToast } = useToast();
+  const { t } = useDil();
   const [yonetici, setYonetici] = useState(false);
   const [onayAcik, setOnayAcik] = useState(false);
   const [siliniyor, setSiliniyor] = useState(false);
@@ -39,7 +41,7 @@ export function SekmeGenel({ bdm, onGuncellendi }: SekmeGenelProps) {
     setSilmeHatasi(null);
     try {
       await bdmSil(bdm.id);
-      showToast(`${bdm.gorunen_ad} silindi.`, "success");
+      showToast(t("bdm.bildirim.silindi", { ad: bdm.gorunen_ad }), "success");
       router.replace("/bdm");
     } catch (hata) {
       // Bağlı konuşma/kullanım kaydı varsa 409 gecersiz_gecis döner (§8).
@@ -50,10 +52,13 @@ export function SekmeGenel({ bdm, onGuncellendi }: SekmeGenelProps) {
   }
 
   const silmeGerekcesi = !yonetici
-    ? "Silme yalnız yönetici rolünde yapılabilir."
+    ? t("bdm.menu.sil_yetki")
     : bdm.durum === "calisiyor"
-      ? "Çalışan model silinemez; önce durdurun."
+      ? t("bdm.menu.sil_calisiyor")
       : null;
+
+  // Silme onayı: kayıt adı ve slug cümle içinde vurgulu/kod biçiminde kalır.
+  const onayParcalari = t("bdm.sil.onay.uyari").split(/(\{ad\}|\{slug\})/);
 
   return (
     <div className="flex flex-col gap-4">
@@ -61,11 +66,8 @@ export function SekmeGenel({ bdm, onGuncellendi }: SekmeGenelProps) {
 
       <Card className="border-rose-200">
         <CardHeader>
-          <CardTitle>BDM'yi sil</CardTitle>
-          <CardDescription>
-            Kayıt kalıcı olarak silinir. Bağlı konuşma veya kullanım kaydı varsa silme
-            reddedilir ve gerekçe gösterilir.
-          </CardDescription>
+          <CardTitle>{t("bdm.sil.baslik")}</CardTitle>
+          <CardDescription>{t("bdm.sil.kart.aciklama")}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           <div>
@@ -79,7 +81,7 @@ export function SekmeGenel({ bdm, onGuncellendi }: SekmeGenelProps) {
               }}
             >
               <Trash2 aria-hidden className="size-4" />
-              BDM'yi sil
+              {t("bdm.sil.baslik")}
             </Button>
           </div>
           {silmeGerekcesi ? (
@@ -91,15 +93,15 @@ export function SekmeGenel({ bdm, onGuncellendi }: SekmeGenelProps) {
       <Dialog
         open={onayAcik}
         onClose={() => setOnayAcik(false)}
-        title="Silmeyi onayla"
-        description="Bu işlem geri alınamaz."
+        title={t("bdm.sil.onay.baslik")}
+        description={t("bdm.sil.aciklama")}
         footer={
           <>
             <Button variant="secondary" onClick={() => setOnayAcik(false)}>
-              Vazgeç
+              {t("bdm.vazgec")}
             </Button>
             <Button variant="danger" loading={siliniyor} onClick={() => void sil()}>
-              Kalıcı olarak sil
+              {t("bdm.sil.kalicilik")}
             </Button>
           </>
         }
@@ -107,8 +109,23 @@ export function SekmeGenel({ bdm, onGuncellendi }: SekmeGenelProps) {
         <div className="flex flex-col gap-3">
           {silmeHatasi ? <Alert tone="danger">{silmeHatasi}</Alert> : null}
           <p className="text-sm text-neutral-600">
-            <span className="font-medium text-neutral-900">{bdm.gorunen_ad}</span> (
-            <span className="font-mono text-xs">{bdm.slug}</span>) kaydı silinecek.
+            {onayParcalari.map((parca, sira) => {
+              if (parca === "{ad}") {
+                return (
+                  <span key={sira} className="font-medium text-neutral-900">
+                    {bdm.gorunen_ad}
+                  </span>
+                );
+              }
+              if (parca === "{slug}") {
+                return (
+                  <span key={sira} className="font-mono text-xs">
+                    {bdm.slug}
+                  </span>
+                );
+              }
+              return parca;
+            })}
           </p>
         </div>
       </Dialog>

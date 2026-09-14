@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { RefreshCw, Save } from "lucide-react";
 
 import { hataMesaji } from "@/lib/api";
+import { useDil } from "@/lib/dil";
 import { zorunluHatasi } from "@/lib/dogrulama";
 import {
   VARSAYILAN_SAKLAMA_GUNU,
@@ -14,6 +15,7 @@ import {
   type Ayarlar,
 } from "@/lib/ayarlar";
 import { useUzakVeri } from "@/lib/kancalar";
+import { aktifDil, ceviri } from "@/lib/sozluk";
 import { VeriDurumu } from "@/components/loglar/veri-durumu";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -65,20 +67,25 @@ function formdan(ayarlar: Ayarlar): AyarFormu {
 
 type FormHatalari = { marka_adi?: string; saklama_gun?: string; smtp_port?: string };
 
-/** Formu doğrular ve yalnızca gönderilecek alanları içeren gövdeyi üretir. */
+/**
+ * Formu doğrular ve yalnızca gönderilecek alanları içeren gövdeyi üretir.
+ * Modül düzeyinde olduğu için doğrulama mesajları `ceviri` ile aktif dilde üretilir.
+ */
 function govdeUret(form: AyarFormu): { govde: AyarGuncellemesi; hatalar: FormHatalari } {
   const hatalar: FormHatalari = {};
-  const markaHatasi = zorunluHatasi(form.marka_adi, "Marka adı");
+  const markaHatasi = zorunluHatasi(form.marka_adi, ceviri("genel.marka_adi", aktifDil()));
   if (markaHatasi) hatalar.marka_adi = markaHatasi;
 
   const saklama = Number(form.saklama_gun);
   if (!Number.isInteger(saklama) || saklama < 1 || saklama > EN_BUYUK_SAKLAMA_GUNU) {
-    hatalar.saklama_gun = `Saklama süresi 1 ile ${EN_BUYUK_SAKLAMA_GUNU} gün arasında olmalıdır.`;
+    hatalar.saklama_gun = ceviri("ayarlar.saklama.hata", aktifDil(), {
+      azami: EN_BUYUK_SAKLAMA_GUNU,
+    });
   }
 
   const port = form.smtp_port ? Number(form.smtp_port) : null;
   if (port !== null && (!Number.isInteger(port) || port < 1 || port > 65535)) {
-    hatalar.smtp_port = "SMTP portu 1 ile 65535 arasında olmalıdır.";
+    hatalar.smtp_port = ceviri("ayarlar.smtp.port.hata", aktifDil());
   }
 
   if (Object.keys(hatalar).length > 0) return { govde: {}, hatalar };
@@ -101,13 +108,38 @@ function govdeUret(form: AyarFormu): { govde: AyarGuncellemesi; hatalar: FormHat
   return { govde, hatalar };
 }
 
+/** Bakım modu uyarısı: uç yolları ve durum kodu cümle içinde vurgulu kalır. */
+function BakimModuUyarisi() {
+  const { t } = useDil();
+  // Şablon `{uc1}`, `{uc2}` ve `{kodu}` yer tutucularından parçalanır.
+  const [bas, uc1Sonrasi] = t("ayarlar.bakim.uyari.metin").split("{uc1}");
+  const [orta, uc2Sonrasi] = uc1Sonrasi.split("{uc2}");
+  const [ucOncesi, son] = uc2Sonrasi.split("{kodu}");
+
+  return (
+    <Alert tone="warning" title={t("ayarlar.bakim.uyari.baslik")}>
+      {bas}
+      <code>/sohbet</code>
+      {orta}
+      <code>/sohbet/akis</code>
+      {ucOncesi}
+      <code>503</code>
+      {son}
+    </Alert>
+  );
+}
+
 export default function AyarlarSayfasi() {
   const { showToast } = useToast();
+  const { t } = useDil();
   const { veri, yukleniyor, hata, yenile } = useUzakVeri<Ayarlar>(ayarlariGetir, []);
   const [form, setForm] = useState<AyarFormu | null>(null);
   const [hatalar, setHatalar] = useState<FormHatalari>({});
   const [kaydediliyor, setKaydediliyor] = useState(false);
   const [kaydetmeHatasi, setKaydetmeHatasi] = useState<string | null>(null);
+
+  // Kayıt politikası ipucundaki uç yolu cümle içinde vurgulu kalır.
+  const [kayitOnce, kayitSonrasi] = t("ayarlar.kayit.ipucu").split("{kod}");
 
   useEffect(() => {
     if (veri) {
@@ -130,7 +162,7 @@ export default function AyarlarSayfasi() {
     setKaydetmeHatasi(null);
     try {
       await ayarlariGuncelle(govde);
-      showToast("Ayarlar kaydedildi.", "success");
+      showToast(t("ayarlar.kaydedildi"), "success");
       yenile();
     } catch (sebep) {
       setKaydetmeHatasi(hataMesaji(sebep));
@@ -142,35 +174,30 @@ export default function AyarlarSayfasi() {
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">Ayarlar</h1>
-        <p className="text-sm text-neutral-500">
-          Marka, kayıt politikası, SMTP ve bakım modu; değişiklikler denetim izine yazılır.
-        </p>
+        <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">
+          {t("menu.ayarlar")}
+        </h1>
+        <p className="text-sm text-neutral-500">{t("ayarlar.aciklama")}</p>
       </header>
 
       <VeriDurumu yukleniyor={yukleniyor} hata={hata} yenile={yenile}>
         {form && veri ? (
           <div className="flex flex-col gap-6">
             {kaydetmeHatasi ? (
-              <Alert tone="danger" title="Ayarlar kaydedilemedi">
+              <Alert tone="danger" title={t("ayarlar.kaydedilemedi")}>
                 {kaydetmeHatasi}
               </Alert>
             ) : null}
 
-            {form.bakim_modu ? (
-              <Alert tone="warning" title="Bakım modu açık">
-                Bakım modu açıkken <code>/sohbet</code> ve <code>/sohbet/akis</code> uçları{" "}
-                <code>503</code> döner; sohbet geçici olarak kullanılamaz.
-              </Alert>
-            ) : null}
+            {form.bakim_modu ? <BakimModuUyarisi /> : null}
 
             <Card className="rounded-2xl">
               <CardHeader>
-                <CardTitle>Genel</CardTitle>
-                <CardDescription>Marka adı ve kayıt politikası.</CardDescription>
+                <CardTitle>{t("ayarlar.genel.baslik")}</CardTitle>
+                <CardDescription>{t("ayarlar.genel.aciklama")}</CardDescription>
               </CardHeader>
               <CardContent className="grid gap-4 md:grid-cols-2">
-                <Field label="Marka adı" error={hatalar.marka_adi} required>
+                <Field label={t("genel.marka_adi")} error={hatalar.marka_adi} required>
                   {({ id, invalid, ...erisim }) => (
                     <Input
                       id={id}
@@ -183,9 +210,9 @@ export default function AyarlarSayfasi() {
                 </Field>
 
                 <Field
-                  label="Saklama süresi (gün)"
+                  label={t("ayarlar.saklama")}
                   error={hatalar.saklama_gun}
-                  hint={`Varsayılan ${VARSAYILAN_SAKLAMA_GUNU} gün; temizleme bu süreyi kullanır.`}
+                  hint={t("ayarlar.saklama.ipucu", { gun: VARSAYILAN_SAKLAMA_GUNU })}
                   required
                 >
                   {({ id, invalid, ...erisim }) => (
@@ -203,35 +230,35 @@ export default function AyarlarSayfasi() {
                 </Field>
 
                 <div className="flex flex-col gap-3">
-                  <Label>Kayıt açık</Label>
+                  <Label>{t("ayarlar.kayit.baslik")}</Label>
                   <Switch
                     checked={form.kayit_acik}
                     onChange={(deger) => guncelle("kayit_acik", deger)}
-                    label="Son kullanıcı kaydı kabul edilsin"
+                    label={t("ayarlar.kayit.anahtar")}
                   />
                   <p className="text-xs text-neutral-500">
-                    Kapalıyken <code>/kimlik/kayit</code> yeni hesap açmaz.
+                    {kayitOnce}
+                    <code>/kimlik/kayit</code>
+                    {kayitSonrasi}
                   </p>
                 </div>
 
                 <div className="flex flex-col gap-3">
-                  <Label>Maskeleme</Label>
+                  <Label>{t("ayarlar.maskeleme.baslik")}</Label>
                   <Switch
                     checked={form.maskeleme_aktif}
                     onChange={(deger) => guncelle("maskeleme_aktif", deger)}
-                    label="Kişisel veri maskeleme etkin"
+                    label={t("ayarlar.maskeleme.anahtar")}
                   />
-                  <p className="text-xs text-neutral-500">
-                    Maskeleme kayıt anında uygulanır; geçmiş kayıtlar değişmez.
-                  </p>
+                  <p className="text-xs text-neutral-500">{t("ayarlar.maskeleme.ipucu")}</p>
                 </div>
 
                 <div className="flex flex-col gap-3 md:col-span-2">
-                  <Label>Bakım modu</Label>
+                  <Label>{t("ayarlar.bakim.baslik")}</Label>
                   <Switch
                     checked={form.bakim_modu}
                     onChange={(deger) => guncelle("bakim_modu", deger)}
-                    label="Sohbet uçları bakımda"
+                    label={t("ayarlar.bakim.anahtar")}
                   />
                 </div>
               </CardContent>
@@ -240,18 +267,15 @@ export default function AyarlarSayfasi() {
             <Card className="rounded-2xl">
               <CardHeader>
                 <div className="flex flex-wrap items-center gap-2">
-                  <CardTitle>E-posta (SMTP)</CardTitle>
+                  <CardTitle>{t("ayarlar.smtp.baslik")}</CardTitle>
                   <Badge tone={veri.smtp_tanimli ? "success" : "neutral"}>
-                    {veri.smtp_tanimli ? "SMTP tanımlı" : "SMTP tanımsız"}
+                    {veri.smtp_tanimli ? t("ayarlar.smtp.tanimli") : t("ayarlar.smtp.tanimsiz")}
                   </Badge>
                 </div>
-                <CardDescription>
-                  SMTP tanımlı değilken doğrulama ve sıfırlama bağlantıları panelde
-                  gösterilir.
-                </CardDescription>
+                <CardDescription>{t("ayarlar.smtp.aciklama")}</CardDescription>
               </CardHeader>
               <CardContent className="grid gap-4 md:grid-cols-2">
-                <Field label="Sunucu" hint="Boş bırakılırsa SMTP kapatılır.">
+                <Field label={t("ayarlar.smtp.sunucu")} hint={t("ayarlar.smtp.sunucu.ipucu")}>
                   {({ id, ...erisim }) => (
                     <Input
                       id={id}
@@ -263,9 +287,9 @@ export default function AyarlarSayfasi() {
                 </Field>
 
                 <Field
-                  label="Port"
+                  label={t("ayarlar.smtp.port")}
                   error={hatalar.smtp_port}
-                  hint="Yalnız yazılabilir; boş bırakılırsa değişmez."
+                  hint={t("ayarlar.yalniz_yazilir.ipucu")}
                 >
                   {({ id, invalid, ...erisim }) => (
                     <Input
@@ -282,7 +306,10 @@ export default function AyarlarSayfasi() {
                   )}
                 </Field>
 
-                <Field label="Kullanıcı" hint="Yalnız yazılabilir; boş bırakılırsa değişmez.">
+                <Field
+                  label={t("ayarlar.smtp.kullanici")}
+                  hint={t("ayarlar.yalniz_yazilir.ipucu")}
+                >
                   {({ id, ...erisim }) => (
                     <Input
                       id={id}
@@ -294,10 +321,7 @@ export default function AyarlarSayfasi() {
                   )}
                 </Field>
 
-                <Field
-                  label="Parola"
-                  hint="Boş bırakılırsa mevcut parola değişmez; parola hiçbir zaman görüntülenmez."
-                >
+                <Field label={t("genel.parola")} hint={t("ayarlar.smtp.sifre.ipucu")}>
                   {({ id, ...erisim }) => (
                     <Input
                       id={id}
@@ -310,7 +334,7 @@ export default function AyarlarSayfasi() {
                   )}
                 </Field>
 
-                <Field label="Gönderen adresi">
+                <Field label={t("ayarlar.smtp.gonderen")}>
                   {({ id, ...erisim }) => (
                     <Input
                       id={id}
@@ -322,7 +346,10 @@ export default function AyarlarSayfasi() {
                   )}
                 </Field>
 
-                <Field label="TLS" hint="Yalnız yazılabilir; seçim yapılmazsa değişmez.">
+                <Field
+                  label={t("ayarlar.smtp.tls")}
+                  hint={t("ayarlar.yalniz_yazilir.ipucu")}
+                >
                   {({ id, ...erisim }) => (
                     <Select
                       id={id}
@@ -330,9 +357,9 @@ export default function AyarlarSayfasi() {
                       value={form.smtp_tls}
                       onChange={(olay) => guncelle("smtp_tls", olay.target.value as TlsSecimi)}
                     >
-                      <option value="degistirme">Değiştirme</option>
-                      <option value="acik">Açık</option>
-                      <option value="kapali">Kapalı</option>
+                      <option value="degistirme">{t("ayarlar.tls.degistirme")}</option>
+                      <option value="acik">{t("ayarlar.tls.acik")}</option>
+                      <option value="kapali">{t("ayarlar.tls.kapali")}</option>
                     </Select>
                   )}
                 </Field>
@@ -342,7 +369,7 @@ export default function AyarlarSayfasi() {
             <div className="flex items-center gap-2">
               <Button loading={kaydediliyor} onClick={() => void kaydet()}>
                 <Save aria-hidden className="size-4" />
-                Ayarları kaydet
+                {t("ayarlar.kaydet")}
               </Button>
               <Button
                 variant="ghost"
@@ -350,7 +377,7 @@ export default function AyarlarSayfasi() {
                 disabled={kaydediliyor}
               >
                 <RefreshCw aria-hidden className="size-4" />
-                Sunucudan yenile
+                {t("ayarlar.sunucudan_yenile")}
               </Button>
             </div>
 

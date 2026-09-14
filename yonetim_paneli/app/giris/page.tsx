@@ -5,6 +5,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { ApiHatasi, istek } from "@/lib/api";
+import { useDil } from "@/lib/dil";
 import { epostaHatasi } from "@/lib/dogrulama";
 import { oturumKaydet } from "@/lib/oturum";
 import type { KurulumDurumu, OturumYaniti } from "@/lib/tipler";
@@ -24,6 +25,7 @@ type Alanlar = {
 function GirisFormu() {
   const router = useRouter();
   const aramaParametreleri = useSearchParams();
+  const { t } = useDil();
   const kurulumTamam = aramaParametreleri.get("kurulum") === "tamam";
 
   const [alanlar, setAlanlar] = useState<Alanlar>({ eposta: "", parola: "" });
@@ -61,7 +63,7 @@ function GirisFormu() {
 
     const yeniHatalar: Partial<Alanlar> = {
       eposta: epostaHatasi(alanlar.eposta) ?? undefined,
-      parola: alanlar.parola ? undefined : "Parola zorunludur.",
+      parola: alanlar.parola ? undefined : t("dogrulama.parola.zorunlu"),
     };
     setHatalar(yeniHatalar);
     if (yeniHatalar.eposta || yeniHatalar.parola) return;
@@ -78,13 +80,11 @@ function GirisFormu() {
       router.replace("/");
     } catch (hata) {
       if (hata instanceof ApiHatasi && hata.kod === "yetki_yok") {
-        setGenelHata(
-          "Bu hesap yönetim paneline giremez. Yönetici, operatör veya izleyici rolüyle giriş yapın.",
-        );
+        setGenelHata(t("giris.hata.rol"));
       } else if (hata instanceof ApiHatasi && hata.durum === 401) {
-        setGenelHata("E-posta veya parola hatalı.");
+        setGenelHata(t("giris.hata.kimlik"));
       } else {
-        setGenelHata(hata instanceof Error ? hata.message : "Giriş yapılamadı.");
+        setGenelHata(hata instanceof Error ? hata.message : t("giris.hata.genel"));
       }
     } finally {
       setGonderiliyor(false);
@@ -95,7 +95,7 @@ function GirisFormu() {
     return (
       <div className="flex items-center gap-2 text-sm text-neutral-500">
         <Spinner />
-        Yükleniyor…
+        {t("genel.yukleniyor")}
       </div>
     );
   }
@@ -104,12 +104,12 @@ function GirisFormu() {
     <div className="flex w-full max-w-sm flex-col gap-6">
       <div className="flex flex-col items-center gap-1 text-center">
         <Brand markaAdi="KutyAI" className="text-3xl" />
-        <p className="text-sm text-neutral-500">Yönetim paneline giriş yapın</p>
+        <p className="text-sm text-neutral-500">{t("giris.aciklama")}</p>
       </div>
 
       {kurulumTamam ? (
-        <Alert tone="success" title="Kurulum tamamlandı">
-          Yönetici hesabınızla giriş yapabilirsiniz.
+        <Alert tone="success" title={t("giris.kurulum.baslik")}>
+          {t("giris.kurulum.metin")}
         </Alert>
       ) : null}
 
@@ -117,7 +117,7 @@ function GirisFormu() {
 
       <Card className="rounded-2xl">
         <form onSubmit={gonder} noValidate className="flex flex-col gap-4 p-4">
-          <Field label="E-posta" required error={hatalar.eposta}>
+          <Field label={t("genel.eposta")} required error={hatalar.eposta}>
             {(alan) => (
               <Input
                 {...alan}
@@ -125,12 +125,12 @@ function GirisFormu() {
                 autoComplete="username"
                 value={alanlar.eposta}
                 onChange={(olay) => guncelle("eposta", olay.target.value)}
-                placeholder="ad@sirket.com"
+                placeholder={t("giris.eposta.ornek")}
               />
             )}
           </Field>
 
-          <Field label="Parola" required error={hatalar.parola}>
+          <Field label={t("genel.parola")} required error={hatalar.parola}>
             {(alan) => (
               <Input
                 {...alan}
@@ -143,7 +143,7 @@ function GirisFormu() {
           </Field>
 
           <Button type="submit" loading={gonderiliyor} className="w-full">
-            Giriş yap
+            {t("giris.giris_yap")}
           </Button>
         </form>
       </Card>
@@ -152,13 +152,15 @@ function GirisFormu() {
 }
 
 export default function GirisSayfasi() {
+  const { t } = useDil();
+
   return (
     <main className="flex min-h-screen items-center justify-center bg-neutral-50 p-4">
       <Suspense
         fallback={
           <div className="flex items-center gap-2 text-sm text-neutral-500">
             <Spinner />
-            Yükleniyor…
+            {t("genel.yukleniyor")}
           </div>
         }
       >

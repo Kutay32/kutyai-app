@@ -7,6 +7,7 @@
 
 import { ApiHatasi, API_URL, apiFetch } from "./api";
 import { oturumAl } from "./oturum";
+import { aktifCeviri } from "./tarayici-dil";
 import type { Kullanici } from "./tipler";
 
 /** API.md §2 `BdmOzet` — `/modeller` yanıtının kaydı. */
@@ -158,7 +159,7 @@ function cerceveCoz(cerceve: string): SohbetOlayi | null {
     return {
       tur: "hata",
       kod: typeof zarf.kod === "string" ? zarf.kod : "sunucu_hatasi",
-      mesaj: typeof zarf.mesaj === "string" ? zarf.mesaj : "Yanıt üretilemedi.",
+      mesaj: typeof zarf.mesaj === "string" ? zarf.mesaj : aktifCeviri("sohbet.akis.uretim.hata"),
       ayrinti: zarf.ayrinti,
     };
   }
@@ -199,7 +200,7 @@ async function akisHatasi(yanit: Response): Promise<ApiHatasi> {
   return new ApiHatasi(
     yanit.status,
     hata?.kod ?? "sunucu_hatasi",
-    hata?.mesaj ?? "Yanıt alınamadı. Lütfen tekrar deneyin.",
+    hata?.mesaj ?? aktifCeviri("sohbet.akis.istek.hata"),
     hata?.ayrinti,
   );
 }
@@ -220,7 +221,7 @@ async function akisIstegi(istek: SohbetAkisiIstegi, sinyal?: AbortSignal): Promi
       });
     } catch (hata) {
       if (sinyal?.aborted) throw hata;
-      throw new ApiHatasi(0, "baglanti_hatasi", "Sunucuya ulaşılamadı. Bağlantınızı denetleyin.");
+      throw new ApiHatasi(0, "baglanti_hatasi", aktifCeviri("genel.hata.baglanti"));
     }
   };
 
@@ -253,7 +254,7 @@ export async function sohbetAkisiniBaslat(
   const yanit = await akisIstegi(istek, sinyal);
   const govde = yanit.body;
   if (!govde) {
-    throw new ApiHatasi(yanit.status, "akis_yok", "Yanıt akışı okunamadı.");
+    throw new ApiHatasi(yanit.status, "akis_yok", aktifCeviri("sohbet.akis.okunamadi"));
   }
 
   const okuyucu = govde.getReader();

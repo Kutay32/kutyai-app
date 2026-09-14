@@ -1,0 +1,37 @@
+{{- /*
+arka.uc HorizontalPodAutoscaler (spec §11). VARSAYILAN KAPALI:
+varsayılan veritabanı SQLite ve kalıcı hacim ReadWriteOnce olduğu için birden
+çok arka.uc pod'u aynı SQLite dosyasını paylaşamaz. Çok replika/HPA için önce
+harici PostgreSQL verin:
+  --set secrets.values.KUTYAI_VERITABANI_URL=postgresql+asyncpg://...
+  --set arkauc.autoscaling.enabled=true --set arkauc.replicaCount=2
+CPU hedefi `arkauc.resources.requests.cpu` üzerinden yüzde olarak hesaplanır;
+bu istek boş bırakılırsa HPA ölçekleyemez.
+*/ -}}
+{{- if .Values.arkauc.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "kutyai.bilesenAdi" (dict "kok" $ "bilesen" "arka-uc") }}
+  namespace: {{ include "kutyai.namespace" . }}
+  labels:
+    {{- include "kutyai.etiketler" (dict "kok" $ "bilesen" "arka-uc") | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "kutyai.bilesenAdi" (dict "kok" $ "bilesen" "arka-uc") }}
+  minReplicas: {{ .Values.arkauc.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.arkauc.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.arkauc.autoscaling.targetCPUUtilizationPercentage }}
+  {{- with .Values.arkauc.autoscaling.behavior }}
+  behavior:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}

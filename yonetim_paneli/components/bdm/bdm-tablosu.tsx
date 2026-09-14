@@ -5,7 +5,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 
 import { tarihSaatBicimle } from "@/lib/bicim";
-import { BDM_DURUMU_ETIKETI, BDM_DURUMU_TONU } from "@/lib/etiketler";
+import { useDil } from "@/lib/dil";
+import { BDM_DURUMU_ANAHTARI, BDM_DURUMU_TONU } from "@/lib/etiketler";
 import {
   bdmBaslat,
   bdmDurdur,
@@ -45,6 +46,7 @@ export type BdmTablosuProps = {
 /** BDM listesi tablosu ve satır işlemleri (kopyala, çalıştır/durdur, sil). */
 export function BdmTablosu({ kayitlar, saglayicilar, surucu, yenile }: BdmTablosuProps) {
   const { showToast } = useToast();
+  const { t } = useDil();
   const [yonetici, setYonetici] = useState(false);
   const [islemdeId, setIslemdeId] = useState<number | null>(null);
   const [kopyalanan, setKopyalanan] = useState<BdmKaydi | null>(null);
@@ -63,14 +65,14 @@ export function BdmTablosu({ kayitlar, saglayicilar, surucu, yenile }: BdmTablos
     try {
       if (eylem === "baslat") {
         await bdmBaslat(bdm.id);
-        showToast(`${bdm.gorunen_ad} başlatıldı.`, "success");
+        showToast(t("bdm.bildirim.baslatildi", { ad: bdm.gorunen_ad }), "success");
       } else {
         await bdmDurdur(bdm.id);
-        showToast(`${bdm.gorunen_ad} durduruldu.`, "success");
+        showToast(t("bdm.bildirim.durduruldu", { ad: bdm.gorunen_ad }), "success");
       }
       yenile();
     } catch (hata) {
-      showToast(hata instanceof Error ? hata.message : "İşlem tamamlanamadı.", "danger");
+      showToast(hata instanceof Error ? hata.message : t("bdm.hata.islem"), "danger");
     } finally {
       setIslemdeId(null);
     }
@@ -78,19 +80,19 @@ export function BdmTablosu({ kayitlar, saglayicilar, surucu, yenile }: BdmTablos
 
   async function kopyala() {
     if (!kopyalanan) return;
-    const hata = zorunluHatasi(kopyaAdi, "Yeni ad");
+    const hata = zorunluHatasi(kopyaAdi, t("bdm.alan.yeni_ad"));
     setKopyaHatasi(hata);
     if (hata) return;
 
     setIslemdeId(kopyalanan.id);
     try {
       const yeni = await bdmKopyala(kopyalanan.id, kopyaAdi.trim());
-      showToast(`${yeni.gorunen_ad} kopyalandı.`, "success");
+      showToast(t("bdm.bildirim.kopyalandi", { ad: yeni.gorunen_ad }), "success");
       setKopyalanan(null);
       setKopyaAdi("");
       yenile();
     } catch (sebep) {
-      setKopyaHatasi(sebep instanceof Error ? sebep.message : "Kopyalama tamamlanamadı.");
+      setKopyaHatasi(sebep instanceof Error ? sebep.message : t("bdm.hata.kopyalama"));
     } finally {
       setIslemdeId(null);
     }
@@ -101,28 +103,31 @@ export function BdmTablosu({ kayitlar, saglayicilar, surucu, yenile }: BdmTablos
     setIslemdeId(silinecek.id);
     try {
       await bdmSil(silinecek.id);
-      showToast(`${silinecek.gorunen_ad} silindi.`, "success");
+      showToast(t("bdm.bildirim.silindi", { ad: silinecek.gorunen_ad }), "success");
       setSilinecek(null);
       yenile();
     } catch (sebep) {
-      setSilmeHatasi(sebep instanceof Error ? sebep.message : "Silme tamamlanamadı.");
+      setSilmeHatasi(sebep instanceof Error ? sebep.message : t("bdm.hata.silme"));
     } finally {
       setIslemdeId(null);
     }
   }
+
+  // Silme onayı: kayıt adı cümle içinde vurgulu kalır.
+  const silmeParcalari = t("bdm.sil.uyari").split("{ad}");
 
   return (
     <>
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Görünen ad</TableHead>
-            <TableHead>Sağlayıcı</TableHead>
-            <TableHead>Model</TableHead>
-            <TableHead>Durum</TableHead>
-            <TableHead>Yer</TableHead>
-            <TableHead>Güncellenme</TableHead>
-            <TableHead className="text-right">İşlemler</TableHead>
+            <TableHead>{t("bdm.alan.gorunen_ad")}</TableHead>
+            <TableHead>{t("bdm.alan.saglayici")}</TableHead>
+            <TableHead>{t("bdm.alan.model")}</TableHead>
+            <TableHead>{t("bdm.alan.durum")}</TableHead>
+            <TableHead>{t("bdm.alan.yer")}</TableHead>
+            <TableHead>{t("bdm.alan.guncellenme")}</TableHead>
+            <TableHead className="text-right">{t("bdm.alan.islemler")}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -147,10 +152,12 @@ export function BdmTablosu({ kayitlar, saglayicilar, surucu, yenile }: BdmTablos
                 {bdm.upstream_model || "—"}
               </TableCell>
               <TableCell>
-                <Badge tone={BDM_DURUMU_TONU[bdm.durum]}>{BDM_DURUMU_ETIKETI[bdm.durum]}</Badge>
+                <Badge tone={BDM_DURUMU_TONU[bdm.durum]}>
+                  {t(BDM_DURUMU_ANAHTARI[bdm.durum])}
+                </Badge>
               </TableCell>
               <TableCell>
-                <Badge tone="neutral">{bdm.yerel_mi ? "Yerel" : "Uzak"}</Badge>
+                <Badge tone="neutral">{bdm.yerel_mi ? t("bdm.yerel") : t("bdm.uzak")}</Badge>
               </TableCell>
               <TableCell className="text-sm text-neutral-500">
                 {tarihSaatBicimle(bdm.guncellenme)}
@@ -163,7 +170,7 @@ export function BdmTablosu({ kayitlar, saglayicilar, surucu, yenile }: BdmTablos
                   islemde={islemdeId === bdm.id}
                   onKopyala={() => {
                     setKopyalanan(bdm);
-                    setKopyaAdi(`${bdm.gorunen_ad} kopya`);
+                    setKopyaAdi(t("bdm.kopyala.varsayilan_ad", { ad: bdm.gorunen_ad }));
                     setKopyaHatasi(null);
                   }}
                   onDurum={(eylem) => void durumEylemi(bdm, eylem)}
@@ -181,24 +188,24 @@ export function BdmTablosu({ kayitlar, saglayicilar, surucu, yenile }: BdmTablos
       <Dialog
         open={kopyalanan !== null}
         onClose={() => setKopyalanan(null)}
-        title="BDM'yi kopyala"
+        title={t("bdm.kopyala.baslik")}
         description={
           kopyalanan
-            ? `${kopyalanan.gorunen_ad} ayarları yeni bir taslak kayıt olarak çoğaltılır.`
+            ? t("bdm.kopyala.aciklama", { ad: kopyalanan.gorunen_ad })
             : undefined
         }
         footer={
           <>
             <Button variant="secondary" onClick={() => setKopyalanan(null)}>
-              Vazgeç
+              {t("bdm.vazgec")}
             </Button>
             <Button loading={islemdeId === kopyalanan?.id} onClick={() => void kopyala()}>
-              Kopyala
+              {t("bdm.eylem.kopyala")}
             </Button>
           </>
         }
       >
-        <Field label="Yeni görünen ad" required error={kopyaHatasi}>
+        <Field label={t("bdm.alan.yeni_gorunen_ad")} required error={kopyaHatasi}>
           {(props) => (
             <Input
               {...props}
@@ -216,19 +223,19 @@ export function BdmTablosu({ kayitlar, saglayicilar, surucu, yenile }: BdmTablos
       <Dialog
         open={silinecek !== null}
         onClose={() => setSilinecek(null)}
-        title="BDM'yi sil"
-        description="Bu işlem geri alınamaz."
+        title={t("bdm.sil.baslik")}
+        description={t("bdm.sil.aciklama")}
         footer={
           <>
             <Button variant="secondary" onClick={() => setSilinecek(null)}>
-              Vazgeç
+              {t("bdm.vazgec")}
             </Button>
             <Button
               variant="danger"
               loading={islemdeId === silinecek?.id}
               onClick={() => void sil()}
             >
-              Kalıcı olarak sil
+              {t("bdm.sil.kalicilik")}
             </Button>
           </>
         }
@@ -236,9 +243,11 @@ export function BdmTablosu({ kayitlar, saglayicilar, surucu, yenile }: BdmTablos
         <div className="flex flex-col gap-3">
           {silmeHatasi ? <Alert tone="danger">{silmeHatasi}</Alert> : null}
           <p className="text-sm text-neutral-600">
-            <span className="font-medium text-neutral-900">{silinecek?.gorunen_ad}</span> kaydı
-            ve konteyner kaydı silinir. Bağlı konuşma veya kullanım kaydı varsa silme
-            reddedilir.
+            <span className="font-medium text-neutral-900">
+              {silmeParcalari[0]}
+              {silinecek?.gorunen_ad}
+            </span>
+            {silmeParcalari[1]}
           </p>
         </div>
       </Dialog>

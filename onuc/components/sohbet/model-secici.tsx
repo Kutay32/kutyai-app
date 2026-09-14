@@ -3,6 +3,7 @@
 import { useId } from "react";
 
 import { cn } from "@/lib/cn";
+import { useDil } from "@/lib/dil";
 import type { BdmOzet } from "@/lib/sohbet";
 
 export type ModelSeciciOzellikleri = {
@@ -21,11 +22,12 @@ export function ModelSecici({
   onSec,
 }: ModelSeciciOzellikleri) {
   const alanId = useId();
+  const { t } = useDil();
 
   return (
     <div className="flex min-w-0 items-center gap-2">
       <label htmlFor={alanId} className="text-[13px] font-medium whitespace-nowrap text-neutral-900">
-        Model
+        {t("sohbet.model.etiket")}
       </label>
       <select
         id={alanId}
@@ -40,7 +42,7 @@ export function ModelSecici({
       >
         {seciliId === null ? (
           <option value="" disabled>
-            Model seçin
+            {t("sohbet.model.secin")}
           </option>
         ) : null}
         {modeller.map((model) => (

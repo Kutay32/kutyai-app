@@ -1,0 +1,106 @@
+{{- /*
+yonetim_paneli Deployment (spec §11). Compose karşılığı: `yonetim_paneli` servisi.
+Aynı port (3001), aynı sağlık kontrolü (kök yol "/"), aynı ortam değişkenleri:
+  NEXT_PUBLIC_API_URL = tarayıcıdan görünen API adresi (browserApiUrl)
+  PORT                = 3001
+Panel imajı `basePath` ile derlenmediği için ayrı alan adı önerilir
+(bkz. ingress değerleri ve dagitim/nginx.conf notu).
+*/ -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kutyai.bilesenAdi" (dict "kok" $ "bilesen" "panel") }}
+  namespace: {{ include "kutyai.namespace" . }}
+  labels:
+    {{- include "kutyai.etiketler" (dict "kok" $ "bilesen" "panel") | nindent 4 }}
+spec:
+  replicas: {{ .Values.panel.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "kutyai.seciciler" (dict "kok" $ "bilesen" "panel") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "kutyai.etiketler" (dict "kok" $ "bilesen" "panel") | nindent 8 }}
+      {{- with .Values.panel.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- if or .Values.serviceAccount.create .Values.serviceAccount.name }}
+      serviceAccountName: {{ include "kutyai.serviceAccountAd" . }}
+      {{- end }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountToken }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- if .Values.panel.securityContext.runAsNonRoot }}
+        runAsNonRoot: true
+        {{- end }}
+        {{- with .Values.panel.securityContext.runAsUser }}
+        runAsUser: {{ . }}
+        {{- end }}
+        {{- with .Values.panel.securityContext.runAsGroup }}
+        runAsGroup: {{ . }}
+        {{- end }}
+        {{- with .Values.panel.securityContext.fsGroup }}
+        fsGroup: {{ . }}
+        {{- end }}
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: panel
+          image: {{ include "kutyai.imaj" (dict "repository" .Values.panel.image.repository "tag" .Values.panel.image.tag "appVersion" .Chart.AppVersion) }}
+          imagePullPolicy: {{ .Values.panel.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.panel.containerPort }}
+              protocol: TCP
+          env:
+            - name: NEXT_PUBLIC_API_URL
+              value: {{ default .Values.browserApiUrl .Values.panel.browserApiUrl | quote }}
+            - name: PORT
+              value: {{ .Values.panel.containerPort | quote }}
+            {{- with .Values.panel.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.panel.livenessProbe.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.panel.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.panel.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.panel.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.panel.livenessProbe.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.panel.readinessProbe.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.panel.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.panel.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.panel.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.panel.readinessProbe.failureThreshold }}
+          resources:
+            {{- toYaml .Values.panel.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            {{- if .Values.panel.securityContext.dropAllCapabilities }}
+            capabilities:
+              drop:
+                - ALL
+            {{- end }}
+            readOnlyRootFilesystem: {{ .Values.panel.securityContext.readOnlyRootFilesystem }}
+      {{- with .Values.panel.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.panel.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.panel.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

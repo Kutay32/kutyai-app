@@ -3,8 +3,9 @@
 import { ScrollText } from "lucide-react";
 
 import { tarihSaatBicimle } from "@/lib/bicim";
+import { useDil } from "@/lib/dil";
 import {
-  AYRINTI_ETIKETI,
+  AYRINTI_ANAHTARI,
   ayrintiDegeri,
   type IslemKaydi,
 } from "@/lib/islem-kayitlari";
@@ -28,50 +29,55 @@ export function AyrintiCekmecesi({
   kayit: IslemKaydi | null;
   onKapat: () => void;
 }) {
+  const { t } = useDil();
   const satirlar = Object.entries(kayit?.ayrinti ?? {});
 
   return (
     <Drawer
       open={kayit !== null}
       onClose={onKapat}
-      title={kayit?.eylem ?? "İşlem kaydı"}
+      title={kayit?.eylem ?? t("islem.kayit")}
       description={kayit ? tarihSaatBicimle(kayit.olusturulma) : undefined}
     >
       {kayit ? (
         <div className="flex flex-col gap-6">
           <dl className="grid gap-4">
-            <Cift etiket="Kayıt no" deger={String(kayit.id)} />
-            <Cift etiket="Kullanıcı" deger={kayit.kullanici_eposta ?? "—"} />
+            <Cift etiket={t("islem.alan.kayit_no")} deger={String(kayit.id)} />
             <Cift
-              etiket="Hedef"
+              etiket={t("islem.alan.kullanici")}
+              deger={kayit.kullanici_eposta ?? "—"}
+            />
+            <Cift
+              etiket={t("islem.alan.hedef")}
               deger={kayit.hedef_tur ? `${kayit.hedef_tur}${kayit.hedef_id ? ` #${kayit.hedef_id}` : ""}` : "—"}
             />
-            <Cift etiket="IP adresi" deger={kayit.ip || "—"} />
+            <Cift etiket={t("islem.alan.ip")} deger={kayit.ip || "—"} />
           </dl>
 
           <div className="flex flex-col gap-3">
-            <h3 className="text-sm font-semibold text-neutral-900">Ayrıntı</h3>
+            <h3 className="text-sm font-semibold text-neutral-900">{t("islem.ayrinti.baslik")}</h3>
             {satirlar.length > 0 ? (
               <dl className="flex flex-col gap-3 rounded-lg border border-neutral-200 p-4">
-                {satirlar.map(([anahtar, deger]) => (
-                  <Cift
-                    key={anahtar}
-                    etiket={AYRINTI_ETIKETI[anahtar] ?? anahtar}
-                    deger={ayrintiDegeri(deger)}
-                  />
-                ))}
+                {satirlar.map(([anahtar, deger]) => {
+                  const anahtarCeviri = AYRINTI_ANAHTARI[anahtar];
+                  return (
+                    <Cift
+                      key={anahtar}
+                      etiket={anahtarCeviri ? t(anahtarCeviri) : anahtar}
+                      deger={ayrintiDegeri(deger)}
+                    />
+                  );
+                })}
               </dl>
             ) : (
-              <p className="text-sm text-neutral-500">
-                Bu kayıt için ek ayrıntı yazılmamış.
-              </p>
+              <p className="text-sm text-neutral-500">{t("islem.ayrinti.bos")}</p>
             )}
           </div>
         </div>
       ) : (
         <p className="flex items-center gap-2 text-sm text-neutral-500">
           <ScrollText aria-hidden className="size-4" />
-          Kayıt seçilmedi.
+          {t("islem.ayrinti.secili_degil")}
         </p>
       )}
     </Drawer>

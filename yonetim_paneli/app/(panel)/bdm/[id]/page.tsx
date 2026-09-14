@@ -7,7 +7,8 @@ import { useParams } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 
 import { bdmGetir, surucuDurumuGetir } from "@/lib/bdm";
-import { BDM_DURUMU_ETIKETI, BDM_DURUMU_TONU } from "@/lib/etiketler";
+import { useDil } from "@/lib/dil";
+import { BDM_DURUMU_ANAHTARI, BDM_DURUMU_TONU } from "@/lib/etiketler";
 import { useUzakVeri } from "@/lib/kancalar";
 import { DugmeBaglantisi } from "@/components/bdm/dugme-baglantisi";
 import { GpuSeridi } from "@/components/bdm/gpu-seridi";
@@ -20,13 +21,14 @@ import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs } from "@/components/ui/tabs";
+import type { SozlukAnahtari } from "@/lib/sozluk";
 
-const SEKMELER = [
-  { value: "genel", label: "Genel" },
-  { value: "hazirlama", label: "Hazırlama" },
-  { value: "calisma", label: "Çalışma" },
-  { value: "gunlukler", label: "Günlükler" },
-  { value: "yonlendirme", label: "Yönlendirme" },
+const SEKMELER: { value: string; anahtar: SozlukAnahtari }[] = [
+  { value: "genel", anahtar: "bdm.sekme.genel" },
+  { value: "hazirlama", anahtar: "bdm.sekme.hazirlama" },
+  { value: "calisma", anahtar: "bdm.sekme.calisma" },
+  { value: "gunlukler", anahtar: "bdm.sekme.gunlukler" },
+  { value: "yonlendirme", anahtar: "bdm.sekme.yonlendirme" },
 ];
 
 /** BDM ayrıntısı: Genel · Hazırlama · Çalışma · Günlükler · Yönlendirme (§12.2). */
@@ -34,16 +36,17 @@ export default function BdmDetaySayfasi() {
   const parametreler = useParams<{ id: string }>();
   const id = Number(parametreler.id);
   const [sekme, setSekme] = useState("genel");
+  const { t } = useDil();
 
   const bdm = useUzakVeri(() => bdmGetir(id), [id]);
   const surucu = useUzakVeri(surucuDurumuGetir, []);
 
   if (!Number.isInteger(id) || id <= 0) {
     return (
-      <Alert tone="danger" title="Geçersiz kayıt">
-        <p>Adresteki BDM kimliği geçersiz.</p>
+      <Alert tone="danger" title={t("bdm.gecersiz.baslik")}>
+        <p>{t("bdm.gecersiz.aciklama")}</p>
         <DugmeBaglantisi href="/bdm" variant="secondary" className="mt-2">
-          Listeye dön
+          {t("bdm.listeye_don")}
         </DugmeBaglantisi>
       </Alert>
     );
@@ -62,13 +65,13 @@ export default function BdmDetaySayfasi() {
   if (bdm.hata || !bdm.veri) {
     return (
       <div className="flex flex-col gap-4">
-        <Alert tone="danger" title="BDM yüklenemedi">
-          <p>{bdm.hata ?? "Kayıt bulunamadı."}</p>
+        <Alert tone="danger" title={t("bdm.yuklenemedi")}>
+          <p>{bdm.hata ?? t("api.bulunamadi")}</p>
         </Alert>
         <div className="flex gap-2">
           <DugmeBaglantisi href="/bdm" variant="secondary">
             <ArrowLeft aria-hidden className="size-4" />
-            Listeye dön
+            {t("bdm.listeye_don")}
           </DugmeBaglantisi>
         </div>
       </div>
@@ -85,16 +88,19 @@ export default function BdmDetaySayfasi() {
             <h1 className="text-xl font-semibold tracking-tight text-neutral-900">
               {kayit.gorunen_ad}
             </h1>
-            <Badge tone={BDM_DURUMU_TONU[kayit.durum]}>{BDM_DURUMU_ETIKETI[kayit.durum]}</Badge>
-            <Badge tone="neutral">{kayit.yerel_mi ? "Yerel" : "Uzak"}</Badge>
+            <Badge tone={BDM_DURUMU_TONU[kayit.durum]}>
+              {t(BDM_DURUMU_ANAHTARI[kayit.durum])}
+            </Badge>
+            <Badge tone="neutral">{kayit.yerel_mi ? t("bdm.yerel") : t("bdm.uzak")}</Badge>
           </div>
           <p className="font-mono text-xs text-neutral-500">
-            {kayit.slug} · {kayit.temel_url || "adres tanımsız"} · {kayit.upstream_model || "model tanımsız"}
+            {kayit.slug} · {kayit.temel_url || t("bdm.adres_tanimsiz")} ·{" "}
+            {kayit.upstream_model || t("bdm.model_tanimsiz")}
           </p>
         </div>
         <DugmeBaglantisi href="/bdm" variant="secondary">
           <ArrowLeft aria-hidden className="size-4" />
-          Listeye dön
+          {t("bdm.listeye_don")}
         </DugmeBaglantisi>
       </header>
 
@@ -105,7 +111,11 @@ export default function BdmDetaySayfasi() {
         yenile={surucu.yenile}
       />
 
-      <Tabs items={SEKMELER} value={sekme} onValueChange={setSekme} />
+      <Tabs
+        items={SEKMELER.map((oge) => ({ value: oge.value, label: t(oge.anahtar) }))}
+        value={sekme}
+        onValueChange={setSekme}
+      />
 
       {sekme === "genel" ? (
         <SekmeGenel key={kayit.id} bdm={kayit} onGuncellendi={() => bdm.yenile()} />

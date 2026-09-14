@@ -9,6 +9,7 @@
 
 import { ApiHatasi, API_TABANI, istek } from "@/lib/api";
 import { oturumOku } from "@/lib/oturum";
+import { aktifDil, ceviri } from "@/lib/sozluk";
 import type { Bdm, BdmDurumu, Saglayici, SaglayiciBilgisi, SurucuDurumu } from "@/lib/tipler";
 
 /** `Bdm.konteyner` + §11 yönlendirme (`yol`) ve konteyner kimliği alanları. */
@@ -98,7 +99,7 @@ export function gpuGerekir(saglayici: Saglayici): boolean {
 }
 
 /**
- * GPU gerektiren sağlayıcıda GPU yoksa gösterilecek Türkçe gerekçe; sorun yoksa `null`.
+ * GPU gerektiren sağlayıcıda GPU yoksa gösterilecek gerekçe; sorun yoksa `null`.
  * Arka uç `503 surucu_yok` ile aynı gerekçeyi kullanır (§10).
  */
 export function gpuEngeli(
@@ -106,10 +107,7 @@ export function gpuEngeli(
   surucu: SurucuDurumu | null | undefined,
 ): string | null {
   if (!gpuGerekir(saglayici) || !surucu || surucu.gpu) return null;
-  return (
-    surucu.mesaj.trim() ||
-    "GPU çalışma zamanı bulunamadı; bu sağlayıcı GPU olmadan başlatılamaz."
-  );
+  return surucu.mesaj.trim() || ceviri("bdm.hata.gpu_yok", aktifDil());
 }
 
 /** Durum makinesine göre başlatma yapılabilir mi (§11). */
@@ -139,7 +137,7 @@ export function bdmListesi(arama?: string): Promise<BdmKaydi[]> {
 export async function bdmGetir(id: number): Promise<BdmKaydi> {
   const kayitlar = await bdmListesi();
   const bulunan = kayitlar.find((kayit) => kayit.id === id);
-  if (!bulunan) throw new ApiHatasi(404, "bulunamadi", "BDM kaydı bulunamadı.");
+  if (!bulunan) throw new ApiHatasi(404, "bulunamadi", ceviri("bdm.hata.kayit_yok", aktifDil()));
   return bulunan;
 }
 
@@ -238,7 +236,7 @@ function akisHatasi(govde: unknown): ApiHatasi {
   const mesaj =
     typeof hata?.mesaj === "string" && hata.mesaj.trim()
       ? hata.mesaj
-      : "Akış sırasında beklenmeyen bir hata oluştu.";
+      : ceviri("bdm.hata.akis", aktifDil());
   return new ApiHatasi(0, kod, mesaj, hata?.ayrinti);
 }
 
@@ -260,7 +258,7 @@ function cerceveyiCoz(ham: string): SseCercevesi | null {
   }
 }
 
-/** HTTP hata yanıtını Türkçe mesajlı ApiHatası'na çevirir. */
+/** HTTP hata yanıtını aktif dilde mesajlı ApiHatası'na çevirir. */
 async function akisYanitHatasi(cevap: Response): Promise<ApiHatasi> {
   let govde: unknown = null;
   try {
@@ -269,7 +267,11 @@ async function akisYanitHatasi(cevap: Response): Promise<ApiHatasi> {
     govde = null;
   }
   if (govde === null) {
-    return new ApiHatasi(cevap.status, "akis_hatasi", `Akış başlatılamadı (HTTP ${cevap.status}).`);
+    return new ApiHatasi(
+      cevap.status,
+      "akis_hatasi",
+      ceviri("bdm.hata.akis_baslatilamadi", aktifDil(), { durum: cevap.status }),
+    );
   }
   const hata = akisHatasi(govde);
   return new ApiHatasi(cevap.status, hata.kod, hata.message, hata.ayrinti);
@@ -277,7 +279,7 @@ async function akisYanitHatasi(cevap: Response): Promise<ApiHatasi> {
 
 /**
  * Yetkilendirilmiş SSE akışını çerçeve çerçeve okur.
- * `event: hata` çerçevesi Türkçe mesajlı `ApiHatasi` olarak fırlatılır (§1, §9).
+ * `event: hata` çerçevesi aktif dilde mesajlı `ApiHatasi` olarak fırlatılır (§1, §9).
  */
 async function* sseAkisi(
   yol: string,
@@ -297,16 +299,12 @@ async function* sseAkisi(
     });
   } catch (hata) {
     if (hata instanceof Error && hata.name === "AbortError") throw hata;
-    throw new ApiHatasi(
-      0,
-      "baglanti_hatasi",
-      "Sunucuya ulaşılamadı. API adresini ve bağlantınızı kontrol edin.",
-    );
+    throw new ApiHatasi(0, "baglanti_hatasi", ceviri("api.baglanti_hatasi", aktifDil()));
   }
 
   if (!cevap.ok) throw await akisYanitHatasi(cevap);
   if (!cevap.body) {
-    throw new ApiHatasi(0, "akis_yok", "Sunucu akış gövdesi döndürmedi.");
+    throw new ApiHatasi(0, "akis_yok", ceviri("bdm.hata.akis_govdesi", aktifDil()));
   }
 
   const okuyucu = cevap.body.getReader();

@@ -1,6 +1,7 @@
 /** `kaynak/API.md` §12 konuşma kayıtları istemcisi. */
 
 import { dosyaIndir, istek } from "@/lib/api";
+import type { SozlukAnahtari } from "@/lib/sozluk";
 import type { LogKonusmasi, Sayfa } from "@/lib/tipler";
 
 export const VARSAYILAN_LOG_SAYFA_BOYUTU = 25;
@@ -67,11 +68,12 @@ export type LogDetayi = {
   mesajlar: LogMesaji[];
 };
 
-export const MESAJ_ROL_ETIKETI: Record<LogMesajRolu, string> = {
-  kullanici: "Kullanıcı",
-  asistan: "Asistan",
-  sistem: "Sistem",
-  arac: "Araç",
+/** Mesaj rolü etiketleri katalogdan gelir (spec §10.2); bunlar anahtar eşlemesidir. */
+export const MESAJ_ROL_ANAHTARI: Record<LogMesajRolu, SozlukAnahtari> = {
+  kullanici: "kayit.rol.kullanici",
+  asistan: "kayit.rol.asistan",
+  sistem: "kayit.rol.sistem",
+  arac: "kayit.rol.arac",
 };
 
 /** Yerel günün başlangıç/son anını API'nin beklediği UTC ISO damgasına çevirir. */

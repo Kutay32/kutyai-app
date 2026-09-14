@@ -1,4 +1,5 @@
 import { oturumAl, oturumKaydet, temizle } from "./oturum";
+import { aktifCeviri } from "./tarayici-dil";
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
 
@@ -50,7 +51,7 @@ async function hataUret(yanit: Response): Promise<ApiHatasi> {
   return new ApiHatasi(
     yanit.status,
     hata?.kod ?? durumKodu(yanit.status),
-    hata?.mesaj ?? "İstek tamamlanamadı.",
+    hata?.mesaj ?? aktifCeviri("genel.hata.istek"),
     hata?.ayrinti,
   );
 }
@@ -115,7 +116,7 @@ export async function apiFetch<T>(yol: string, secenekler: IstekSecenekleri = {}
     try {
       return await fetch(`${API_URL}${yol}`, { ...geriKalan, headers: sonBasliklar, body: sonGovde });
     } catch {
-      throw new ApiHatasi(0, "baglanti_hatasi", "Sunucuya ulaşılamadı. Bağlantınızı denetleyin.");
+      throw new ApiHatasi(0, "baglanti_hatasi", aktifCeviri("genel.hata.baglanti"));
     }
   };
 

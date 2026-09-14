@@ -1,4 +1,5 @@
 import { kullaniciOku, oturumKaydet, oturumOku, oturumTemizle } from "@/lib/oturum";
+import { aktifDil, ceviri, type SozlukAnahtari } from "@/lib/sozluk";
 
 export const API_TABANI = (
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1"
@@ -32,24 +33,25 @@ export class ApiHatasi extends Error {
   }
 }
 
-const VARSAYILAN_MESAJLAR: Record<number, string> = {
-  400: "Gönderilen bilgiler geçersiz.",
-  401: "Oturum bilgisi geçersiz. Lütfen tekrar giriş yapın.",
-  403: "Bu işlem için yetkiniz yok.",
-  404: "Kayıt bulunamadı.",
-  409: "Bu kayıt zaten mevcut.",
-  422: "Gönderilen alanlar doğrulanamadı.",
-  429: "Çok fazla istek gönderdiniz. Lütfen biraz bekleyin.",
-  500: "Sunucuda beklenmeyen bir hata oluştu.",
-  502: "Model sağlayıcısına ulaşılamadı.",
-  503: "Servis şu anda kullanılamıyor.",
+/** Durum koduna göre katalog anahtarı (spec §10.2); dil çağrı anında çözülür. */
+const VARSAYILAN_ANAHTARLAR: Record<number, SozlukAnahtari> = {
+  400: "api.gecersiz_istek",
+  401: "api.oturum_gecersiz",
+  403: "api.yetki_yok",
+  404: "api.bulunamadi",
+  409: "api.cakisma",
+  422: "api.dogrulama_hatasi",
+  429: "api.oran_siniri",
+  500: "api.sunucu_hatasi",
+  502: "api.saglayici_hatasi",
+  503: "api.kullanilamiyor",
 };
 
-/** Kullanıcıya gösterilecek Türkçe hata metnini üretir. */
+/** Kullanıcıya gösterilecek hata metnini aktif dilde üretir. */
 export function hataMesaji(hata: unknown): string {
   if (hata instanceof ApiHatasi) return hata.message;
   if (hata instanceof Error && hata.message.trim()) return hata.message;
-  return "Beklenmeyen bir hata oluştu.";
+  return ceviri("api.beklenmeyen", aktifDil());
 }
 
 /** Hata zarfını `{ hata: { kod, mesaj, ayrinti } }` biçiminden çözer. */
@@ -60,7 +62,7 @@ function zarfCoz(govde: unknown, durum: number): ApiHatasi {
   const mesaj =
     typeof hata?.mesaj === "string" && hata.mesaj.trim()
       ? hata.mesaj
-      : (VARSAYILAN_MESAJLAR[durum] ?? "İstek tamamlanamadı.");
+      : ceviri(VARSAYILAN_ANAHTARLAR[durum] ?? "api.istek_tamamlanamadi", aktifDil());
   return new ApiHatasi(durum, kod, mesaj, hata?.ayrinti);
 }
 
@@ -81,11 +83,7 @@ async function hamIstek(yol: string, secenekler: IstekSecenekleri): Promise<Resp
     });
   } catch (hata) {
     if (hata instanceof Error && hata.name === "AbortError") throw hata;
-    throw new ApiHatasi(
-      0,
-      "baglanti_hatasi",
-      "Sunucuya ulaşılamadı. API adresini ve bağlantınızı kontrol edin.",
-    );
+    throw new ApiHatasi(0, "baglanti_hatasi", ceviri("api.baglanti_hatasi", aktifDil()));
   }
 }
 

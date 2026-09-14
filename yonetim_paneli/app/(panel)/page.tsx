@@ -4,6 +4,7 @@ import { Activity, Cpu, MessageSquare, RefreshCw } from "lucide-react";
 
 import { istek } from "@/lib/api";
 import { gecikmeBicimle, sayiBicimle, tarihSaatBicimle } from "@/lib/bicim";
+import { useDil } from "@/lib/dil";
 import { useUzakVeri } from "@/lib/kancalar";
 import type {
   KullanimOzeti,
@@ -46,6 +47,8 @@ function BlokDurumu({
   yenile: () => void;
   children: React.ReactNode;
 }) {
+  const { t } = useDil();
+
   if (yukleniyor) {
     return (
       <div className="flex flex-col gap-2 p-4">
@@ -59,11 +62,11 @@ function BlokDurumu({
   if (hata) {
     return (
       <div className="p-4">
-        <Alert tone="danger" title="Veri alınamadı">
+        <Alert tone="danger" title={t("kontrol.hata.baslik")}>
           <p>{hata}</p>
           <Button variant="secondary" size="sm" className="mt-2" onClick={yenile}>
             <RefreshCw aria-hidden className="size-4" />
-            Yeniden dene
+            {t("genel.yeniden_dene")}
           </Button>
         </Alert>
       </div>
@@ -74,6 +77,7 @@ function BlokDurumu({
 }
 
 function SistemDurumuKarti() {
+  const { t } = useDil();
   const { veri, yukleniyor, hata, yenile } = useUzakVeri<SaglikYaniti>(
     () => istek<SaglikYaniti>("/saglik", { jeton: null }),
     [],
@@ -84,26 +88,28 @@ function SistemDurumuKarti() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Activity aria-hidden className="size-4 text-neutral-500" />
-          Sistem Durumu
+          {t("kontrol.sistem.baslik")}
         </CardTitle>
-        <CardDescription>API sunucusunun canlılık bilgisi.</CardDescription>
+        <CardDescription>{t("kontrol.sistem.aciklama")}</CardDescription>
       </CardHeader>
       <BlokDurumu yukleniyor={yukleniyor} hata={hata} yenile={yenile}>
         {veri ? (
           <CardContent className="flex flex-col gap-3">
             <div className="flex items-center gap-2">
               <Badge tone={veri.durum === "ayakta" ? "success" : "warning"}>
-                {veri.durum === "ayakta" ? "Ayakta" : veri.durum}
+                {veri.durum === "ayakta" ? t("kontrol.sistem.ayakta") : veri.durum}
               </Badge>
-              <span className="text-sm text-neutral-500">Sürüm {veri.surum}</span>
+              <span className="text-sm text-neutral-500">
+                {t("kontrol.sistem.surum", { surum: veri.surum })}
+              </span>
             </div>
             <dl className="grid gap-1 text-sm">
               <div className="flex justify-between gap-4">
-                <dt className="text-neutral-500">Ortam</dt>
+                <dt className="text-neutral-500">{t("kontrol.sistem.ortam")}</dt>
                 <dd className="text-neutral-900">{veri.ortam}</dd>
               </div>
               <div className="flex justify-between gap-4">
-                <dt className="text-neutral-500">Sunucu zamanı</dt>
+                <dt className="text-neutral-500">{t("kontrol.sistem.zaman")}</dt>
                 <dd className="text-neutral-900">{tarihSaatBicimle(veri.zaman)}</dd>
               </div>
             </dl>
@@ -115,6 +121,7 @@ function SistemDurumuKarti() {
 }
 
 function SurucuDurumuKarti() {
+  const { t } = useDil();
   const { veri, yukleniyor, hata, yenile } = useUzakVeri<SurucuDurumu>(() =>
     istek<SurucuDurumu>("/bdm/yonetim/surucu/durum"),
   );
@@ -124,21 +131,27 @@ function SurucuDurumuKarti() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Cpu aria-hidden className="size-4 text-neutral-500" />
-          Sürücü ve GPU
+          {t("kontrol.surucu.baslik")}
         </CardTitle>
-        <CardDescription>Konteyner çalışma zamanı ve hızlandırıcı durumu.</CardDescription>
+        <CardDescription>{t("kontrol.surucu.aciklama")}</CardDescription>
       </CardHeader>
       <BlokDurumu yukleniyor={yukleniyor} hata={hata} yenile={yenile}>
         {veri ? (
           <CardContent className="flex flex-col gap-3">
             <div className="flex flex-wrap items-center gap-2">
               <Badge tone={veri.docker ? "success" : "danger"}>
-                Docker {veri.docker ? "hazır" : "yok"}
+                {t("kontrol.surucu.docker", {
+                  durum: veri.docker ? t("genel.hazir") : t("genel.yok"),
+                })}
               </Badge>
               <Badge tone={veri.gpu ? "success" : "warning"}>
-                GPU {veri.gpu ? "hazır" : "yok"}
+                {t("kontrol.surucu.gpu", {
+                  durum: veri.gpu ? t("genel.hazir") : t("genel.yok"),
+                })}
               </Badge>
-              <span className="text-sm text-neutral-500">Sürücü: {veri.surucu}</span>
+              <span className="text-sm text-neutral-500">
+                {t("kontrol.surucu.surucu", { surucu: veri.surucu })}
+              </span>
             </div>
 
             {veri.gpu && veri.gpu_listesi.length > 0 ? (
@@ -152,17 +165,14 @@ function SurucuDurumuKarti() {
             {veri.mesaj ? <p className="text-sm text-neutral-600">{veri.mesaj}</p> : null}
 
             {!veri.docker ? (
-              <Alert tone="warning" title="Docker bulunamadı">
-                Docker çalışma zamanı olmadan yerel konteyner modelleri
-                (Ollama, vLLM, TGI) başlatılamaz.
+              <Alert tone="warning" title={t("kontrol.surucu.docker_yok.baslik")}>
+                {t("kontrol.surucu.docker_yok.metin")}
               </Alert>
             ) : null}
 
             {!veri.gpu ? (
-              <Alert tone="warning" title="GPU bulunamadı">
-                Bu sunucuda GPU yok; vLLM ve TGI gibi GPU gerektiren modeller
-                başlatılamaz. Ollama gibi CPU uyumlu bir sağlayıcı seçin veya GPU
-                çalışma zamanını kurun.
+              <Alert tone="warning" title={t("kontrol.surucu.gpu_yok.baslik")}>
+                {t("kontrol.surucu.gpu_yok.metin")}
               </Alert>
             ) : null}
           </CardContent>
@@ -173,6 +183,7 @@ function SurucuDurumuKarti() {
 }
 
 function KullanimOzetiKarti() {
+  const { t } = useDil();
   const { veri, yukleniyor, hata, yenile } = useUzakVeri<KullanimOzeti>(() =>
     istek<KullanimOzeti>("/kullanim/ozet?gun=30"),
   );
@@ -180,18 +191,33 @@ function KullanimOzetiKarti() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Kullanım Özeti</CardTitle>
-        <CardDescription>Son 30 günün toplu kullanım değerleri.</CardDescription>
+        <CardTitle>{t("kontrol.kullanim.baslik")}</CardTitle>
+        <CardDescription>{t("kontrol.kullanim.aciklama")}</CardDescription>
       </CardHeader>
       <BlokDurumu yukleniyor={yukleniyor} hata={hata} yenile={yenile}>
         {veri ? (
           <CardContent className="grid gap-3 md:grid-cols-3">
-            <StatCard label="Toplam istek" value={sayiBicimle(veri.toplam_istek)} />
-            <StatCard label="Toplam token" value={sayiBicimle(veri.toplam_token)} />
-            <StatCard label="Ortalama gecikme" value={gecikmeBicimle(veri.ortalama_gecikme_ms)} />
-            <StatCard label="Başarılı" value={sayiBicimle(veri.basarili)} />
-            <StatCard label="Hatalı" value={sayiBicimle(veri.hatali)} />
-            <StatCard label="Kota aşımı" value={sayiBicimle(veri.kota_asimi)} />
+            <StatCard
+              label={t("kontrol.kullanim.toplam_istek")}
+              value={sayiBicimle(veri.toplam_istek)}
+            />
+            <StatCard
+              label={t("kontrol.kullanim.toplam_token")}
+              value={sayiBicimle(veri.toplam_token)}
+            />
+            <StatCard
+              label={t("kontrol.kullanim.ortalama_gecikme")}
+              value={gecikmeBicimle(veri.ortalama_gecikme_ms)}
+            />
+            <StatCard
+              label={t("kontrol.kullanim.basarili")}
+              value={sayiBicimle(veri.basarili)}
+            />
+            <StatCard label={t("kontrol.kullanim.hatali")} value={sayiBicimle(veri.hatali)} />
+            <StatCard
+              label={t("kontrol.kullanim.kota_asimi")}
+              value={sayiBicimle(veri.kota_asimi)}
+            />
           </CardContent>
         ) : null}
       </BlokDurumu>
@@ -200,6 +226,7 @@ function KullanimOzetiKarti() {
 }
 
 function SonKonusmalarKarti() {
+  const { t } = useDil();
   const { veri, yukleniyor, hata, yenile } = useUzakVeri<Sayfa<LogKonusmasi>>(() =>
     istek<Sayfa<LogKonusmasi>>("/loglar/konusmalar?boyut=5"),
   );
@@ -209,9 +236,9 @@ function SonKonusmalarKarti() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <MessageSquare aria-hidden className="size-4 text-neutral-500" />
-          Son Konuşmalar
+          {t("kontrol.konusmalar.baslik")}
         </CardTitle>
-        <CardDescription>En güncel beş konuşma kaydı.</CardDescription>
+        <CardDescription>{t("kontrol.konusmalar.aciklama")}</CardDescription>
       </CardHeader>
       <BlokDurumu yukleniyor={yukleniyor} hata={hata} yenile={yenile}>
         {veri ? (
@@ -220,18 +247,18 @@ function SonKonusmalarKarti() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Başlık</TableHead>
-                    <TableHead>Kullanıcı</TableHead>
-                    <TableHead>Model</TableHead>
-                    <TableHead>Mesaj</TableHead>
-                    <TableHead>Tarih</TableHead>
+                    <TableHead>{t("kontrol.tablo.baslik")}</TableHead>
+                    <TableHead>{t("kontrol.tablo.kullanici")}</TableHead>
+                    <TableHead>{t("kontrol.tablo.model")}</TableHead>
+                    <TableHead>{t("kontrol.tablo.mesaj")}</TableHead>
+                    <TableHead>{t("kontrol.tablo.tarih")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {veri.kayitlar.map((kayit) => (
                     <TableRow key={kayit.id}>
                       <TableCell className="font-medium text-neutral-900">
-                        {kayit.baslik || "Başlıksız konuşma"}
+                        {kayit.baslik || t("kontrol.konusmalar.basliksiz")}
                       </TableCell>
                       <TableCell>{kayit.kullanici_eposta ?? "—"}</TableCell>
                       <TableCell>{kayit.bdm_ad}</TableCell>
@@ -246,8 +273,8 @@ function SonKonusmalarKarti() {
             <CardContent>
               <EmptyState
                 icon={<MessageSquare aria-hidden className="size-5" />}
-                title="Henüz konuşma yok"
-                description="Kullanıcılar sohbet etmeye başladığında kayıtlar burada listelenir."
+                title={t("kontrol.konusmalar.bos.baslik")}
+                description={t("kontrol.konusmalar.bos.metin")}
               />
             </CardContent>
           )
@@ -258,15 +285,15 @@ function SonKonusmalarKarti() {
 }
 
 export default function KontrolPaneliSayfasi() {
+  const { t } = useDil();
+
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-1">
         <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">
-          Kontrol Paneli
+          {t("menu.kontrol")}
         </h1>
-        <p className="text-sm text-neutral-500">
-          Platformun genel durumu, kullanım değerleri ve son konuşmalar.
-        </p>
+        <p className="text-sm text-neutral-500">{t("kontrol.aciklama")}</p>
       </header>
 
       <div className="grid gap-4 md:grid-cols-2">

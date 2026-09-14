@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Search, ScrollText, X } from "lucide-react";
 
 import { tarihSaatBicimle } from "@/lib/bicim";
+import { useDil } from "@/lib/dil";
 import {
   BASLANGIC_ISLEM_FILTRESI,
   ISLEM_SAYFA_BOYUTLARI,
@@ -74,18 +75,19 @@ function IslemFiltreCubugu({
   kullanicilar: Kullanici[] | null;
   onUygula: (filtre: IslemFiltresi) => void;
 }) {
+  const { t } = useDil();
   const [taslak, setTaslak] = useState(filtre);
 
   return (
     <form
-      aria-label="İşlem kaydı filtreleri"
+      aria-label={t("islem.filtre.aria")}
       className="grid gap-4 rounded-2xl border border-neutral-200 bg-white p-4 md:grid-cols-4"
       onSubmit={(olay) => {
         olay.preventDefault();
         onUygula({ ...taslak, sayfa: 1 });
       }}
     >
-      <Field label="Eylem" hint="Tam eşleşme; ör. kullanici.guncelle">
+      <Field label={t("islem.filtre.eylem")} hint={t("islem.filtre.eylem.ipucu")}>
         {({ id, ...erisim }) => (
           <>
             <Input
@@ -107,7 +109,7 @@ function IslemFiltreCubugu({
       </Field>
 
       {kullanicilar ? (
-        <Field label="Kullanıcı">
+        <Field label={t("islem.filtre.kullanici")}>
           {({ id, ...erisim }) => (
             <Select
               id={id}
@@ -120,7 +122,7 @@ function IslemFiltreCubugu({
                 }))
               }
             >
-              <option value="">Tüm kullanıcılar</option>
+              <option value="">{t("islem.filtre.tum_kullanicilar")}</option>
               {kullanicilar.map((kullanici) => (
                 <option key={kullanici.id} value={kullanici.id}>
                   {kullanici.eposta}
@@ -131,8 +133,8 @@ function IslemFiltreCubugu({
         </Field>
       ) : (
         <Field
-          label="Kullanıcı kimliği"
-          hint="Kullanıcı listesi yalnız yöneticilere açık; kimlik ile süzün."
+          label={t("islem.filtre.kullanici_kimligi")}
+          hint={t("islem.filtre.kullanici_kimligi.ipucu")}
         >
           {({ id, ...erisim }) => (
             <Input
@@ -141,7 +143,7 @@ function IslemFiltreCubugu({
               type="number"
               min={1}
               inputMode="numeric"
-              placeholder="ör. 4"
+              placeholder={t("islem.filtre.ornek_kimlik")}
               value={taslak.kullanici_id ?? ""}
               onChange={(olay) =>
                 setTaslak((onceki) => ({
@@ -154,7 +156,7 @@ function IslemFiltreCubugu({
         </Field>
       )}
 
-      <Field label="Başlangıç">
+      <Field label={t("islem.filtre.baslangic")}>
         {({ id, ...erisim }) => (
           <Input
             id={id}
@@ -166,7 +168,7 @@ function IslemFiltreCubugu({
         )}
       </Field>
 
-      <Field label="Bitiş">
+      <Field label={t("islem.filtre.bitis")}>
         {({ id, ...erisim }) => (
           <Input
             id={id}
@@ -181,7 +183,7 @@ function IslemFiltreCubugu({
       <div className="flex items-end gap-2 md:col-span-4">
         <Button type="submit">
           <Search aria-hidden className="size-4" />
-          Filtrele
+          {t("islem.filtre.uygula")}
         </Button>
         <Button
           type="button"
@@ -192,7 +194,7 @@ function IslemFiltreCubugu({
           }}
         >
           <X aria-hidden className="size-4" />
-          Temizle
+          {t("islem.filtre.temizle")}
         </Button>
       </div>
     </form>
@@ -200,6 +202,7 @@ function IslemFiltreCubugu({
 }
 
 export default function IslemKayitlariSayfasi() {
+  const { t } = useDil();
   const [filtre, setFiltre] = useState<IslemFiltresi>(BASLANGIC_ISLEM_FILTRESI);
   const [secilen, setSecilen] = useState<IslemKaydi | null>(null);
 
@@ -220,11 +223,9 @@ export default function IslemKayitlariSayfasi() {
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-1">
         <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">
-          İşlem Kayıtları
+          {t("islem.baslik")}
         </h1>
-        <p className="text-sm text-neutral-500">
-          Giriş, model yaşam döngüsü, kullanıcı/rol, anahtar ve log işlemlerinin denetim izi.
-        </p>
+        <p className="text-sm text-neutral-500">{t("islem.aciklama")}</p>
       </header>
 
       <IslemFiltreCubugu
@@ -244,12 +245,12 @@ export default function IslemKayitlariSayfasi() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Tarih</TableHead>
-                    <TableHead>Eylem</TableHead>
-                    <TableHead>Kullanıcı</TableHead>
-                    <TableHead>Hedef</TableHead>
-                    <TableHead>IP</TableHead>
-                    <TableHead className="text-right">Ayrıntı</TableHead>
+                    <TableHead>{t("islem.tablo.tarih")}</TableHead>
+                    <TableHead>{t("islem.tablo.eylem")}</TableHead>
+                    <TableHead>{t("islem.tablo.kullanici")}</TableHead>
+                    <TableHead>{t("islem.tablo.hedef")}</TableHead>
+                    <TableHead>{t("islem.tablo.ip")}</TableHead>
+                    <TableHead className="text-right">{t("islem.tablo.ayrinti")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -277,7 +278,7 @@ export default function IslemKayitlariSayfasi() {
                       <TableCell>{kayit.ip || "—"}</TableCell>
                       <TableCell className="text-right">
                         <Button variant="secondary" size="sm" onClick={() => setSecilen(kayit)}>
-                          Görüntüle
+                          {t("islem.goruntule")}
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -299,8 +300,8 @@ export default function IslemKayitlariSayfasi() {
             <div className="p-4">
               <EmptyState
                 icon={<ScrollText aria-hidden className="size-5" />}
-                title="İşlem kaydı bulunamadı"
-                description="Bu filtrelerle eşleşen denetim kaydı yok."
+                title={t("islem.bos.baslik")}
+                description={t("islem.bos.aciklama")}
               />
             </div>
           )}

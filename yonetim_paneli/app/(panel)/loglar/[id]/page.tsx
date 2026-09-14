@@ -9,10 +9,11 @@ import { ArrowLeft, Download, Trash2 } from "lucide-react";
 
 import { hataMesaji } from "@/lib/api";
 import { gecikmeBicimle, sayiBicimle, tarihSaatBicimle } from "@/lib/bicim";
+import { useDil } from "@/lib/dil";
 import {
   DISA_AKTARIM_BICIMLERI,
   DISA_AKTARIM_ETIKETI,
-  MESAJ_ROL_ETIKETI,
+  MESAJ_ROL_ANAHTARI,
   logDetayiGetir,
   logDisaAktar,
   logSil,
@@ -40,23 +41,44 @@ function BilgiSatiri({ etiket, deger }: { etiket: string; deger: string }) {
 }
 
 function KayitOzeti({ detay }: { detay: LogDetayi }) {
+  const { t } = useDil();
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Kayıt Bilgileri</CardTitle>
+        <CardTitle>{t("kayit.detay.bilgileri")}</CardTitle>
       </CardHeader>
       <CardContent>
         <dl className="grid gap-4 md:grid-cols-4">
-          <BilgiSatiri etiket="Kullanıcı" deger={detay.kullanici_eposta ?? "—"} />
-          <BilgiSatiri etiket="Model" deger={detay.bdm_ad ?? "—"} />
-          <BilgiSatiri etiket="Oluşturulma" deger={tarihSaatBicimle(detay.olusturulma)} />
-          <BilgiSatiri etiket="Son güncelleme" deger={tarihSaatBicimle(detay.guncellenme)} />
-          <BilgiSatiri etiket="Mesaj sayısı" deger={sayiBicimle(detay.mesajlar.length)} />
-          <BilgiSatiri etiket="Giriş tokenı" deger={sayiBicimle(detay.token_girdi)} />
-          <BilgiSatiri etiket="Çıkış tokenı" deger={sayiBicimle(detay.token_cikti)} />
+          <BilgiSatiri etiket={t("kayit.detay.kullanici")} deger={detay.kullanici_eposta ?? "—"} />
+          <BilgiSatiri etiket={t("kayit.detay.model")} deger={detay.bdm_ad ?? "—"} />
           <BilgiSatiri
-            etiket="Kaynak"
-            deger={detay.api_anahtari_id ? `API anahtarı #${detay.api_anahtari_id}` : "Panel hesabı"}
+            etiket={t("kayit.detay.olusturulma")}
+            deger={tarihSaatBicimle(detay.olusturulma)}
+          />
+          <BilgiSatiri
+            etiket={t("kayit.detay.guncellenme")}
+            deger={tarihSaatBicimle(detay.guncellenme)}
+          />
+          <BilgiSatiri
+            etiket={t("kayit.detay.mesaj_sayisi")}
+            deger={sayiBicimle(detay.mesajlar.length)}
+          />
+          <BilgiSatiri
+            etiket={t("kayit.detay.token_girdi")}
+            deger={sayiBicimle(detay.token_girdi)}
+          />
+          <BilgiSatiri
+            etiket={t("kayit.detay.token_cikti")}
+            deger={sayiBicimle(detay.token_cikti)}
+          />
+          <BilgiSatiri
+            etiket={t("kayit.detay.kaynak")}
+            deger={
+              detay.api_anahtari_id
+                ? t("kayit.detay.kaynak.api", { no: detay.api_anahtari_id })
+                : t("kayit.detay.kaynak.panel")
+            }
           />
         </dl>
       </CardContent>
@@ -68,10 +90,11 @@ export default function LogDetaySayfasi() {
   const parametreler = useParams<{ id: string }>();
   const konusmaId = Number(parametreler.id);
   const yonlendir = useRouter();
+  const { t } = useDil();
   const { showToast } = useToast();
 
   const { veri, yukleniyor, hata, yenile } = useUzakVeri<LogDetayi>(() => {
-    if (!Number.isFinite(konusmaId)) throw new Error("Geçersiz kayıt numarası.");
+    if (!Number.isFinite(konusmaId)) throw new Error(t("kayit.gecersiz_no"));
     return logDetayiGetir(konusmaId);
   }, [konusmaId]);
 
@@ -84,7 +107,7 @@ export default function LogDetaySayfasi() {
     setIndirilen(bicim);
     try {
       await logDisaAktar(konusmaId, bicim);
-      showToast(`${DISA_AKTARIM_ETIKETI[bicim]} indirmesi tarayıcıya gönderildi.`, "success");
+      showToast(t("kayit.indir.bildirim", { bicim: DISA_AKTARIM_ETIKETI[bicim] }), "success");
     } catch (sebep) {
       showToast(hataMesaji(sebep), "danger");
     } finally {
@@ -97,7 +120,7 @@ export default function LogDetaySayfasi() {
     setSilmeHatasi(null);
     try {
       await logSil(konusmaId);
-      showToast("Konuşma kaydı silindi.", "success");
+      showToast(t("kayit.sil.bildirim"), "success");
       yonlendir.push("/loglar");
     } catch (sebep) {
       setSilmeHatasi(hataMesaji(sebep));
@@ -113,7 +136,7 @@ export default function LogDetaySayfasi() {
         className="flex w-fit items-center gap-1 rounded-md text-sm text-neutral-600 transition-colors hover:text-neutral-900 focus:border-neutral-900 focus:outline-none focus:ring-0"
       >
         <ArrowLeft aria-hidden className="size-4" />
-        Konuşma kayıtları
+        {t("kayit.loglar.geri")}
       </Link>
 
       <VeriDurumu yukleniyor={yukleniyor} hata={hata} yenile={yenile}>
@@ -123,7 +146,7 @@ export default function LogDetaySayfasi() {
               <div className="flex flex-col gap-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">
-                    {veri.baslik || "Başlıksız konuşma"}
+                    {veri.baslik || t("kayit.basliksiz")}
                   </h1>
                   <Badge tone="neutral">#{veri.id}</Badge>
                 </div>
@@ -143,7 +166,7 @@ export default function LogDetaySayfasi() {
                     onClick={() => void indir(bicim)}
                   >
                     <Download aria-hidden className="size-4" />
-                    {DISA_AKTARIM_ETIKETI[bicim]} indir
+                    {t("kayit.indir", { bicim: DISA_AKTARIM_ETIKETI[bicim] })}
                   </Button>
                 ))}
                 <Button
@@ -156,15 +179,13 @@ export default function LogDetaySayfasi() {
                   }}
                 >
                   <Trash2 aria-hidden className="size-4" />
-                  Sil
+                  {t("kayit.sil.dugme")}
                 </Button>
               </div>
             </header>
 
-            <Alert tone="info" title="Maskeleme sınırı">
-              Kayıtlar veritabanına maskelenmiş yazılır (KVKK). Bu sayfa kaydın
-              saklandığı hâli gösterir; kullanıcının kendi oturumunda gördüğü metin
-              farklı olabilir.
+            <Alert tone="info" title={t("kayit.detay.maskeleme.baslik")}>
+              {t("kayit.detay.maskeleme.govde")}
             </Alert>
 
             <KayitOzeti detay={veri} />
@@ -172,7 +193,7 @@ export default function LogDetaySayfasi() {
             {veri.sistem_istemi.trim() ? (
               <Card>
                 <CardHeader>
-                  <CardTitle>Sistem istemi</CardTitle>
+                  <CardTitle>{t("kayit.detay.sistem_istemi")}</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <p className="text-sm break-words whitespace-pre-wrap text-neutral-700">
@@ -183,22 +204,22 @@ export default function LogDetaySayfasi() {
             ) : null}
 
             {veri.mesajlar.length > 0 ? (
-              <section className="flex flex-col gap-4" aria-label="Mesajlar">
+              <section className="flex flex-col gap-4" aria-label={t("kayit.detay.mesajlar.aria")}>
                 <h2 className="text-base font-semibold text-neutral-900">
-                  Mesajlar ({sayiBicimle(veri.mesajlar.length)})
+                  {t("kayit.detay.mesajlar", { sayi: sayiBicimle(veri.mesajlar.length) })}
                 </h2>
                 {veri.mesajlar.map((mesaj) => (
                   <MesajBaloncugu
                     key={mesaj.id}
                     mesaj={mesaj}
-                    etiket={MESAJ_ROL_ETIKETI[mesaj.rol]}
+                    etiket={t(MESAJ_ROL_ANAHTARI[mesaj.rol])}
                   />
                 ))}
               </section>
             ) : (
               <EmptyState
-                title="Mesaj yok"
-                description="Bu konuşmada kayıtlı mesaj bulunmuyor."
+                title={t("kayit.detay.mesaj_yok.baslik")}
+                description={t("kayit.detay.mesaj_yok.aciklama")}
               />
             )}
 
@@ -207,8 +228,8 @@ export default function LogDetaySayfasi() {
               onClose={() => {
                 if (!siliniyor) setSilmeAcik(false);
               }}
-              title="Konuşmayı sil"
-              description="Kayıt ve tüm mesajları kalıcı olarak silinir; bu işlem geri alınamaz."
+              title={t("kayit.sil.baslik")}
+              description={t("kayit.sil.aciklama")}
               footer={
                 <>
                   <Button
@@ -216,21 +237,21 @@ export default function LogDetaySayfasi() {
                     onClick={() => setSilmeAcik(false)}
                     disabled={siliniyor}
                   >
-                    Vazgeç
+                    {t("kayit.sil.vazgec")}
                   </Button>
                   <Button variant="danger" loading={siliniyor} onClick={() => void sil()}>
-                    Kalıcı olarak sil
+                    {t("kayit.sil.onayla")}
                   </Button>
                 </>
               }
             >
               {silmeHatasi ? (
-                <Alert tone="danger" title="Silinemedi">
+                <Alert tone="danger" title={t("kayit.sil.hata.baslik")}>
                   {silmeHatasi}
                 </Alert>
               ) : (
                 <p className="text-sm text-neutral-600">
-                  “{veri.baslik || "Başlıksız konuşma"}” kaydı silinecek.
+                  {t("kayit.sil.soru", { baslik: veri.baslik || t("kayit.basliksiz") })}
                 </p>
               )}
             </Dialog>

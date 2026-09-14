@@ -5,6 +5,7 @@ import { Plus, Search } from "lucide-react";
 import { Buton } from "@/components/ui/buton";
 import { kisaTarihBicimle } from "@/lib/bicim";
 import { cn } from "@/lib/cn";
+import { useDil } from "@/lib/dil";
 import type { KonusmaOzeti } from "@/lib/sohbet";
 
 import { KonusmaIskeleti } from "./durum-gorunumleri";
@@ -32,11 +33,13 @@ export function KonusmaListesi({
   onSec,
   onYeni,
 }: KonusmaListesiOzellikleri) {
+  const { dil, t } = useDil();
+
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 p-3">
       <Buton tur="ikincil" boyut="kucuk" onClick={onYeni} className="w-full justify-center">
         <Plus aria-hidden className="size-3.5" />
-        Yeni sohbet
+        {t("sohbet.liste.yeni")}
       </Buton>
 
       <div className="relative">
@@ -48,26 +51,26 @@ export function KonusmaListesi({
           type="search"
           value={arama}
           onChange={(olay) => onArama(olay.target.value)}
-          aria-label="Konuşmalarda ara"
-          placeholder="Konuşmalarda ara"
+          aria-label={t("sohbet.liste.ara")}
+          placeholder={t("sohbet.liste.ara")}
           className="h-9 w-full rounded-lg border border-neutral-200 bg-white pr-3 pl-8 text-[13px] text-neutral-900 placeholder:text-neutral-400 focus:border-neutral-900 focus:ring-0 focus:outline-none"
         />
       </div>
 
       <p className="px-1 text-[11px] text-neutral-500" role="status">
         {toplam === 0
-          ? "Henüz konuşma yok."
+          ? t("sohbet.liste.bos")
           : arama.trim()
-            ? `${konusmalar.length} / ${toplam} konuşma`
-            : `${toplam} konuşma`}
+            ? t("sohbet.liste.suzulmus", { gosterilen: konusmalar.length, toplam })
+            : t("sohbet.liste.toplam", { toplam })}
       </p>
 
-      <nav aria-label="Konuşmalar" className="min-h-0 flex-1 overflow-y-auto">
+      <nav aria-label={t("sohbet.liste.baslik")} className="min-h-0 flex-1 overflow-y-auto">
         {yukleniyor ? (
           <KonusmaIskeleti />
         ) : konusmalar.length === 0 ? (
           <p className="px-1 text-[13px] text-neutral-500">
-            {toplam === 0 ? "İlk konuşmanızı başlatın." : "Eşleşen konuşma bulunamadı."}
+            {toplam === 0 ? t("sohbet.liste.ilk") : t("sohbet.liste.eslesme.yok")}
           </p>
         ) : (
           <ul className="flex flex-col gap-1">
@@ -92,7 +95,7 @@ export function KonusmaListesi({
                     <span className="mt-0.5 flex items-center justify-between gap-2 text-[11px] text-neutral-500">
                       <span className="truncate">{konusma.bdm_ad}</span>
                       <span className="shrink-0">
-                        {kisaTarihBicimle(konusma.guncellenme)} · {konusma.mesaj_sayisi}
+                        {kisaTarihBicimle(konusma.guncellenme, dil)} · {konusma.mesaj_sayisi}
                       </span>
                     </span>
                   </button>

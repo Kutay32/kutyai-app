@@ -2,6 +2,7 @@
 
 import { cn } from "@/lib/cn";
 import { gecikmeBicimle, sayiBicimle, tarihSaatBicimle } from "@/lib/bicim";
+import { useDil } from "@/lib/dil";
 import type { LogMesaji } from "@/lib/loglar";
 import { Alert } from "@/components/ui/alert";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
@@ -22,6 +23,7 @@ const BALON_GORUNUMU: Record<LogMesaji["rol"], string> = {
 
 /** Tek kayıt mesajını, kayıtta saklandığı (maskelenmiş) hâliyle gösterir. */
 export function MesajBaloncugu({ mesaj, etiket }: { mesaj: LogMesaji; etiket: string }) {
+  const { t } = useDil();
   const kullaniciMi = mesaj.rol === "kullanici";
 
   return (
@@ -38,7 +40,7 @@ export function MesajBaloncugu({ mesaj, etiket }: { mesaj: LogMesaji; etiket: st
           </Badge>
           <span className="text-neutral-800">#{mesaj.id}</span>
           {mesaj.model ? <span>{mesaj.model}</span> : null}
-          <span>{sayiBicimle(mesaj.token_sayisi)} token</span>
+          <span>{t("kayit.mesaj.token", { sayi: sayiBicimle(mesaj.token_sayisi) })}</span>
           {mesaj.gecikme_ms > 0 ? <span>{gecikmeBicimle(mesaj.gecikme_ms)}</span> : null}
           <time dateTime={mesaj.olusturulma} className="ml-auto">
             {tarihSaatBicimle(mesaj.olusturulma)}
@@ -46,11 +48,11 @@ export function MesajBaloncugu({ mesaj, etiket }: { mesaj: LogMesaji; etiket: st
         </header>
 
         <p className="text-sm break-words whitespace-pre-wrap text-neutral-800">
-          {mesaj.icerik || "(boş içerik)"}
+          {mesaj.icerik || t("kayit.mesaj.bos_icerik")}
         </p>
 
         {mesaj.hata ? (
-          <Alert tone="danger" title="Sağlayıcı hatası">
+          <Alert tone="danger" title={t("kayit.mesaj.saglayici_hatasi")}>
             {mesaj.hata}
           </Alert>
         ) : null}

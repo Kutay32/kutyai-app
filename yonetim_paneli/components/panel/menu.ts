@@ -10,9 +10,12 @@ import {
   Users,
 } from "lucide-react";
 
+import type { SozlukAnahtari } from "@/lib/sozluk";
+
 export type MenuOgesi = {
   href: string;
-  etiket: string;
+  /** Menü etiketinin katalog anahtarı (spec §10.2). */
+  anahtar: SozlukAnahtari;
   ikon: LucideIcon;
   /**
    * Sayfası bu dalgada mevcut mu? `false` olan öğeler menüde gizlenir
@@ -23,14 +26,14 @@ export type MenuOgesi = {
 
 /** Sol menü sırası spec §12.2 ile aynıdır. */
 export const MENU: MenuOgesi[] = [
-  { href: "/", etiket: "Kontrol Paneli", ikon: LayoutDashboard, hazir: true },
-  { href: "/bdm", etiket: "BDM'ler", ikon: Bot, hazir: true },
-  { href: "/loglar", etiket: "Konuşma Kayıtları", ikon: MessagesSquare, hazir: true },
-  { href: "/kullanim", etiket: "Kullanım", ikon: BarChart3, hazir: true },
-  { href: "/kullanicilar", etiket: "Kullanıcılar", ikon: Users, hazir: true },
-  { href: "/api-anahtarlari", etiket: "API Anahtarları", ikon: KeyRound, hazir: true },
-  { href: "/ayarlar", etiket: "Ayarlar", ikon: Settings, hazir: true },
-  { href: "/islem-kayitlari", etiket: "İşlem Kayıtları", ikon: ScrollText, hazir: true },
+  { href: "/", anahtar: "menu.kontrol", ikon: LayoutDashboard, hazir: true },
+  { href: "/bdm", anahtar: "menu.bdm", ikon: Bot, hazir: true },
+  { href: "/loglar", anahtar: "menu.loglar", ikon: MessagesSquare, hazir: true },
+  { href: "/kullanim", anahtar: "menu.kullanim", ikon: BarChart3, hazir: true },
+  { href: "/kullanicilar", anahtar: "menu.kullanicilar", ikon: Users, hazir: true },
+  { href: "/api-anahtarlari", anahtar: "menu.anahtarlar", ikon: KeyRound, hazir: true },
+  { href: "/ayarlar", anahtar: "menu.ayarlar", ikon: Settings, hazir: true },
+  { href: "/islem-kayitlari", anahtar: "menu.islem", ikon: ScrollText, hazir: true },
 ];
 
 /** Yolu menüde gösterilecek (sayfası olan) öğelere indirger. */

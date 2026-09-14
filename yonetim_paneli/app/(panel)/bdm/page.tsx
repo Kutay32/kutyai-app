@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 
 import { Bot } from "lucide-react";
 
-import { BDM_DURUMU_ETIKETI } from "@/lib/etiketler";
+import { useDil } from "@/lib/dil";
+import { BDM_DURUMU_ANAHTARI } from "@/lib/etiketler";
 import { useUzakVeri } from "@/lib/kancalar";
 import { bdmListesi, saglayicilariGetir, surucuDurumuGetir } from "@/lib/bdm";
 import type { BdmDurumu } from "@/lib/tipler";
@@ -22,6 +23,7 @@ const DURUMLAR: BdmDurumu[] = ["taslak", "hazir", "calisiyor", "durdu", "hata"];
 
 /** BDM listesi: arama, sağlayıcı/durum süzgeci ve satır işlemleri. */
 export default function BdmListesiSayfasi() {
+  const { t } = useDil();
   const [arama, setArama] = useState("");
   const [gecikmisArama, setGecikmisArama] = useState("");
   const [saglayiciSuzgeci, setSaglayiciSuzgeci] = useState("");
@@ -48,12 +50,10 @@ export default function BdmListesiSayfasi() {
     <div className="flex flex-col gap-4">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex flex-col gap-1">
-          <h1 className="text-xl font-semibold tracking-tight text-neutral-900">BDM'ler</h1>
-          <p className="text-sm text-neutral-500">
-            Bağlı dil modellerini yönetin, hazırlayın ve çalıştırın.
-          </p>
+          <h1 className="text-xl font-semibold tracking-tight text-neutral-900">{t("bdm.baslik")}</h1>
+          <p className="text-sm text-neutral-500">{t("bdm.aciklama")}</p>
         </div>
-        <DugmeBaglantisi href="/bdm/yeni">Yeni BDM</DugmeBaglantisi>
+        <DugmeBaglantisi href="/bdm/yeni">{t("bdm.yeni")}</DugmeBaglantisi>
       </header>
 
       <GpuSeridi
@@ -65,17 +65,17 @@ export default function BdmListesiSayfasi() {
 
       <div className="grid grid-cols-1 gap-2 md:grid-cols-[2fr_1fr_1fr_auto]">
         <Input
-          aria-label="BDM ara"
-          placeholder="Görünen ad veya slug ara…"
+          aria-label={t("bdm.ara.etiket")}
+          placeholder={t("bdm.ara.ipucu")}
           value={arama}
           onChange={(olay) => setArama(olay.target.value)}
         />
         <Select
-          aria-label="Sağlayıcı süzgeci"
+          aria-label={t("bdm.suzgec.saglayici")}
           value={saglayiciSuzgeci}
           onChange={(olay) => setSaglayiciSuzgeci(olay.target.value)}
         >
-          <option value="">Tüm sağlayıcılar</option>
+          <option value="">{t("bdm.suzgec.tum_saglayicilar")}</option>
           {(saglayicilar.veri ?? []).map((bilgi) => (
             <option key={bilgi.ad} value={bilgi.ad}>
               {bilgi.gorunen_ad}
@@ -83,14 +83,14 @@ export default function BdmListesiSayfasi() {
           ))}
         </Select>
         <Select
-          aria-label="Durum süzgeci"
+          aria-label={t("bdm.suzgec.durum")}
           value={durumSuzgeci}
           onChange={(olay) => setDurumSuzgeci(olay.target.value)}
         >
-          <option value="">Tüm durumlar</option>
+          <option value="">{t("bdm.suzgec.tum_durumlar")}</option>
           {DURUMLAR.map((durum) => (
             <option key={durum} value={durum}>
-              {BDM_DURUMU_ETIKETI[durum]}
+              {t(BDM_DURUMU_ANAHTARI[durum])}
             </option>
           ))}
         </Select>
@@ -104,15 +104,15 @@ export default function BdmListesiSayfasi() {
             setDurumSuzgeci("");
           }}
         >
-          Süzgeçleri temizle
+          {t("bdm.suzgec.temizle")}
         </Button>
       </div>
 
       {kayitlar.hata ? (
-        <Alert tone="danger" title="BDM listesi alınamadı">
+        <Alert tone="danger" title={t("bdm.liste.alinamadi")}>
           <p>{kayitlar.hata}</p>
           <Button variant="secondary" size="sm" className="mt-2" onClick={kayitlar.yenile}>
-            Yeniden dene
+            {t("bdm.yeniden_dene")}
           </Button>
         </Alert>
       ) : null}
@@ -129,11 +129,9 @@ export default function BdmListesiSayfasi() {
       {!kayitlar.yukleniyor && !kayitlar.hata && suzulmus.length === 0 ? (
         <EmptyState
           icon={<Bot aria-hidden className="size-6" />}
-          title={suzgecEtkin ? "Süzgeçle eşleşen BDM yok." : "Henüz BDM eklenmedi."}
+          title={suzgecEtkin ? t("bdm.bos.suzgec.baslik") : t("bdm.bos.baslik")}
           description={
-            suzgecEtkin
-              ? "Arama metnini veya süzgeçleri değiştirip yeniden deneyin."
-              : "İlk modelinizi ekleyip bağlantısını doğrulayın."
+            suzgecEtkin ? t("bdm.bos.suzgec.aciklama") : t("bdm.bos.aciklama")
           }
           action={
             suzgecEtkin ? (
@@ -146,10 +144,10 @@ export default function BdmListesiSayfasi() {
                   setDurumSuzgeci("");
                 }}
               >
-                Süzgeçleri temizle
+                {t("bdm.suzgec.temizle")}
               </Button>
             ) : (
-              <DugmeBaglantisi href="/bdm/yeni">Yeni BDM</DugmeBaglantisi>
+              <DugmeBaglantisi href="/bdm/yeni">{t("bdm.yeni")}</DugmeBaglantisi>
             )
           }
         />
@@ -167,7 +165,7 @@ export default function BdmListesiSayfasi() {
             }}
           />
           <p className="text-xs text-neutral-500" role="status">
-            {suzulmus.length} kayıt gösteriliyor.
+            {t("bdm.kayit.sayisi", { sayi: suzulmus.length })}
           </p>
         </div>
       ) : null}

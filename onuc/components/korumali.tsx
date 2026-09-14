@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { UygulamaKabugu } from "@/components/uygulama-kabugu";
 import { Yukleniyor } from "@/components/ui/yukleniyor";
 import { ApiHatasi, apiFetch } from "@/lib/api";
+import { useDil } from "@/lib/dil";
 import { oturumAl } from "@/lib/oturum";
 import type { Kullanici } from "@/lib/tipler";
 
@@ -17,6 +18,7 @@ export type KorumaliOzellikleri = {
 /** Oturum denetimi yapıp uygulama kabuğunu basan korumalı rota sarmalayıcısı. */
 export function Korumali({ children, tamYukseklik = false }: KorumaliOzellikleri) {
   const yonlendirici = useRouter();
+  const { t } = useDil();
   const [kullanici, setKullanici] = useState<Kullanici | null>(null);
   const [hazir, setHazir] = useState(false);
 
@@ -50,7 +52,7 @@ export function Korumali({ children, tamYukseklik = false }: KorumaliOzellikleri
   if (!hazir) {
     return (
       <div className="flex min-h-dvh items-center justify-center bg-white">
-        <Yukleniyor etiket="Oturum denetleniyor" />
+        <Yukleniyor etiket={t("kabuk.oturum.denetleniyor")} />
       </div>
     );
   }

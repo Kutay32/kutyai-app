@@ -1,0 +1,27 @@
+{{- /*
+Opsiyonel hacim: HuggingFace model önbelleği (arka.uc PVC'sinden ayrı dosya).
+Etkinleştirilirse arkauc Deployment'ı KUTYAI_HF_ONBELLEK=<dataPath>/hf-onbellek
+değerini verir ve aynı yolu bağlar.
+DİKKAT: BDM konteynerleri (vLLM/TGI/ollama) bu yolu DOCKER HOST üzerinde arar;
+Kubernetes'te konteyner içi docker soketi olmadan BDM başlatılamaz (README §Üretim).
+*/ -}}
+{{- if and .Values.arkauc.persistence.hfCache.enabled (not .Values.arkauc.persistence.hfCache.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "kutyai.tamAd" . }}-hf-onbellek
+  namespace: {{ include "kutyai.namespace" . }}
+  labels:
+    {{- include "kutyai.etiketler" (dict "kok" $ "bilesen" "arka-uc") | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    {{- toYaml .Values.arkauc.persistence.hfCache.accessModes | nindent 4 }}
+  {{- with .Values.arkauc.persistence.hfCache.storageClassName }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.arkauc.persistence.hfCache.size }}
+{{- end }}

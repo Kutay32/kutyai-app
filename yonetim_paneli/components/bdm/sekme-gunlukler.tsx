@@ -6,6 +6,7 @@ import { Eraser, Pause, Play, RotateCcw } from "lucide-react";
 
 import { hataMesaji } from "@/lib/api";
 import { gunlukAkisi, type BdmKaydi } from "@/lib/bdm";
+import { useDil } from "@/lib/dil";
 import { TerminalLog } from "@/components/bdm/terminal-log";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -20,6 +21,7 @@ export type SekmeGunluklerProps = { bdm: BdmKaydi };
 
 /** Günlükler sekmesi: konteyner günlüklerini SSE ile canlı gösterir (§11). */
 export function SekmeGunlukler({ bdm }: SekmeGunluklerProps) {
+  const { t } = useDil();
   const [satirlar, setSatirlar] = useState<string[]>([]);
   const [duraklatildi, setDuraklatildi] = useState(false);
   const [hata, setHata] = useState<string | null>(null);
@@ -71,10 +73,8 @@ export function SekmeGunlukler({ bdm }: SekmeGunluklerProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Konteyner günlükleri</CardTitle>
-        <CardDescription>
-          Son 200 satır istenir ve yeni satırlar canlı akıtılır (SSE).
-        </CardDescription>
+        <CardTitle>{t("bdm.gunluk.baslik")}</CardTitle>
+        <CardDescription>{t("bdm.gunluk.aciklama")}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-2">
@@ -88,12 +88,12 @@ export function SekmeGunlukler({ bdm }: SekmeGunluklerProps) {
             }
           >
             {akisDurumu === "canli"
-              ? "Canlı"
+              ? t("bdm.gunluk.durum.canli")
               : akisDurumu === "duraklatildi"
-                ? "Duraklatıldı"
+                ? t("bdm.gunluk.durum.duraklatildi")
                 : akisDurumu === "bitti"
-                  ? "Akış kapandı"
-                  : "Bağlanıyor…"}
+                  ? t("bdm.gunluk.durum.kapandi")
+                  : t("bdm.gunluk.durum.baglaniyor")}
           </Badge>
           <Button
             variant="secondary"
@@ -105,26 +105,26 @@ export function SekmeGunlukler({ bdm }: SekmeGunluklerProps) {
             ) : (
               <Pause aria-hidden className="size-4" />
             )}
-            {duraklatildi ? "Sürdür" : "Duraklat"}
+            {duraklatildi ? t("bdm.gunluk.surdur") : t("bdm.gunluk.duraklat")}
           </Button>
           {akisDurumu === "bitti" && !duraklatildi ? (
             <Button variant="secondary" size="sm" onClick={() => setSayac((onceki) => onceki + 1)}>
               <RotateCcw aria-hidden className="size-4" />
-              Yeniden bağlan
+              {t("bdm.gunluk.yeniden_baglan")}
             </Button>
           ) : null}
           <Button variant="ghost" size="sm" onClick={() => setSatirlar([])}>
             <Eraser aria-hidden className="size-4" />
-            Temizle
+            {t("bdm.gunluk.temizle")}
           </Button>
           <Switch
             id="gunluk-otomatik-kaydir"
             checked={otomatikKaydir}
             onChange={setOtomatikKaydir}
-            label="Otomatik kaydırma"
+            label={t("bdm.gunluk.otomatik_kaydir")}
           />
           <span className="ml-auto text-xs text-neutral-500">
-            {satirlar.length} satır
+            {t("bdm.gunluk.satir_sayisi", { sayi: satirlar.length })}
           </span>
         </div>
 

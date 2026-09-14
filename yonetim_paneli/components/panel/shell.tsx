@@ -5,6 +5,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 
 import { istek } from "@/lib/api";
+import { useDil } from "@/lib/dil";
 import { Brand } from "@/components/panel/brand";
 import { Sidebar } from "@/components/panel/sidebar";
 import { Topbar } from "@/components/panel/topbar";
@@ -17,6 +18,7 @@ export type PanelShellProps = {
 
 /** Panel kabuğu: sol menü, üst bar ve mobil çekmece. */
 export function PanelShell({ kullanici, children }: PanelShellProps) {
+  const { t } = useDil();
   const [markaAdi, setMarkaAdi] = useState("KutyAI");
   const [cekimceAcik, setCekimceAcik] = useState(false);
 
@@ -63,7 +65,7 @@ export function PanelShell({ kullanici, children }: PanelShellProps) {
         <div className="fixed inset-0 z-50 flex md:hidden">
           <button
             type="button"
-            aria-label="Menüyü kapat"
+            aria-label={t("genel.menu.kapat")}
             onClick={() => setCekimceAcik(false)}
             className="absolute inset-0 cursor-default bg-neutral-900/40"
           />
@@ -75,7 +77,7 @@ export function PanelShell({ kullanici, children }: PanelShellProps) {
                 onClick={() => setCekimceAcik(false)}
                 className="rounded-md px-3 py-1.5 text-sm text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus:outline-none focus:border-neutral-900 focus:ring-0"
               >
-                Kapat
+                {t("genel.kapat")}
               </button>
             </div>
             <div className="flex-1 overflow-y-auto">

@@ -6,8 +6,9 @@ import { KeyRound, Plus } from "lucide-react";
 
 import { hataMesaji, istek } from "@/lib/api";
 import { tarihSaatBicimle } from "@/lib/bicim";
+import { useDil } from "@/lib/dil";
 import {
-  ANAHTAR_DURUMU_ETIKETI,
+  ANAHTAR_DURUMU_ANAHTARI,
   anahtarIptal,
   anahtarOlustur,
   anahtarlariGetir,
@@ -49,6 +50,7 @@ function YeniAnahtarDiyalogu({
   onKapat: () => void;
   onOlusturuldu: (anahtar: YeniApiAnahtari) => void;
 }) {
+  const { t } = useDil();
   const [ad, setAd] = useState("");
   const [secililer, setSecililer] = useState<string[]>([]);
   const [adHatasi, setAdHatasi] = useState<string | null>(null);
@@ -68,9 +70,9 @@ function YeniAnahtarDiyalogu({
     const temizAd = ad.trim();
     const hata =
       temizAd.length === 0
-        ? "Anahtar adı zorunludur."
+        ? t("anahtar.olustur.ad.zorunlu")
         : temizAd.length < EN_KISA_AD
-          ? `Anahtar adı en az ${EN_KISA_AD} karakter olmalıdır.`
+          ? t("anahtar.olustur.ad.kisa", { uzunluk: EN_KISA_AD })
           : null;
     setAdHatasi(hata);
     if (hata) return;
@@ -98,33 +100,33 @@ function YeniAnahtarDiyalogu({
     <Dialog
       open={acik}
       onClose={kapat}
-      title="Yeni API anahtarı"
-      description="Anahtar yalnızca oluşturma yanıtında tam olarak gösterilir."
+      title={t("anahtar.olustur.baslik")}
+      description={t("anahtar.olustur.aciklama")}
       footer={
         <>
           <Button variant="ghost" onClick={kapat} disabled={olusturuluyor}>
-            Vazgeç
+            {t("anahtar.vazgec")}
           </Button>
           <Button type="submit" form="anahtar-formu" loading={olusturuluyor}>
-            Anahtar oluştur
+            {t("anahtar.olustur.gonder")}
           </Button>
         </>
       }
     >
       <form id="anahtar-formu" onSubmit={gonder} className="flex flex-col gap-4">
         {sunucuHatasi ? (
-          <Alert tone="danger" title="Anahtar oluşturulamadı">
+          <Alert tone="danger" title={t("anahtar.olustur.hata.baslik")}>
             {sunucuHatasi}
           </Alert>
         ) : null}
 
-        <Field label="Anahtar adı" error={adHatasi} required>
+        <Field label={t("anahtar.olustur.ad")} error={adHatasi} required>
           {({ id, invalid, ...erisim }) => (
             <Input
               id={id}
               {...erisim}
               invalid={invalid}
-              placeholder="ör. Muhasebe entegrasyonu"
+              placeholder={t("anahtar.olustur.ad.yer_tutucu")}
               value={ad}
               onChange={(olay) => setAd(olay.target.value)}
             />
@@ -132,7 +134,7 @@ function YeniAnahtarDiyalogu({
         </Field>
 
         <div className="flex flex-col gap-1.5">
-          <p className="text-sm font-medium text-neutral-800">İzinli modeller</p>
+          <p className="text-sm font-medium text-neutral-800">{t("anahtar.izinli_modeller")}</p>
           {bdmler.length > 0 ? (
             <>
               <div className="max-h-48 overflow-y-auto rounded-lg border border-neutral-200 p-2">
@@ -154,14 +156,12 @@ function YeniAnahtarDiyalogu({
               </div>
               <p className="text-xs text-neutral-500">
                 {secililer.length > 0
-                  ? `${secililer.length} model seçildi.`
-                  : "Hiçbiri seçilmezse anahtar tüm modellere erişebilir."}
+                  ? t("anahtar.olustur.secili", { sayi: secililer.length })
+                  : t("anahtar.olustur.tum_modeller.ipucu")}
               </p>
             </>
           ) : (
-            <p className="text-xs text-neutral-500">
-              Katalogda model yok; anahtar tüm modellere erişecek şekilde oluşturulacak.
-            </p>
+            <p className="text-xs text-neutral-500">{t("anahtar.olustur.katalog_bos")}</p>
           )}
         </div>
       </form>
@@ -170,6 +170,7 @@ function YeniAnahtarDiyalogu({
 }
 
 export default function ApiAnahtarlariSayfasi() {
+  const { t } = useDil();
   const { showToast } = useToast();
   const liste = useUzakVeri<ApiAnahtari[]>(anahtarlariGetir, []);
   const bdmListesi = useUzakVeri<Bdm[]>(() => istek<Bdm[]>("/bdm"), []);
@@ -183,13 +184,15 @@ export default function ApiAnahtarlariSayfasi() {
   const modelAdi = (slug: string) =>
     bdmListesi.veri?.find((bdm) => bdm.slug === slug)?.gorunen_ad ?? slug;
 
+  const [iptalOnce, iptalSonra] = t("anahtar.iptal.metin").split("{baglanti}");
+
   const iptalEt = async () => {
     if (!iptalEdilen) return;
     setIptalEdiliyor(true);
     setIptalHatasi(null);
     try {
       await anahtarIptal(iptalEdilen.id);
-      showToast(`${iptalEdilen.ad} anahtarı iptal edildi.`, "success");
+      showToast(t("anahtar.iptal.basarili", { ad: iptalEdilen.ad }), "success");
       setIptalEdilen(null);
       liste.yenile();
     } catch (sebep) {
@@ -204,15 +207,13 @@ export default function ApiAnahtarlariSayfasi() {
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex flex-col gap-1">
           <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">
-            API Anahtarları
+            {t("anahtar.baslik")}
           </h1>
-          <p className="text-sm text-neutral-500">
-            Sohbet uçlarına programatik erişim; tam anahtar yalnızca oluşturmada görünür.
-          </p>
+          <p className="text-sm text-neutral-500">{t("anahtar.aciklama")}</p>
         </div>
         <Button onClick={() => setOlusturAcik(true)}>
           <Plus aria-hidden className="size-4" />
-          Yeni anahtar
+          {t("anahtar.yeni")}
         </Button>
       </header>
 
@@ -222,13 +223,13 @@ export default function ApiAnahtarlariSayfasi() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Ad</TableHead>
-                  <TableHead>Anahtar</TableHead>
-                  <TableHead>Durum</TableHead>
-                  <TableHead>İzinli modeller</TableHead>
-                  <TableHead>Son kullanım</TableHead>
-                  <TableHead>Oluşturulma</TableHead>
-                  <TableHead className="text-right">İşlem</TableHead>
+                  <TableHead>{t("anahtar.tablo.ad")}</TableHead>
+                  <TableHead>{t("anahtar.tablo.anahtar")}</TableHead>
+                  <TableHead>{t("anahtar.tablo.durum")}</TableHead>
+                  <TableHead>{t("anahtar.izinli_modeller")}</TableHead>
+                  <TableHead>{t("anahtar.tablo.son_kullanim")}</TableHead>
+                  <TableHead>{t("anahtar.tablo.olusturulma")}</TableHead>
+                  <TableHead className="text-right">{t("anahtar.tablo.islem")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -240,7 +241,7 @@ export default function ApiAnahtarlariSayfasi() {
                     </TableCell>
                     <TableCell>
                       <Badge tone={anahtar.durum === "aktif" ? "success" : "neutral"}>
-                        {ANAHTAR_DURUMU_ETIKETI[anahtar.durum]}
+                        {t(ANAHTAR_DURUMU_ANAHTARI[anahtar.durum])}
                       </Badge>
                     </TableCell>
                     <TableCell className="max-w-xs">
@@ -253,7 +254,7 @@ export default function ApiAnahtarlariSayfasi() {
                           ))}
                         </span>
                       ) : (
-                        <span className="text-neutral-500">Tüm modeller</span>
+                        <span className="text-neutral-500">{t("anahtar.tum_modeller")}</span>
                       )}
                     </TableCell>
                     <TableCell className="whitespace-nowrap">
@@ -272,7 +273,7 @@ export default function ApiAnahtarlariSayfasi() {
                             setIptalEdilen(anahtar);
                           }}
                         >
-                          İptal et
+                          {t("anahtar.iptal")}
                         </Button>
                       ) : (
                         <span className="text-neutral-400">—</span>
@@ -286,8 +287,8 @@ export default function ApiAnahtarlariSayfasi() {
             <div className="p-4">
               <EmptyState
                 icon={<KeyRound aria-hidden className="size-5" />}
-                title="Henüz anahtar yok"
-                description="Entegrasyonlar için ilk API anahtarını oluşturun."
+                title={t("anahtar.bos.baslik")}
+                description={t("anahtar.bos.aciklama")}
               />
             </div>
           )}
@@ -317,27 +318,28 @@ export default function ApiAnahtarlariSayfasi() {
         onClose={() => {
           if (!iptalEdiliyor) setIptalEdilen(null);
         }}
-        title="Anahtarı iptal et"
-        description="İptal edilen anahtar kimlik doğrulamada reddedilir; bu işlem geri alınamaz."
+        title={t("anahtar.iptal.baslik")}
+        description={t("anahtar.iptal.aciklama")}
         footer={
           <>
             <Button variant="ghost" onClick={() => setIptalEdilen(null)} disabled={iptalEdiliyor}>
-              Vazgeç
+              {t("anahtar.vazgec")}
             </Button>
             <Button variant="danger" loading={iptalEdiliyor} onClick={() => void iptalEt()}>
-              İptal et
+              {t("anahtar.iptal")}
             </Button>
           </>
         }
       >
         {iptalHatasi ? (
-          <Alert tone="danger" title="İptal edilemedi">
+          <Alert tone="danger" title={t("anahtar.iptal.hata.baslik")}>
             {iptalHatasi}
           </Alert>
         ) : (
           <p className="text-sm text-neutral-600">
-            <span className="font-medium text-neutral-900">{iptalEdilen?.ad}</span> anahtarı
-            iptal edilecek ve kullanan entegrasyonlar erişimini kaybedecek.
+            {iptalOnce}
+            <span className="font-medium text-neutral-900">{iptalEdilen?.ad}</span>
+            {iptalSonra}
           </p>
         )}
       </Dialog>

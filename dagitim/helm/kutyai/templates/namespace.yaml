@@ -1,0 +1,17 @@
+{{- /*
+Ad alanı (spec §11). VARSAYILAN OLARAK KAPALI (`namespace.create: false`):
+önerilen yol Helm'e bırakmaktır —
+  helm install kutyai dagitim/helm/kutyai -n kutyai --create-namespace
+Chart'ın ad alanı üretmesi GitOps/Argo senaryosunda anlamlıdır. Uninstall'ın
+ad alanını (ve içindeki her şeyi) silmemesi için `resource-policy: keep` verilir.
+*/ -}}
+{{- if .Values.namespace.create }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ include "kutyai.namespace" . }}
+  labels:
+    {{- include "kutyai.etiketler" (dict "kok" $ "bilesen" "yapilandirma") | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+{{- end }}
