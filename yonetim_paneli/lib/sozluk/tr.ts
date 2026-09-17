@@ -1,4 +1,16 @@
-import { trBdm, trKayitlar, trPanel, trYonetim } from "./parcalar";
+import {
+  trArac,
+  trBdm,
+  trBilgi,
+  trDosya,
+  trFaturalama,
+  trKayitlar,
+  trOrganizasyon,
+  trPanel,
+  trPosta,
+  trSso,
+  trYonetim,
+} from "./parcalar";
 
 /**
  * Türkçe mesaj kataloğu (spec §10.2).
@@ -12,6 +24,13 @@ export const tr = {
   ...trBdm,
   ...trKayitlar,
   ...trYonetim,
+  ...trOrganizasyon,
+  ...trDosya,
+  ...trBilgi,
+  ...trArac,
+  ...trFaturalama,
+  ...trPosta,
+  ...trSso,
 } as const;
 
 /** Türkçe katalog tipi; `en.ts` bu anahtarların tamamını vermek zorundadır. */

@@ -1,5 +1,11 @@
 import type { SozlukAnahtari } from "@/lib/sozluk";
-import type { BdmDurumu, KullaniciDurumu, Rol } from "@/lib/tipler";
+import type {
+  BdmDurumu,
+  KullaniciDurumu,
+  OrganizasyonDurumu,
+  Rol,
+  UyelikRolu,
+} from "@/lib/tipler";
 import type { BadgeTone } from "@/components/ui/badge";
 
 /** Etiketler katalogdan gelir (spec §10.2); bunlar yalnız anahtar eşlemesidir. */
@@ -8,6 +14,20 @@ export const ROL_ANAHTARI: Record<Rol, SozlukAnahtari> = {
   operator: "rol.operator",
   izleyici: "rol.izleyici",
   son_kullanici: "rol.son_kullanici",
+};
+
+/** Organizasyon üyeliği rolleri (`sahip` yalnız üyelikte bulunur, spec §15). */
+export const UYELIK_ROL_ANAHTARI: Record<UyelikRolu, SozlukAnahtari> = {
+  sahip: "uyelik.sahip",
+  yonetici: "uyelik.yonetici",
+  operator: "uyelik.operator",
+  izleyici: "uyelik.izleyici",
+  son_kullanici: "uyelik.son_kullanici",
+};
+
+export const ORGANIZASYON_DURUMU_ANAHTARI: Record<OrganizasyonDurumu, SozlukAnahtari> = {
+  aktif: "durum.org.aktif",
+  askida: "durum.org.askida",
 };
 
 export const KULLANICI_DURUMU_ANAHTARI: Record<KullaniciDurumu, SozlukAnahtari> = {

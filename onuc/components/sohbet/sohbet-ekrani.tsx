@@ -3,27 +3,38 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Menu, Plus } from "lucide-react";
 
+import { useKullanici, useUyelikRolu } from "@/components/korumali";
 import { Buton } from "@/components/ui/buton";
 import { Yukleniyor } from "@/components/ui/yukleniyor";
 import { ApiHatasi, apiFetch } from "@/lib/api";
 import { kucukHarfeCevir } from "@/lib/bicim";
 import { useDil } from "@/lib/dil";
+import { dosyaYukle, type DosyaOzeti } from "@/lib/dosyalar";
+import { belgeleriGetir, type BelgeOzeti } from "@/lib/rag";
 import {
+  aracCagrisiEkle,
+  aracKartlariniBirlestir,
+  etkinAraclariGetir,
   seciliModeliAl,
   seciliModeliKaydet,
   sohbetAkisiniBaslat,
+  type AracSecenegi,
   type BdmOzet,
   type GorunumMesaji,
   type KonusmaDetayi,
   type KonusmaOzeti,
   type SohbetAkisiIstegi,
 } from "@/lib/sohbet";
+import { personelMi } from "@/lib/tipler";
 
 import { HataBandi, MesajIskeleti, SohbetBosDurumu } from "./durum-gorunumleri";
+import { EkSeridi } from "./ek-seridi";
 import { KonusmaListesi } from "./konusma-listesi";
 import { MesajBaloncugu } from "./mesaj-baloncugu";
 import { ModelSecici } from "./model-secici";
 import { SohbetGirdisi } from "./sohbet-girdisi";
+import { YetenekCubugu } from "./yetenek-cubugu";
+import { AracSecimi, BelgeSecimi } from "./yetenek-panelleri";
 
 export type SohbetEkraniOzellikleri = {
   /** `/sohbet/[id]` rotasından gelen başlangıç konuşması. */
@@ -56,9 +67,9 @@ function sonAsistaniKirp(liste: GorunumMesaji[]): GorunumMesaji[] {
   return son === liste.length ? liste : liste.slice(0, son);
 }
 
-function sonKullaniciMetni(liste: GorunumMesaji[]): string | null {
+function sonKullaniciMesaji(liste: GorunumMesaji[]): GorunumMesaji | null {
   for (let sira = liste.length - 1; sira >= 0; sira -= 1) {
-    if (liste[sira].rol === "kullanici") return liste[sira].icerik;
+    if (liste[sira].rol === "kullanici") return liste[sira];
   }
   return null;
 }
@@ -69,9 +80,17 @@ function sonKullaniciMetni(liste: GorunumMesaji[]): string | null {
  * Ekran `/sohbet` ile `/sohbet/[id]` rotalarında aynı örneği kullanır; konuşma
  * değişiminde adres `history.replaceState` ile güncellenir, böylece akış
  * sırasında bileşen yeniden bağlanmaz.
+ *
+ * Personel oturumlarında besteci üstünde yetenekler açılır: dosya eki (§3),
+ * bilgi tabanı parçaları (§5) ve araç çağrıları (§4). Bu uçlar yalnız personele
+ * açık olduğu için bloklar `son_kullanici` oturumunda hiç görünmez.
  */
 export function SohbetEkrani({ baslangicKonusmaId = null }: SohbetEkraniOzellikleri) {
   const { dil, t } = useDil();
+  const kullanici = useKullanici();
+  const uyelikRolu = useUyelikRolu();
+  // Kapı aktif organizasyonun üyelik rolüne bakar; üyelik çözülemezse hesap rolüne düşer.
+  const yeteneklerAcik = personelMi(kullanici, uyelikRolu);
   const [modeller, setModeller] = useState<BdmOzet[] | null>(null);
   const [seciliModelId, setSeciliModelId] = useState<number | null>(null);
   const [konusmalar, setKonusmalar] = useState<KonusmaOzeti[]>([]);
@@ -85,6 +104,21 @@ export function SohbetEkrani({ baslangicKonusmaId = null }: SohbetEkraniOzellikl
   const [hata, setHata] = useState<{ mesaj: string; yenidenDene: (() => void) | null } | null>(
     null,
   );
+
+  /* -------------------------------------------- yetenek durumu (personel) */
+  const [ekler, setEkler] = useState<DosyaOzeti[]>([]);
+  const [ekYukleniyor, setEkYukleniyor] = useState(false);
+  const [ekHatasi, setEkHatasi] = useState<string | null>(null);
+  const [ragAcik, setRagAcik] = useState(false);
+  const [belgeler, setBelgeler] = useState<BelgeOzeti[] | null>(null);
+  const [belgelerYukleniyor, setBelgelerYukleniyor] = useState(false);
+  const [belgeHatasi, setBelgeHatasi] = useState<string | null>(null);
+  const [seciliBelgeler, setSeciliBelgeler] = useState<number[]>([]);
+  const [aracAcik, setAracAcik] = useState(false);
+  const [araclar, setAraclar] = useState<AracSecenegi[] | null>(null);
+  const [araclarYukleniyor, setAraclarYukleniyor] = useState(false);
+  const [aracHatasi, setAracHatasi] = useState<string | null>(null);
+  const [seciliAraclar, setSeciliAraclar] = useState<string[]>([]);
 
   const kaydirmaRef = useRef<HTMLDivElement>(null);
   const dibeYakinRef = useRef(true);
@@ -127,6 +161,62 @@ export function SohbetEkrani({ baslangicKonusmaId = null }: SohbetEkraniOzellikl
     })();
     // Yalnız ilk bağlanışta çalışır; konuşma listesi akış sonunda ayrıca tazelenir.
   }, []);
+
+  /* ------------------------------------------------------ yetenek eylemleri */
+
+  async function ekYukle(dosya: File) {
+    setEkYukleniyor(true);
+    setEkHatasi(null);
+    try {
+      const yuklenen = await dosyaYukle(dosya);
+      setEkler((onceki) =>
+        onceki.some((ek) => ek.id === yuklenen.id) ? onceki : [...onceki, yuklenen],
+      );
+    } catch (yakalanan) {
+      setEkHatasi(hataMesaji(yakalanan, t("sohbet.ek.hata")));
+    } finally {
+      setEkYukleniyor(false);
+    }
+  }
+
+  async function belgeleriYukle() {
+    setBelgelerYukleniyor(true);
+    setBelgeHatasi(null);
+    try {
+      setBelgeler(await belgeleriGetir());
+    } catch (yakalanan) {
+      setBelgeHatasi(hataMesaji(yakalanan, t("sohbet.rag.hata")));
+    } finally {
+      setBelgelerYukleniyor(false);
+    }
+  }
+
+  async function araclariYukle() {
+    setAraclarYukleniyor(true);
+    setAracHatasi(null);
+    try {
+      setAraclar(await etkinAraclariGetir());
+    } catch (yakalanan) {
+      setAracHatasi(hataMesaji(yakalanan, t("sohbet.arac.hata")));
+    } finally {
+      setAraclarYukleniyor(false);
+    }
+  }
+
+  /** Panel açılırken liste bir kez yüklenir; hata olursa panelden yinelenir. */
+  function ragDegistir(acik: boolean) {
+    setRagAcik(acik);
+    if (acik && belgeler === null && !belgelerYukleniyor) void belgeleriYukle();
+  }
+
+  function aracDegistir(acik: boolean) {
+    setAracAcik(acik);
+    if (acik && araclar === null && !araclarYukleniyor) void araclariYukle();
+  }
+
+  function secimDegistir<T>(liste: T[], deger: T): T[] {
+    return liste.includes(deger) ? liste.filter((kayit) => kayit !== deger) : [...liste, deger];
+  }
 
   /* -------------------------------------------------------- konuşma yönetimi */
 
@@ -191,12 +281,21 @@ export function SohbetEkrani({ baslangicKonusmaId = null }: SohbetEkraniOzellikl
           continue;
         }
         const guncel = { ...mesaj, ...yama };
-        // Boş kalan yer tutucu, hata/durdurma sonrası ekranda kalmaz.
-        if (guncel.icerik.length === 0 && guncel.akisHalinde !== true) continue;
+        // Boş kalan yer tutucu, hata/durdurma sonrası ekranda kalmaz; araç kartı
+        // ya da kaynak taşıyan mesaj içeriksiz olsa da korunur.
+        const bosMu =
+          guncel.icerik.length === 0 &&
+          (guncel.araclar?.length ?? 0) === 0 &&
+          (guncel.kaynaklar?.length ?? 0) === 0;
+        if (bosMu && guncel.akisHalinde !== true) continue;
         sonraki.push(guncel);
       }
       return sonraki;
     });
+  }
+
+  function asistaniIsle(id: string, isle: (mesaj: GorunumMesaji) => GorunumMesaji) {
+    setMesajlar((onceki) => onceki.map((mesaj) => (mesaj.id === id ? isle(mesaj) : mesaj)));
   }
 
   async function gonder(metin: string, secenekler: { yenidenUret?: boolean } = {}) {
@@ -214,6 +313,11 @@ export function SohbetEkrani({ baslangicKonusmaId = null }: SohbetEkraniOzellikl
     setGonderiliyor(true);
     setHata(null);
 
+    // Yeniden üretim aynı isteği yineler: ekler son kullanıcı mesajından alınır.
+    const sonKullanici = secenekler.yenidenUret ? sonKullaniciMesaji(mesajlar) : null;
+    const dosyaIdleri = sonKullanici?.dosya_idleri ?? ekler.map((ek) => ek.id);
+    const dosyaAdlari = sonKullanici?.dosya_adlari ?? ekler.map((ek) => ek.ad);
+
     sayacRef.current += 1;
     const asistanId = `yerel-asistan-${sayacRef.current}`;
     const kullaniciId = `yerel-kullanici-${sayacRef.current}`;
@@ -222,30 +326,80 @@ export function SohbetEkrani({ baslangicKonusmaId = null }: SohbetEkraniOzellikl
       konusma_id: konusmaId,
       mesaj: temiz,
     };
+    if (dosyaIdleri.length > 0) {
+      istek.dosya_idleri = dosyaIdleri;
+    }
+    if (yeteneklerAcik && ragAcik) {
+      istek.rag = true;
+      if (seciliBelgeler.length > 0) istek.rag_belge_idleri = [...seciliBelgeler];
+    }
+    if (yeteneklerAcik) {
+      // Sunucu `arac_sluglari` hiç gönderilmezse etkin araçların tamamını sunar
+      // (API.md §19); anahtar kapalıyken "araç yok" boş listeyle bildirilir.
+      if (!aracAcik) {
+        istek.arac_sluglari = [];
+      } else if (seciliAraclar.length > 0) {
+        istek.arac_sluglari = [...seciliAraclar];
+      }
+    }
 
     setMesajlar((onceki) => {
       const temel = secenekler.yenidenUret ? sonAsistaniKirp(onceki) : onceki;
       const eklenecek: GorunumMesaji[] = secenekler.yenidenUret
         ? []
-        : [{ id: kullaniciId, rol: "kullanici", icerik: temiz }];
+        : [
+            {
+              id: kullaniciId,
+              rol: "kullanici",
+              icerik: temiz,
+              ...(dosyaIdleri.length > 0 ? { dosya_idleri: dosyaIdleri } : {}),
+              ...(dosyaAdlari.length > 0 ? { dosya_adlari: dosyaAdlari } : {}),
+            },
+          ];
       return [...temel, ...eklenecek, { id: asistanId, rol: "asistan", icerik: "", akisHalinde: true }];
     });
+    // Ekler mesajla birlikte gönderildi; şerit yeni ekler için temizlenir.
+    if (!secenekler.yenidenUret) {
+      setEkler([]);
+      setEkHatasi(null);
+    }
 
     try {
       await sohbetAkisiniBaslat(
         istek,
         (olay) => {
           if (olay.tur === "parca") {
-            setMesajlar((onceki) =>
-              onceki.map((mesaj) =>
-                mesaj.id === asistanId ? { ...mesaj, icerik: mesaj.icerik + olay.icerik } : mesaj,
-              ),
-            );
+            asistaniIsle(asistanId, (mesaj) => ({ ...mesaj, icerik: mesaj.icerik + olay.icerik }));
             return;
           }
           if (olay.tur === "baslangic") {
             setKonusmaId(olay.konusma_id);
             window.history.replaceState(null, "", `/sohbet/${olay.konusma_id}`);
+            return;
+          }
+          if (olay.tur === "arac_cagrisi") {
+            asistaniIsle(asistanId, (mesaj) => ({
+              ...mesaj,
+              araclar: aracCagrisiEkle(mesaj.araclar ?? [], olay),
+            }));
+            return;
+          }
+          if (olay.tur === "arac_sonucu") {
+            asistaniIsle(asistanId, (mesaj) => ({
+              ...mesaj,
+              araclar: aracKartlariniBirlestir(mesaj.araclar ?? [], [olay]),
+            }));
+            return;
+          }
+          if (olay.tur === "bitti") {
+            // `bitti` ek alanları akışta kaynakları ve araç özetini taşır (API.md §19–20).
+            asistaniIsle(asistanId, (mesaj) => ({
+              ...mesaj,
+              ...(olay.kaynaklar ? { kaynaklar: olay.kaynaklar } : {}),
+              ...(olay.arac_cagrilari
+                ? { araclar: aracKartlariniBirlestir(mesaj.araclar ?? [], olay.arac_cagrilari) }
+                : {}),
+            }));
             return;
           }
           if (olay.tur === "hata") {
@@ -279,8 +433,8 @@ export function SohbetEkrani({ baslangicKonusmaId = null }: SohbetEkraniOzellikl
   }
 
   function yenidenUret() {
-    const metin = sonKullaniciMetni(mesajlar);
-    if (metin) void gonder(metin, { yenidenUret: true });
+    const onceki = sonKullaniciMesaji(mesajlar);
+    if (onceki) void gonder(onceki.icerik, { yenidenUret: true });
   }
 
   /* -------------------------------------------------------- kaydırma & klavye */
@@ -409,7 +563,52 @@ export function SohbetEkrani({ baslangicKonusmaId = null }: SohbetEkraniOzellikl
         </div>
 
         <footer className="border-t border-neutral-100 p-3">
-          <div className="mx-auto w-full max-w-3xl">
+          <div className="mx-auto flex w-full max-w-3xl flex-col gap-2">
+            {yeteneklerAcik ? (
+              <>
+                <div className="flex flex-wrap items-end justify-between gap-2">
+                  <YetenekCubugu
+                    ragAcik={ragAcik}
+                    aracAcik={aracAcik}
+                    devreDisi={gonderiliyor}
+                    onRag={ragDegistir}
+                    onArac={aracDegistir}
+                  />
+                  <EkSeridi
+                    ekler={ekler}
+                    yukleniyor={ekYukleniyor}
+                    hata={ekHatasi}
+                    devreDisi={gonderiliyor}
+                    onEkle={(dosya) => void ekYukle(dosya)}
+                    onKaldir={(id) =>
+                      setEkler((onceki) => onceki.filter((ek) => ek.id !== id))
+                    }
+                  />
+                </div>
+                {ragAcik ? (
+                  <BelgeSecimi
+                    belgeler={belgeler}
+                    seciliIdler={seciliBelgeler}
+                    yukleniyor={belgelerYukleniyor}
+                    hata={belgeHatasi}
+                    devreDisi={gonderiliyor}
+                    onDegistir={(id) => setSeciliBelgeler((onceki) => secimDegistir(onceki, id))}
+                    onYenile={() => void belgeleriYukle()}
+                  />
+                ) : null}
+                {aracAcik ? (
+                  <AracSecimi
+                    araclar={araclar}
+                    seciliSluglar={seciliAraclar}
+                    yukleniyor={araclarYukleniyor}
+                    hata={aracHatasi}
+                    devreDisi={gonderiliyor}
+                    onDegistir={(slug) => setSeciliAraclar((onceki) => secimDegistir(onceki, slug))}
+                    onYenile={() => void araclariYukle()}
+                  />
+                ) : null}
+              </>
+            ) : null}
             <SohbetGirdisi
               gonderiliyor={gonderiliyor}
               gonderilebilir={seciliModelId !== null}

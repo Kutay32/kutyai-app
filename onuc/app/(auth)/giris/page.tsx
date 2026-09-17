@@ -19,6 +19,7 @@ export default function GirisSayfasi() {
   const [parola, setParola] = useState("");
   const [hata, setHata] = useState<string | null>(null);
   const [dogrulamaGerekli, setDogrulamaGerekli] = useState(false);
+  const [personelGirisi, setPersonelGirisi] = useState(false);
   const [gonderiliyor, setGonderiliyor] = useState(false);
 
   useEffect(() => {
@@ -31,12 +32,15 @@ export default function GirisSayfasi() {
     setDogrulamaGerekli(false);
     setGonderiliyor(true);
     try {
-      const yanit = await apiFetch<GirisYaniti>("/kimlik/giris", {
-        method: "POST",
-        govde: { eposta, parola },
-        jeton: null,
-        yenilemeDene: false,
-      });
+      const yanit = await apiFetch<GirisYaniti>(
+        personelGirisi ? "/kimlik/panel-giris" : "/kimlik/giris",
+        {
+          method: "POST",
+          govde: { eposta, parola },
+          jeton: null,
+          yenilemeDene: false,
+        },
+      );
       oturumKaydet({
         erisim_jetonu: yanit.erisim_jetonu,
         yenileme_jetonu: yanit.yenileme_jetonu,
@@ -97,6 +101,16 @@ export default function GirisSayfasi() {
           onChange={(olay) => setParola(olay.target.value)}
           required
         />
+        <label className="flex items-center gap-2 text-[13px] text-neutral-600">
+          <input
+            type="checkbox"
+            name="personel-girisi"
+            checked={personelGirisi}
+            onChange={(olay) => setPersonelGirisi(olay.target.checked)}
+            className="size-4 rounded border-neutral-300 text-neutral-900 focus:ring-neutral-400"
+          />
+          {t("giris.personel")}
+        </label>
         <Buton type="submit" yukleniyor={gonderiliyor} className="mt-1 w-full">
           {t("giris.baslik")}
         </Buton>

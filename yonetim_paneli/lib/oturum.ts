@@ -1,3 +1,4 @@
+import { aktifOrganizasyonKaydet } from "@/lib/aktif-organizasyon";
 import type { Kullanici } from "@/lib/tipler";
 
 export type Oturum = {
@@ -67,6 +68,9 @@ export function oturumTemizle(): void {
   sil("erisim");
   sil("yenileme");
   sil("kullanici");
+  // Organizasyon seçimi oturuma bağlıdır: sonraki oturumun ilk istekleri bayat
+  // `X-Organizasyon` başlığıyla gitmesin diye çıkışta birlikte silinir.
+  aktifOrganizasyonKaydet(null);
   bildir();
 }
 

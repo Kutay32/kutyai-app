@@ -60,6 +60,29 @@ export function sayiBicimle(
   return sayiBicimleyicileri[dil].format(deger);
 }
 
+const BOYUT_BIRIMLERI = ["B", "KB", "MB", "GB", "TB"] as const;
+
+/** Boyut sayıları en çok bir ondalıkla yazılır (ör. `1,2`). */
+const boyutBicimleyicileri = {
+  tr: new Intl.NumberFormat(YEREL_KODLARI.tr, { maximumFractionDigits: 1 }),
+  en: new Intl.NumberFormat(YEREL_KODLARI.en, { maximumFractionDigits: 1 }),
+} satisfies Record<Dil, Intl.NumberFormat>;
+
+/** Baytı okunur boyuta çevirir (ör. `1,2 MB`); geçersiz değerde "—" döner. */
+export function boyutBicimle(
+  bayt: number | null | undefined,
+  dil: Dil = VARSAYILAN_DIL,
+): string {
+  if (typeof bayt !== "number" || !Number.isFinite(bayt)) return "—";
+  let deger = Math.max(0, bayt);
+  let indeks = 0;
+  while (deger >= 1024 && indeks < BOYUT_BIRIMLERI.length - 1) {
+    deger /= 1024;
+    indeks += 1;
+  }
+  return `${boyutBicimleyicileri[dil].format(deger)} ${BOYUT_BIRIMLERI[indeks]}`;
+}
+
 /** Arama karşılaştırması için metni aktif dilin küçük harf kurallarına çevirir. */
 export function kucukHarfeCevir(metin: string, dil: Dil = VARSAYILAN_DIL): string {
   return metin.toLocaleLowerCase(YEREL_KODLARI[dil]);

@@ -14,6 +14,7 @@ import { oturumOku, oturumTemizle } from "@/lib/oturum";
 import type { Kullanici } from "@/lib/tipler";
 import { Brand } from "@/components/panel/brand";
 import { DilSecici } from "@/components/panel/dil-secici";
+import { OrganizasyonSecici } from "@/components/panel/organizasyon-secici";
 
 export type TopbarProps = {
   markaAdi: string;
@@ -59,6 +60,7 @@ export function Topbar({ markaAdi, kullanici, onMenuToggle }: TopbarProps) {
       </div>
 
       <div className="flex items-center gap-3">
+        <OrganizasyonSecici className="hidden lg:flex" />
         <DilSecici />
         <div className="relative">
           <button

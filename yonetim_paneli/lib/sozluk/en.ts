@@ -1,4 +1,16 @@
-import { enBdm, enKayitlar, enPanel, enYonetim } from "./parcalar";
+import {
+  enArac,
+  enBdm,
+  enBilgi,
+  enDosya,
+  enFaturalama,
+  enKayitlar,
+  enOrganizasyon,
+  enPanel,
+  enPosta,
+  enSso,
+  enYonetim,
+} from "./parcalar";
 import type { Sozluk } from "./tr";
 
 /**
@@ -10,4 +22,11 @@ export const en: Record<keyof Sozluk, string> = {
   ...enBdm,
   ...enKayitlar,
   ...enYonetim,
+  ...enOrganizasyon,
+  ...enDosya,
+  ...enBilgi,
+  ...enArac,
+  ...enFaturalama,
+  ...enPosta,
+  ...enSso,
 };

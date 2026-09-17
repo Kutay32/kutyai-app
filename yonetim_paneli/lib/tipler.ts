@@ -160,3 +160,35 @@ export type KurulumIstegi = {
   };
   dogrula: boolean;
 };
+
+/** --- Çok kiracılılık (spec §15) --- */
+
+export type OrganizasyonDurumu = "aktif" | "askida";
+export type UyelikRolu = "sahip" | "yonetici" | "operator" | "izleyici" | "son_kullanici";
+export type UyelikDurumu = "aktif" | "beklemede" | "pasif";
+
+/** `GET /organizasyonlar` satırı; `rol` aktif kullanıcının üyelik rolüdür. */
+export type Organizasyon = {
+  id: number;
+  ad: string;
+  slug: string;
+  durum: OrganizasyonDurumu;
+  rol: UyelikRolu;
+  olusturulma: string;
+};
+
+/** `GET /organizasyonlar/{id}/uyeler` satırı. */
+export type OrganizasyonUyesi = {
+  kullanici_id: number;
+  eposta: string;
+  ad_soyad: string;
+  rol: UyelikRolu;
+  durum: UyelikDurumu;
+  olusturulma: string;
+};
+
+/** `POST /kimlik/organizasyon-sec` yanıtı. */
+export type OrganizasyonSecimi = {
+  erisim_jetonu: string;
+  organizasyon: Organizasyon;
+};

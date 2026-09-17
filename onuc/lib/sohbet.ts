@@ -7,7 +7,8 @@
 
 import { ApiHatasi, API_URL, apiFetch } from "./api";
 import { oturumAl } from "./oturum";
-import { aktifCeviri } from "./tarayici-dil";
+import { aktifCeviri, tarayiciDili } from "./tarayici-dil";
+import type { SozlukAnahtari } from "./sozluk";
 import type { Kullanici } from "./tipler";
 
 /** API.md §2 `BdmOzet` — `/modeller` yanıtının kaydı. */
@@ -18,7 +19,7 @@ export type BdmOzet = {
   aciklama: string;
   saglayici: string;
   baglam_penceresi: number;
-  yetenekler: { akis?: boolean; gorsel?: boolean; arac?: boolean };
+  yetenekler: { akis?: boolean; gorsel?: boolean; ses?: boolean; arac?: boolean };
   durum: string;
 };
 
@@ -59,7 +60,77 @@ export type SohbetAkisiIstegi = {
   sistem_istemi?: string | null;
   sicaklik?: number | null;
   maks_token?: number | null;
+  /** Sohbete eklenen dosyalar; metni çıkarılmış içerik sistem istemine eklenir (§3). */
+  dosya_idleri?: number[];
+  /** Bilgi tabanından parça ekleme anahtarı (§5). */
+  rag?: boolean;
+  /** Yalnız bu belgelerden arama; boş bırakılırsa tüm bilgi tabanı taranır. */
+  rag_belge_idleri?: number[];
+  /** Modele sunulacak araç slug'ları (§4). */
+  arac_sluglari?: string[];
 };
+
+/** Asistana eklenen RAG parçası (`kaynaklar` satırı; API.md §20). */
+export type SohbetKaynagi = {
+  belge_id: number;
+  belge_ad: string;
+  /** Parçanın belge içindeki sırası. */
+  sira: number;
+  /** Kosinüs benzerliği (0–1). */
+  skor: number;
+};
+
+/** Araç çağrısının sonucu (API.md §19). */
+export type AracDurumu = "basarili" | "hata";
+
+/** `/sohbet` yanıtı ve akışın `bitti` olayındaki araç özeti satırı. */
+export type AracOzeti = { ad: string; durum: AracDurumu };
+
+/** Araç kartının ekrandaki hâli: çağrı sürerken `calisiyor`. */
+export type AracKarti = {
+  ad: string;
+  durum: AracDurumu | "calisiyor";
+  /** Modelin ürettiği argümanlar; olayda taşınmazsa `null`. */
+  argumanlar: unknown;
+  /** Sonuç özeti; `arac_sonucu` olayı ya da `arac_cagrilari` doldurur. */
+  ozet: string | null;
+};
+
+/** Araç durumu etiketleri katalogdan gelir (spec §10.2); bunlar anahtar eşlemesidir. */
+export const ARAC_DURUM_ANAHTARLARI: Record<AracKarti["durum"], SozlukAnahtari> = {
+  calisiyor: "sohbet.arac.durum.calisiyor",
+  basarili: "sohbet.arac.durum.basarili",
+  hata: "sohbet.arac.durum.hata",
+};
+
+/** `GET /araclar` satırının sohbette gereken alanları (API.md §19). */
+export type AracSecenegi = {
+  id: number;
+  ad: string;
+  slug: string;
+  aciklama: string;
+  etkin: boolean;
+};
+
+/** Etkin araçlar; sohbette `arac_sluglari` seçeneklerini üretir. */
+export async function etkinAraclariGetir(): Promise<AracSecenegi[]> {
+  return apiFetch<AracSecenegi[]>("/araclar?etkin=true");
+}
+
+/** `/sohbet` tek yanıt gövdesi (API.md §9); `kaynaklar` ve `arac_cagrilari` ek alanlarıdır. */
+export type SohbetYaniti = {
+  konusma_id: number;
+  mesaj_id: number;
+  icerik: string;
+  token_girdi: number;
+  token_cikti: number;
+  gecikme_ms: number;
+  kaynaklar?: SohbetKaynagi[];
+  arac_cagrilari?: AracOzeti[];
+};
+
+/** Akışın `bitti` olayı, tek yanıtın özet alanlarını aynı adlarla taşır. */
+export type SohbetOzeti = Pick<SohbetYaniti, "kaynaklar" | "arac_cagrilari">;
 
 /** Ekranda gösterilen mesaj: geçmiş kayıtları ile canlı akışın birleşimi. */
 export type GorunumMesaji = {
@@ -72,15 +143,25 @@ export type GorunumMesaji = {
   durduruldu?: boolean;
   /** Akış hata ile bitti. */
   hatali?: boolean;
+  /** Kullanıcı mesajıyla gönderilen dosyalar (yeniden üretimde aynen yinelenir). */
+  dosya_idleri?: number[];
+  /** Gönderilen dosyaların görünen adları. */
+  dosya_adlari?: string[];
+  /** Asistan yanıtında kullanılan RAG parçaları. */
+  kaynaklar?: SohbetKaynagi[];
+  /** Asistan yanıtının araç çağrıları (canlı olaylar + yanıt özeti). */
+  araclar?: AracKarti[];
 };
 
-/** `/sohbet/akis` olayları (API.md §9 SSE biçimi). */
+/** `/sohbet/akis` olayları (API.md §9, §19 SSE biçimi). */
 export type SohbetOlayi =
   | { tur: "baslangic"; konusma_id: number; mesaj_id: number }
   | { tur: "parca"; icerik: string }
   | { tur: "kullanim"; token_girdi: number; token_cikti: number; gecikme_ms: number }
+  | { tur: "arac_cagrisi"; ad: string; argumanlar: unknown }
+  | { tur: "arac_sonucu"; ad: string; durum: AracDurumu; ozet: string }
   | { tur: "hata"; kod: string; mesaj: string; ayrinti: unknown }
-  | { tur: "bitti" }
+  | ({ tur: "bitti" } & SohbetOzeti)
   | { tur: "gecersiz"; ad: string; ham: string };
 
 const SECILI_MODEL_ANAHTARI = "kutyai.secili_model";
@@ -108,6 +189,79 @@ export function seciliModeliKaydet(bdmId: number): void {
   } catch {
     // Depolama kapalıysa seçim yalnız bu oturumda yaşar.
   }
+}
+
+/* ---------------------------------------------------- dönüşümler */
+
+function nesneler(ham: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(ham)) return [];
+  return ham.filter(
+    (satir): satir is Record<string, unknown> => typeof satir === "object" && satir !== null,
+  );
+}
+
+/** `kaynaklar` alanını ekranda gösterilecek satırlara çevirir; bozuk satırlar atılır. */
+export function kaynaklariCoz(ham: unknown): SohbetKaynagi[] {
+  const sonuc: SohbetKaynagi[] = [];
+  for (const satir of nesneler(ham)) {
+    const belgeId = Number(satir.belge_id);
+    if (!Number.isFinite(belgeId)) continue;
+    sonuc.push({
+      belge_id: belgeId,
+      belge_ad: typeof satir.belge_ad === "string" ? satir.belge_ad : "",
+      sira: Number(satir.sira) || 0,
+      skor: Number(satir.skor) || 0,
+    });
+  }
+  return sonuc;
+}
+
+/** `arac_cagrilari` alanını araç kartlarına çevirir; bilinmeyen durum "hata" sayılır. */
+export function aracOzetleriniCoz(ham: unknown): AracOzeti[] {
+  const sonuc: AracOzeti[] = [];
+  for (const satir of nesneler(ham)) {
+    const ad = satir.ad;
+    if (typeof ad !== "string" || !ad) continue;
+    sonuc.push({ ad, durum: aracDurumu(satir.durum) });
+  }
+  return sonuc;
+}
+
+function aracDurumu(ham: unknown): AracDurumu {
+  return ham === "basarili" ? "basarili" : "hata";
+}
+
+/** `arac_cagrisi` olayını kart listesine ekler (`durum: "calisiyor"`). */
+export function aracCagrisiEkle(kartlar: readonly AracKarti[], cagri: { ad: string; argumanlar: unknown }): AracKarti[] {
+  return [...kartlar, { ad: cagri.ad, durum: "calisiyor", argumanlar: cagri.argumanlar, ozet: null }];
+}
+
+/**
+ * Canlı kartları araç sonuçlarıyla (SSE `arac_sonucu`, akış `bitti` özeti)
+ * birleştirir. Aynı adın n'inci sonucu, o adın n'inci kartını kapatır; eşleşen
+ * kart yoksa yeni kart eklenir. Böylece `bitti` özeti kartları çiftlemez.
+ */
+export function aracKartlariniBirlestir(
+  kartlar: readonly AracKarti[],
+  sonuclar: readonly (AracOzeti & { ozet?: string | null })[],
+): AracKarti[] {
+  const sonuc = kartlar.map((kart) => ({ ...kart }));
+  const sayac = new Map<string, number>();
+  for (const ozet of sonuclar) {
+    const kacinci = sayac.get(ozet.ad) ?? 0;
+    sayac.set(ozet.ad, kacinci + 1);
+    const siralar = sonuc.reduce<number[]>(
+      (toplam, kart, sira) => (kart.ad === ozet.ad ? [...toplam, sira] : toplam),
+      [],
+    );
+    const hedef = siralar[kacinci];
+    if (hedef === undefined) {
+      sonuc.push({ ad: ozet.ad, durum: ozet.durum, argumanlar: null, ozet: ozet.ozet ?? null });
+      continue;
+    }
+    sonuc[hedef] = { ...sonuc[hedef], durum: ozet.durum, ozet: ozet.ozet ?? sonuc[hedef].ozet };
+  }
+  return sonuc;
 }
 
 /* ---------------------------------------------------- SSE çözümlemesi */
@@ -163,7 +317,31 @@ function cerceveCoz(cerceve: string): SohbetOlayi | null {
       ayrinti: zarf.ayrinti,
     };
   }
-  if (ad === "bitti") return { tur: "bitti" };
+  if (ad === "arac_cagrisi") {
+    const aracAdi = kayit.ad;
+    if (typeof aracAdi !== "string" || !aracAdi) return { tur: "gecersiz", ad, ham };
+    return { tur: "arac_cagrisi", ad: aracAdi, argumanlar: kayit.argumanlar ?? null };
+  }
+  if (ad === "arac_sonucu") {
+    const aracAdi = kayit.ad;
+    if (typeof aracAdi !== "string" || !aracAdi) return { tur: "gecersiz", ad, ham };
+    return {
+      tur: "arac_sonucu",
+      ad: aracAdi,
+      durum: aracDurumu(kayit.durum),
+      ozet: typeof kayit.ozet === "string" ? kayit.ozet : "",
+    };
+  }
+  if (ad === "bitti") {
+    // `bitti` ek alanları yalnız doluysa taşınır; sade `{}` gövdesi `{ tur: "bitti" }` olur.
+    const kaynaklar = kaynaklariCoz(kayit.kaynaklar);
+    const aracCagrilari = aracOzetleriniCoz(kayit.arac_cagrilari);
+    return {
+      tur: "bitti",
+      ...(kaynaklar.length > 0 ? { kaynaklar } : {}),
+      ...(aracCagrilari.length > 0 ? { arac_cagrilari: aracCagrilari } : {}),
+    };
+  }
   return { tur: "gecersiz", ad, ham };
 }
 
@@ -210,6 +388,8 @@ async function akisIstegi(istek: SohbetAkisiIstegi, sinyal?: AbortSignal): Promi
     const basliklar: Record<string, string> = {
       Accept: "text/event-stream",
       "Content-Type": "application/json",
+      // Akıştaki hata zarfları ve HTTP hataları seçilen dilde dönsün (spec §10.1).
+      "Accept-Language": tarayiciDili(),
     };
     if (jeton) basliklar.Authorization = `Bearer ${jeton}`;
     try {

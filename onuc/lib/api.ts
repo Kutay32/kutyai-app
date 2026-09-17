@@ -1,5 +1,5 @@
 import { oturumAl, oturumKaydet, temizle } from "./oturum";
-import { aktifCeviri } from "./tarayici-dil";
+import { aktifCeviri, tarayiciDili } from "./tarayici-dil";
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
 
@@ -26,6 +26,8 @@ export type IstekSecenekleri = Omit<RequestInit, "body" | "headers"> & {
   jeton?: string | null;
   /** 401'de oturum yenileme denemesi yapılsın mı (giriş/kayıt uçlarında kapatılır). */
   yenilemeDene?: boolean;
+  /** Yanıt gövdesini JSON yerine ham ikili (`Blob`) olarak döndürür (dosya indirme). */
+  ham?: boolean;
 };
 
 function durumKodu(durum: number): string {
@@ -101,10 +103,12 @@ function giriseYonlendir(): void {
 
 /** JSON API çağrısı: hata zarfını çözer, 401'de bir kez yeniler, gerekirse oturumu kapatır. */
 export async function apiFetch<T>(yol: string, secenekler: IstekSecenekleri = {}): Promise<T> {
-  const { govde, basliklar, jeton, yenilemeDene = true, ...geriKalan } = secenekler;
+  const { govde, basliklar, jeton, yenilemeDene = true, ham = false, ...geriKalan } = secenekler;
 
   const gonder = async (kullanilanJeton: string | null): Promise<Response> => {
     const sonBasliklar: Record<string, string> = { Accept: "application/json", ...basliklar };
+    // Sunucu hata/bilgi mesajları seçilen dilde dönsün (spec §10.1).
+    sonBasliklar["Accept-Language"] = tarayiciDili();
     let sonGovde: BodyInit | undefined;
     if (govde instanceof FormData) {
       sonGovde = govde;
@@ -137,6 +141,7 @@ export async function apiFetch<T>(yol: string, secenekler: IstekSecenekleri = {}
 
   if (!yanit.ok) throw await hataUret(yanit);
   if (yanit.status === 204) return undefined as T;
+  if (ham) return (await yanit.blob()) as T;
 
   const tur = yanit.headers.get("content-type") ?? "";
   if (!tur.includes("application/json")) return undefined as T;

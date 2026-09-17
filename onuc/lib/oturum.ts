@@ -41,3 +41,30 @@ export function temizle(): void {
   d.removeItem(ERISIM_ANAHTARI);
   d.removeItem(YENILEME_ANAHTARI);
 }
+
+/** base64url gövdesini çözer; tarayıcı ve Node'da aynı yol (`atob`). */
+function jetonGovdesiCoz(parca: string): string {
+  const duzeltilmis = parca.replace(/-/g, "+").replace(/_/g, "/");
+  const dolgu = duzeltilmis.length % 4 === 0 ? "" : "=".repeat(4 - (duzeltilmis.length % 4));
+  return atob(duzeltilmis + dolgu);
+}
+
+/**
+ * Erişim jetonundaki `org` claim'i: aktif organizasyonun kimliği.
+ *
+ * Jeton yalnız **okunur** (imza doğrulaması sunucuda yapılır); amaç, sunucunun
+ * aktif organizasyon çözümünü (API.md §15) istemcide aynı sırayla izlemek.
+ * Jeton yoksa/çözülemezse `null` döner.
+ */
+export function jetonOrganizasyonId(): number | null {
+  const jeton = oturumAl()?.erisim_jetonu;
+  const parcalar = (jeton ?? "").split(".");
+  if (parcalar.length < 2 || !parcalar[1]) return null;
+  try {
+    const govde = JSON.parse(jetonGovdesiCoz(parcalar[1])) as { org?: unknown };
+    const deger = Number(govde.org);
+    return Number.isFinite(deger) ? deger : null;
+  } catch {
+    return null;
+  }
+}

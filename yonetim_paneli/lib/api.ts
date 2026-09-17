@@ -1,3 +1,4 @@
+import { aktifOrganizasyonOku } from "@/lib/aktif-organizasyon";
 import { kullaniciOku, oturumKaydet, oturumOku, oturumTemizle } from "@/lib/oturum";
 import { aktifDil, ceviri, type SozlukAnahtari } from "@/lib/sozluk";
 
@@ -72,6 +73,13 @@ async function hamIstek(yol: string, secenekler: IstekSecenekleri): Promise<Resp
 
   const jeton = secenekler.jeton === undefined ? oturumOku("erisim") : secenekler.jeton;
   if (jeton) basliklar.Authorization = `Bearer ${jeton}`;
+
+  // Aktif organizasyon başlığı kayıtlıysa her isteğe eklenir (spec §15).
+  const organizasyon = aktifOrganizasyonOku();
+  if (organizasyon) basliklar["X-Organizasyon"] = organizasyon;
+
+  // Sunucu hata/bilgi mesajları seçilen dilde dönsün (spec §10.1).
+  basliklar["Accept-Language"] = aktifDil();
 
   try {
     return await fetch(`${API_TABANI}${yol}`, {

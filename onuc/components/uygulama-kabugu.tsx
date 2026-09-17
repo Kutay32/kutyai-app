@@ -12,16 +12,34 @@ import { cn } from "@/lib/cn";
 import { useDil } from "@/lib/dil";
 import { oturumAl, temizle } from "@/lib/oturum";
 import type { SozlukAnahtari } from "@/lib/sozluk";
-import { ROL_ANAHTARLARI, type Kullanici } from "@/lib/tipler";
+import {
+  ROL_ANAHTARLARI,
+  medyaYetkiliMi,
+  personelMi,
+  type Kullanici,
+  type UyelikRolu,
+} from "@/lib/tipler";
 
-const BAGLANTILAR: { yol: string; anahtar: SozlukAnahtari }[] = [
-  { yol: "/sohbet", anahtar: "kabuk.baglanti.sohbet" },
-  { yol: "/kullanim", anahtar: "kabuk.baglanti.kullanim" },
-  { yol: "/hesap", anahtar: "kabuk.baglanti.hesap" },
+/** Menü bağlantısı; `gorunur` rol kapısıdır (yetkisiz role bağlantı gösterilmez). */
+type Baglanti = {
+  yol: string;
+  anahtar: SozlukAnahtari;
+  gorunur: (kullanici: Kullanici | null, uyelikRolu: UyelikRolu | null) => boolean;
+};
+
+const BAGLANTILAR: Baglanti[] = [
+  { yol: "/sohbet", anahtar: "kabuk.baglanti.sohbet", gorunur: () => true },
+  // `/dosyalar` personel, `/medya` yazma yetkili personel uçlarını kullanır (API.md §18–21).
+  { yol: "/dosyalar", anahtar: "kabuk.baglanti.dosyalar", gorunur: personelMi },
+  { yol: "/medya", anahtar: "kabuk.baglanti.medya", gorunur: medyaYetkiliMi },
+  { yol: "/kullanim", anahtar: "kabuk.baglanti.kullanim", gorunur: () => true },
+  { yol: "/hesap", anahtar: "kabuk.baglanti.hesap", gorunur: () => true },
 ];
 
 export type UygulamaKabuguOzellikleri = {
   kullanici: Kullanici | null;
+  /** Aktif organizasyondaki üyelik rolü; menü kapıları bunu kullanır (API.md §15). */
+  uyelikRolu: UyelikRolu | null;
   children: React.ReactNode;
   /** Sohbet gibi tam yükseklikte çalışan sayfalar için kaydırmayı gövdeye bırakır. */
   tamYukseklik?: boolean;
@@ -29,6 +47,7 @@ export type UygulamaKabuguOzellikleri = {
 
 export function UygulamaKabugu({
   kullanici,
+  uyelikRolu,
   children,
   tamYukseklik = false,
 }: UygulamaKabuguOzellikleri) {
@@ -60,24 +79,26 @@ export function UygulamaKabugu({
           <div className="flex items-center gap-4">
             <Marka className="text-xl" />
             <nav aria-label={t("kabuk.menu")} className="flex items-center gap-1">
-              {BAGLANTILAR.map((baglanti) => {
-                const etkin = yol === baglanti.yol || yol.startsWith(`${baglanti.yol}/`);
-                return (
-                  <Link
-                    key={baglanti.yol}
-                    href={baglanti.yol}
-                    aria-current={etkin ? "page" : undefined}
-                    className={cn(
-                      "rounded-md border px-3 py-1.5 text-[13px] transition-colors focus:border-neutral-900 focus:ring-0",
-                      etkin
-                        ? "border-neutral-900 text-neutral-900"
-                        : "border-transparent text-neutral-500 hover:text-neutral-900",
-                    )}
-                  >
-                    {t(baglanti.anahtar)}
-                  </Link>
-                );
-              })}
+              {BAGLANTILAR.filter((baglanti) => baglanti.gorunur(kullanici, uyelikRolu)).map(
+                (baglanti) => {
+                  const etkin = yol === baglanti.yol || yol.startsWith(`${baglanti.yol}/`);
+                  return (
+                    <Link
+                      key={baglanti.yol}
+                      href={baglanti.yol}
+                      aria-current={etkin ? "page" : undefined}
+                      className={cn(
+                        "rounded-md border px-3 py-1.5 text-[13px] transition-colors focus:border-neutral-900 focus:ring-0",
+                        etkin
+                          ? "border-neutral-900 text-neutral-900"
+                          : "border-transparent text-neutral-500 hover:text-neutral-900",
+                      )}
+                    >
+                      {t(baglanti.anahtar)}
+                    </Link>
+                  );
+                },
+              )}
             </nav>
           </div>
           <div className="flex items-center gap-3">

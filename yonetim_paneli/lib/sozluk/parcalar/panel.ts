@@ -28,6 +28,23 @@ export const trPanel = {
   "menu.ayarlar": "Ayarlar",
   "menu.islem": "İşlem Kayıtları",
 
+  // --- Çok kiracılılık: menü ve ortak etiketler (spec §15)
+  "menu.organizasyonlar": "Organizasyonlar",
+  "menu.dosyalar": "Dosyalar",
+  "menu.bilgi": "Bilgi Tabanı",
+  "menu.araclar": "Araçlar",
+  "menu.faturalama": "Faturalama",
+  "menu.posta": "Posta Şablonları",
+  "menu.sso": "SSO",
+  "organizasyon.aktif": "Aktif organizasyon",
+  "uyelik.sahip": "Sahip",
+  "uyelik.yonetici": "Yönetici",
+  "uyelik.operator": "Operatör",
+  "uyelik.izleyici": "İzleyici",
+  "uyelik.son_kullanici": "Son Kullanıcı",
+  "durum.org.aktif": "Aktif",
+  "durum.org.askida": "Askıda",
+
   // --- Rol, kullanıcı ve BDM durum etiketleri
   "rol.yonetici": "Yönetici",
   "rol.operator": "Operatör",
@@ -272,6 +289,23 @@ export const enPanel: Record<keyof typeof trPanel, string> = {
   "menu.anahtarlar": "API Keys",
   "menu.ayarlar": "Settings",
   "menu.islem": "Audit Logs",
+
+  // --- Multi-tenancy: menu and shared labels (spec §15)
+  "menu.organizasyonlar": "Organizations",
+  "menu.dosyalar": "Files",
+  "menu.bilgi": "Knowledge Base",
+  "menu.araclar": "Tools",
+  "menu.faturalama": "Billing",
+  "menu.posta": "E-mail Templates",
+  "menu.sso": "SSO",
+  "organizasyon.aktif": "Active organization",
+  "uyelik.sahip": "Owner",
+  "uyelik.yonetici": "Administrator",
+  "uyelik.operator": "Operator",
+  "uyelik.izleyici": "Viewer",
+  "uyelik.son_kullanici": "End User",
+  "durum.org.aktif": "Active",
+  "durum.org.askida": "Suspended",
 
   // --- Role, user and BDM status labels
   "rol.yonetici": "Administrator",

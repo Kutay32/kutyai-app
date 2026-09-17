@@ -31,6 +31,36 @@ export type KayitYaniti = {
 
 export type MesajYaniti = { mesaj: string; gelistirme_baglantisi?: string };
 
+/** `kaynak/API.md` §2 sayfalanmış liste zarfı. */
+export type Sayfa<T> = { toplam: number; sayfa: number; boyut: number; kayitlar: T[] };
+
+/**
+ * Aktif organizasyondaki üyelik rolü. Yetki kararı sunucuda bu role göre
+ * verilir (API.md §15); hesabın `rol` alanı yalnız varsayılan roldür.
+ */
+export type UyelikRolu = "sahip" | "yonetici" | "operator" | "izleyici" | "son_kullanici";
+
+/**
+ * Kapı kararında kullanılan rol: aktif organizasyonun üyelik rolü; üyelik
+ * listesi alınamadıysa hesabın varsayılan rolü (sunucu varsayılan
+ * organizasyona eklerken `ROL_ESLEME` ile aynı role eşler).
+ */
+function yetkiRolu(kullanici: Kullanici | null, uyelikRolu: UyelikRolu | null): UyelikRolu | null {
+  return uyelikRolu ?? kullanici?.rol ?? null;
+}
+
+/** Aktif organizasyonda personel mi: `/dosyalar`, `/rag/*`, `/araclar` uçları. */
+export function personelMi(kullanici: Kullanici | null, uyelikRolu: UyelikRolu | null): boolean {
+  const rol = yetkiRolu(kullanici, uyelikRolu);
+  return rol !== null && rol !== "son_kullanici";
+}
+
+/** Aktif organizasyonda görsel/ses üretimi yapabilir mi: `/medya/*` uçları. */
+export function medyaYetkiliMi(kullanici: Kullanici | null, uyelikRolu: UyelikRolu | null): boolean {
+  const rol = yetkiRolu(kullanici, uyelikRolu);
+  return rol === "sahip" || rol === "yonetici" || rol === "operator";
+}
+
 /** Kota sınırları; `null` sınır sınırsız anlamına gelir (API.md §13). */
 export type KullanimKotasi = {
   gunluk_istek: number | null;

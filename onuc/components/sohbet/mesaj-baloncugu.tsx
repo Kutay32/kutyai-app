@@ -8,6 +8,8 @@ import { cn } from "@/lib/cn";
 import { useDil } from "@/lib/dil";
 import type { GorunumMesaji } from "@/lib/sohbet";
 
+import { AracKartlari } from "./arac-kartlari";
+import { KaynakListesi } from "./kaynak-listesi";
 import { MarkdownGorunumu } from "./markdown-gorunumu";
 
 export type MesajBaloncuguOzellikleri = {
@@ -66,6 +68,19 @@ export const MesajBaloncugu = memo(function MesajBaloncugu({
             </>
           )}
         </div>
+
+        {kullaniciMi && mesaj.dosya_adlari && mesaj.dosya_adlari.length > 0 ? (
+          <p className="px-1 text-[11px] text-neutral-500">
+            {t("sohbet.ek.mesaj", { adlar: mesaj.dosya_adlari.join(", ") })}
+          </p>
+        ) : null}
+
+        {!kullaniciMi && mesaj.araclar && mesaj.araclar.length > 0 ? (
+          <AracKartlari kartlar={mesaj.araclar} />
+        ) : null}
+        {!kullaniciMi && mesaj.kaynaklar && mesaj.kaynaklar.length > 0 ? (
+          <KaynakListesi kaynaklar={mesaj.kaynaklar} />
+        ) : null}
 
         {mesaj.durduruldu ? (
           <p className="px-1 text-[11px] text-neutral-500">{t("sohbet.mesaj.durduruldu")}</p>
