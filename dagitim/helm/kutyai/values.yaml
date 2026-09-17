@@ -71,6 +71,7 @@ config:
   KUTYAI_RAG_UST_K: "4"
   KUTYAI_ODEME_SAGLAYICI: "yerel"
   KUTYAI_SSO_OTOMATIK_UYELIK: "true"
+  KUTYAI_SSO_YEREL_IZIN: "false"
   KUTYAI_SSO_YENIDEN_YONLENDIRME: ""
 
 # --- Sırlar (Secret) ---------------------------------------------------------

@@ -1,0 +1,394 @@
+{
+  "senaryo": "Dalga 4 uçtan uca duman: kiracılık, RAG, araç, kota, i18n, medya",
+  "zaman": "2026-09-17T07:50:15.899940+00:00",
+  "sure_sn": 133.6,
+  "ortam": {
+    "arka_uc": "http://127.0.0.1:8099",
+    "arka_uc_komutu": "python.exe -m uvicorn arkauc.app.main:app --host 127.0.0.1 --port 8099",
+    "sahte_upstream": "http://127.0.0.1:8098/v1",
+    "sahte_webhook": "http://127.0.0.1:8097/kanca",
+    "veritabani": "C:\\Users\\kuti\\AppData\\Local\\Temp\\d4-e2e-1pdpn_mn\\kutyai.db",
+    "python": "3.13.3",
+    "calistirilan": "E:/kutyai-app/.venv/Scripts/python.exe kaynak/testler/betikler/dalga4_duman.py",
+    "degiskenler": {
+      "KUTYAI_ORTAM": "test",
+      "KUTYAI_VERITABANI_URL": "sqlite:///C:/Users/kuti/AppData/Local/Temp/d4-e2e-1pdpn_mn/kutyai.db",
+      "KUTYAI_GIZLI_ANAHTAR": "<rastgele>",
+      "KUTYAI_SIFRELEME_ANAHTARI": "<rastgele>",
+      "KUTYAI_DOSYA_DIZINI": "C:/Users/kuti/AppData/Local/Temp/d4-e2e-1pdpn_mn/dosyalar",
+      "KUTYAI_ARAC_IMZA_ANAHTARI": "<rastgele>",
+      "KUTYAI_ARAC_YEREL_IZIN": "true",
+      "KUTYAI_ORAN_SINIRI_ISTEK_DK": "100000",
+      "KUTYAI_ORAN_SINIRI_KIMLIK_DK": "100000",
+      "KUTYAI_ODEME_SAGLAYICI": "yerel"
+    },
+    "tohumlanan_bdmler": [],
+    "sahte_upstream_istekleri": 413,
+    "sahte_webhook_istekleri": 203,
+    "gecici_dizin": "C:\\Users\\kuti\\AppData\\Local\\Temp\\d4-e2e-1pdpn_mn"
+  },
+  "ozet": {
+    "gecti": 51,
+    "kaldi": 0,
+    "yapilamadi": 0
+  },
+  "adimlar": [
+    {
+      "ad": "S0.1 Sağlık ucu",
+      "komut": "GET /api/v1/saglik",
+      "beklenen": "200 durum=ayakta",
+      "gozlenen": "200 :: {\"durum\": \"ayakta\", \"surum\": \"0.1.0\", \"ortam\": \"test\", \"zaman\": \"2026-09-17T07:48:05.421405+00:00\"}",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S0.2 Kurulum sihirbazı",
+      "komut": "POST /api/v1/kurulum (dogrula=true)",
+      "beklenen": "201 kurulum_tamam=true + upstream doğrulaması başarılı",
+      "gozlenen": "201 :: {\"yonetici\": {\"id\": 1, \"eposta\": \"duman@kutyai.example.com\", \"ad_soyad\": \"Duman Yönetici\", \"rol\": \"yonetici\", \"durum\": \"aktif\", \"eposta_dogrulandi\": true, \"olusturulma\": \"2026-09-17T07:48:05.464358+00:00\", \"son_giris\": null}, \"bdm\": {\"id\": 1, \"slug\": \"duman-va",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S0.3 Panel girişi (personel kapısı)",
+      "komut": "POST /api/v1/kimlik/panel-giris",
+      "beklenen": "200 erisim_jetonu",
+      "gozlenen": "200 :: {\"erisim_jetonu\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwicm9sIjoieW9uZXRpY2kiLCJqdGkiOiJmYjVHSFpjamxhcThWT3dTdUlqTzdBIiwidHVyIjoiZXJpc2ltIiwiaWF0IjoxNzg5NjMxMjg1LCJleHAiOjE3ODk2MzIxODV9.XeUagyyjztIeVKAkO4w-ckCjdqXrSuXoSJzl3yb-Tzk\", \"yenileme_jet",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S0.4 Varsayılan organizasyon çözümü",
+      "komut": "GET /api/v1/bdm (başlıksız) + GET /api/v1/organizasyonlar",
+      "beklenen": "200 ve üyelik listesinde slug=varsayilan",
+      "gozlenen": "bdm=200 organizasyonlar=['varsayilan']",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S1.1 İki organizasyon oluşturma (A, B)",
+      "komut": "POST /api/v1/organizasyonlar ×2",
+      "beklenen": "201 + 201 (A id≠B id)",
+      "gozlenen": "A=201 :: {\"id\": 2, \"ad\": \"Duman A\", \"slug\": \"duman-a\", \"durum\": \"aktif\", \"rol\": \"sahip\", \"olusturul | B=201 :: {\"id\": 3, \"ad\": \"Duman B\", \"slug\": \"duman-b\", \"durum\": \"aktif\", \"rol\": \"sahip\", \"olusturul",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S1.2 A organizasyonunda BDM oluştur",
+      "komut": "POST /api/v1/bdm (X-Organizasyon: duman-a)",
+      "beklenen": "201",
+      "gozlenen": "201 :: {\"id\": 2, \"slug\": \"duman-a-modeli\", \"gorunen_ad\": \"Duman A Modeli\", \"aciklama\": \"\", \"saglayici\": \"ozel\", \"temel_url\": \"http://127.0.0.1:8098/v1\", \"upstream_model\": \"sahte-sohbet-1\", \"api_anahtari_maskeli\": \"\", \"baglam_penceresi\": 8192, \"maks_cikti\": 2048, \"sic",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S1.3 B organizasyonunda kendi BDM'i",
+      "komut": "POST /api/v1/bdm (X-Organizasyon: duman-b)",
+      "beklenen": "201",
+      "gozlenen": "201 :: {\"id\": 3, \"slug\": \"duman-b-modeli\", \"gorunen_ad\": \"Duman B Modeli\", \"aciklama\": \"\", \"saglayici\": \"ozel\", \"temel_url\": \"http://127.0.0.1:8098/v1\", \"upstream_model\": \"sahte-sohbet-1\", \"api_anahtari_maskeli\": \"\", \"baglam_penceresi\": 8192, \"maks_cikti\": 2048, \"sic",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S1.4 BDM kaydı gerçekten A organizasyonuna mı yazıldı? (DB)",
+      "komut": "sqlite: SELECT id, org_id, slug FROM bdm WHERE id=2",
+      "beklenen": "org_id = A (2)",
+      "gozlenen": "bdm satırı=[(2, 2, 'duman-a-modeli')] A org_id=2",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S1.5 A BDM'i upstream doğrulamasıyla hazır duruma geçer",
+      "komut": "POST /api/v1/bdm/hazirlama/2/dogrula (A) + DB durum",
+      "beklenen": "200 basarili=true ve DB durum=hazir",
+      "gozlenen": "200 :: {\"basarili\": true, \"gecikme_ms\": 3, \"modeller\": [\"sahte-sohbet-1\", \"sahte-gorsel-1\", \"sahte-ses-1\", \"sahte-gomme-1\"], \"mesaj\": \"Bağlantı başarılı; 4 model listelendi.\"} DB=[('hazir',)]",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S1.6 B listesinde A'nın BDM'i görünmez",
+      "komut": "GET /api/v1/bdm (X-Organizasyon: duman-b)",
+      "beklenen": "2 numaralı BDM B listesinde yok",
+      "gozlenen": "200 B listesi=[3] (A bdm=2)",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S1.7 Başka organizasyonun BDM'i değiştirilemez",
+      "komut": "PATCH /api/v1/bdm/2 (X-Organizasyon: duman-b)",
+      "beklenen": "404 bulunamadi",
+      "gozlenen": "404 kod=bulunamadi :: {\"hata\":{\"kod\":\"bulunamadi\",\"mesaj\":\"BDM kaydı bulunamadı.\",\"ayrinti\":{\"bdm_id\":2}}}",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S1.8 Başka organizasyonun BDM'i silinemez",
+      "komut": "DELETE /api/v1/bdm/2 (X-Organizasyon: duman-b)",
+      "beklenen": "404 bulunamadi",
+      "gozlenen": "404 kod=bulunamadi :: {\"hata\":{\"kod\":\"bulunamadi\",\"mesaj\":\"BDM kaydı bulunamadı.\",\"ayrinti\":{\"bdm_id\":2}}}",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S1.9 Başka organizasyonun BDM'i hazırlanamaz",
+      "komut": "POST /api/v1/bdm/hazirlama/2/dogrula (X-Organizasyon: duman-b)",
+      "beklenen": "404 bulunamadi",
+      "gozlenen": "404 kod=bulunamadi :: {\"hata\":{\"kod\":\"bulunamadi\",\"mesaj\":\"BDM kaydı bulunamadı.\",\"ayrinti\":{\"bdm_id\":2}}}",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S1.10 Başka organizasyonun BDM yönetimi kullanılamaz",
+      "komut": "POST /api/v1/bdm/yonetim/2/durdur (X-Organizasyon: duman-b)",
+      "beklenen": "404 bulunamadi",
+      "gozlenen": "404 kod=bulunamadi :: {\"hata\":{\"kod\":\"bulunamadi\",\"mesaj\":\"BDM kaydı bulunamadı.\",\"ayrinti\":{\"bdm_id\":2}}}",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S1.11 A kendi BDM'ine erişmeye devam eder",
+      "komut": "GET /api/v1/bdm (X-Organizasyon: duman-a)",
+      "beklenen": "200 ve liste 2 içerir",
+      "gozlenen": "200 A listesi=[2]",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S2.1 A organizasyonunda API anahtarı üret",
+      "komut": "POST /api/v1/api-anahtarlari (X-Organizasyon: duman-a)",
+      "beklenen": "201 + tam_anahtar bir kez döner",
+      "gozlenen": "201 :: {\"id\": 1, \"ad\": \"Duman Anahtarı\", \"onek\": \"kuty_XwUeA15\", \"son_dort\": \"7ROn\", \"durum\": \"aktif\", \"izinli_modeller\": [\"duman-a-modeli\"], \"gunluk_istek_siniri\": null, \"olusturulma\": \"2026-09-17T07:48:06.259774+00:00\", \"son_kullanim\": null, \"tam_anahtar\": \"kuty_Xw",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S2.2 Anahtar kaydı A organizasyonuna yazıldı (DB)",
+      "komut": "sqlite: SELECT id, org_id FROM api_anahtari WHERE id=1",
+      "beklenen": "org_id = A (2)",
+      "gozlenen": "satır=[(1, 2)] A org_id=2",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S2.3 A'nın anahtarı B listesinde görünmez",
+      "komut": "GET /api/v1/api-anahtarlari (X-Organizasyon: duman-b)",
+      "beklenen": "1 B listesinde yok",
+      "gozlenen": "200 B listesi=[] (A anahtarı=1)",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S2.4 B, A'nın anahtarını iptal edemez",
+      "komut": "POST /api/v1/api-anahtarlari/1/iptal (X-Organizasyon: duman-b)",
+      "beklenen": "404 bulunamadi",
+      "gozlenen": "404 kod=bulunamadi :: {\"hata\":{\"kod\":\"bulunamadi\",\"mesaj\":\"API anahtarı bulunamadı.\",\"ayrinti\":{\"api_anahtari_id\":1}}}",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S2.5 API anahtarı sohbet erişimi (jeton yerine anahtar)",
+      "komut": "POST /api/v1/sohbet (Authorization: Bearer <tam_anahtar>)",
+      "beklenen": "200 ve konusma_id",
+      "gozlenen": "200 :: {\"konusma_id\": 1, \"mesaj_id\": 2, \"icerik\": \"Duman yanıtı: Anahtar kimliğiyle ilk mesaj.\", \"token_girdi\": 12, \"token_cikti\": 7, \"gecikme_ms\": 185}",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S3.1 A'nın denetim izi kendi kayıtlarını taşır",
+      "komut": "GET /api/v1/islem-kayitlari?eylem=bdm.olusturuldu (A)",
+      "beklenen": "200 ve hedef_id=2",
+      "gozlenen": "200 toplam=1 hedefler=['2']",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S3.2 A'nın denetim kayıtları B'de görünmez",
+      "komut": "GET /api/v1/islem-kayitlari?eylem=bdm.olusturuldu (B)",
+      "beklenen": "kayıtlar 2 hedefini içermez",
+      "gozlenen": "200 B hedefler=['3']",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S3.3 Konuşma logları organizasyona göre süzülür",
+      "komut": "GET /api/v1/loglar/konusmalar (A) vs (B)",
+      "beklenen": "A'da 1 var, B'de yok",
+      "gozlenen": "A toplam=1 B toplam=0 B id'ler=[]",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S4.1 A'nın kullanım özeti isteği sayar",
+      "komut": "GET /api/v1/kullanim/ozet (A)",
+      "beklenen": "200 toplam_istek≥1, toplam_token>0",
+      "gozlenen": "200 :: {\"toplam_istek\": 1, \"toplam_token\": 19, \"basarili\": 1, \"hatali\": 0, \"kota_asimi\": 0, \"ortalama_gecikme_ms\": 185}",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S4.2 A'nın zaman serisi dolu döner",
+      "komut": "GET /api/v1/kullanim/zaman-serisi?gun=30 (A)",
+      "beklenen": "200 seri boş değil",
+      "gozlenen": "200 :: {\"seri\": [{\"etiket\": \"Duman A Modeli\", \"istek\": 1, \"token\": 19}]}",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S4.3 A'nın kullanımı B özetine sızmaz",
+      "komut": "GET /api/v1/kullanim/ozet (B)",
+      "beklenen": "200 toplam_istek=0",
+      "gozlenen": "200 :: {\"toplam_istek\": 0, \"toplam_token\": 0, \"basarili\": 0, \"hatali\": 0, \"kota_asimi\": 0, \"ortalama_gecikme_ms\": 0}",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S5.1 A organizasyonuna metin dosyası yükle",
+      "komut": "POST /api/v1/dosyalar (multipart dosya, text/plain)",
+      "beklenen": "201 ve dosya kaydı",
+      "gozlenen": "201 :: {\"id\": 1, \"ad\": \"duman-belgesi.txt\", \"mime\": \"text/plain\", \"boyut\": 196, \"sha256\": \"6fb3c28b9267fa27e1a1754b694a036f15e1218a76050e9c037d13e598a6d3d7\", \"metin_uzunluk\": 183, \"kullanici_id\": 1, \"olusturulma\": \"2026-09-17T07:48:06.558588+00:00\", \"metin\": \"KutyAI ",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S5.2 Dosya kaydı A organizasyonuna yazıldı (DB)",
+      "komut": "sqlite: SELECT id, org_id FROM dosya WHERE id=1",
+      "beklenen": "org_id = A (2)",
+      "gozlenen": "satır=[(1, 2)]",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S5.3 Dosyadan RAG belgesi üret (parçala + göm)",
+      "komut": "POST /api/v1/rag/belgeler {ad, bdm_id, dosya_id}",
+      "beklenen": "201 parca_sayisi>0",
+      "gozlenen": "201 :: {\"id\": 1, \"ad\": \"Duman Belgesi\", \"kaynak\": \"dosya\", \"dosya_id\": 1, \"meta\": {}, \"parca_sayisi\": 1, \"olusturulma\": \"2026-09-17T07:48:06.759387+00:00\"}",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S5.4 RAG araması benzer parçayı döndürür",
+      "komut": "POST /api/v1/rag/ara {sorgu: DUMAN-KELIMESI-9147}",
+      "beklenen": "200 sonuclar dolu ve ilk parça anahtarı taşır",
+      "gozlenen": "200 :: {\"sonuclar\": [{\"belge_id\": 1, \"belge_ad\": \"Duman Belgesi\", \"sira\": 0, \"icerik\": \"KutyAI duman belgesi.\\nBu paragraf DUMAN-KELIMESI-9147 anahtarını taşır ve bilgi tabanı aramasında benzer parça olarak dönmelidir.\\nİkinci satır yalnızca parçalama için dolgu metn",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S5.5 RAG'li sohbet kaynak döndürür",
+      "komut": "POST /api/v1/sohbet {rag: true}",
+      "beklenen": "200 kaynaklar dolu",
+      "gozlenen": "200 :: {\"konusma_id\": 2, \"mesaj_id\": 4, \"icerik\": \"Duman yanıtı: DUMAN-KELIMESI-9147\", \"token_girdi\": 12, \"token_cikti\": 7, \"gecikme_ms\": 193, \"kaynaklar\": [{\"belge_id\": 1, \"belge_ad\": \"Duman Belgesi\", \"sira\": 0, \"skor\": 0.406}]}",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S5.6 Sohbete dosya eki sistem istemine eklenir",
+      "komut": "POST /api/v1/sohbet {dosya_idleri: [id]} + upstream gövdesi",
+      "beklenen": "200 ve upstream isteğinde dosya metni",
+      "gozlenen": "200 :: {\"konusma_id\": 3, \"mesaj_id\": 6, \"icerik\": \"Duman yanıtı: Ekli dosyayı özetle.\", \"token_girdi\": 12, \"token_cikti\": 7, \"gecikme_ms\": 189} upstream'de_metin=True",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S5.7 A'nın belgesi B'ye görünmez (detay 404, arama boş)",
+      "komut": "GET /api/v1/rag/belgeler/1 (B) + POST /rag/ara (B)",
+      "beklenen": "404 belge_bulunamadi (ya da bulunamadi) ve B araması boş",
+      "gozlenen": "detay=404 kod=belge_bulunamadi :: {\"hata\":{\"kod\":\"belge_bulunamadi\",\"mesaj\":\"Bilgi tabanı belgesi bulunamadı.\",\"ayrinti\":{\"belge_id\":1}}} arama=200 :: {\"sonuclar\": [], \"ayrinti\": {\"yol\": \"python\", \"ust_k\": 4}}",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S5.8 B, A'nın dosyasını sohbete ekleyemez",
+      "komut": "POST /api/v1/sohbet {dosya_idleri: [A dosyası]} (B)",
+      "beklenen": "404 bulunamadi",
+      "gozlenen": "404 kod=bulunamadi :: {\"hata\":{\"kod\":\"bulunamadi\",\"mesaj\":\"Kayıt bulunamadı.\",\"ayrinti\":{\"dosya_id\":1}}}",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S6.1 Webhook aracı oluştur",
+      "komut": "POST /api/v1/araclar {tur: webhook, uc_noktasi: 127.0.0.1:8097}",
+      "beklenen": "201 ve araç kaydı",
+      "gozlenen": "201 :: {\"id\": 1, \"ad\": \"Duman Webhook Aracı\", \"slug\": \"duman-webhook\", \"aciklama\": \"Duman betiği için HMAC imzalı webhook\", \"json_sema\": {\"type\": \"object\", \"properties\": {\"sorgu\": {\"type\": \"string\"}}, \"required\": [\"sorgu\"], \"additionalProperties\": false}, \"tur\": \"web",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S6.2 Araç çalıştırma + HMAC imza doğrulaması",
+      "komut": "POST /api/v1/araclar/1/dene (sahte webhook imzayı doğrular)",
+      "beklenen": "200 durum=basarili ve imza sha256=<hmac> geçerli",
+      "gozlenen": "200 :: {\"arac_id\": 1, \"ad\": \"duman-webhook\", \"durum\": \"basarili\", \"sonuc\": {\"ok\": true, \"yankı\": \"{\\\"arac\\\": \\\"duman-webhook\\\", \\\"argumanlar\\\": {\\\"sorgu\\\": \\\"duman\\\"}}\"}, \"gecikme_ms\": 184} imza_doğrulandı=[True]",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S6.3 Sohbette araç turu (çağrı → sonuç → yanıt)",
+      "komut": "POST /api/v1/sohbet {arac_sluglari: [duman-webhook]}",
+      "beklenen": "200 arac_cagrilari dolu, içerik araç sonrası üretilir",
+      "gozlenen": "200 :: {\"konusma_id\": 4, \"mesaj_id\": 9, \"icerik\": \"Duman yanıtı: Aracı kullan.\", \"token_girdi\": 24, \"token_cikti\": 14, \"gecikme_ms\": 566, \"arac_cagrilari\": [{\"ad\": \"duman-webhook\", \"durum\": \"basarili\"}]}",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S6.4 SSE akışında araç olayları",
+      "komut": "POST /api/v1/sohbet/akis {arac_sluglari}",
+      "beklenen": "olaylar: baslangic, arac_cagrisi, arac_sonucu, parca, bitti",
+      "gozlenen": "olaylar=['baslangic', 'arac_cagrisi', 'arac_sonucu', 'parca', 'parca', 'parca', 'kullanim', 'bitti']",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S6.5 Araç çağrı günlüğü organizasyona etiketlenir (DB)",
+      "komut": "sqlite: SELECT org_id, durum FROM arac_cagrisi WHERE arac_id=1",
+      "beklenen": "tüm satırlarda org_id = A (2)",
+      "gozlenen": "satırlar=[(2, 'basarili'), (2, 'basarili'), (2, 'basarili')]",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S6.6 A'nın aracı B listesinde görünmez",
+      "komut": "GET /api/v1/araclar (X-Organizasyon: duman-b)",
+      "beklenen": "1 B listesinde yok",
+      "gozlenen": "200 B listesi=[]",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S7.1 Plan listesi",
+      "komut": "GET /api/v1/faturalama/planlar",
+      "beklenen": "200 ve deneme planı listede",
+      "gozlenen": "200 :: [{\"id\": 1, \"ad\": \"Deneme\", \"slug\": \"deneme\", \"aylik_fiyat_kurus\": 0, \"aylik_fiyat\": \"TRY 0,00\", \"para\": \"TRY\", \"dahil_istek\": 200, \"dahil_token\": 200000, \"ozellikler\": {\"destek\": \"topluluk\", \"rag\": false, \"sso\": false}, \"etkin\": true}, {\"id\": 2, \"ad\": \"Başlang",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S7.2 Plan seç + abonelik ve fatura üretimi",
+      "komut": "POST /api/v1/faturalama/abonelik {plan_id: deneme}",
+      "beklenen": "201 abonelik.durum=aktif + fatura",
+      "gozlenen": "201 :: {\"abonelik\": {\"id\": 1, \"durum\": \"aktif\", \"plan\": {\"id\": 1, \"ad\": \"Deneme\", \"slug\": \"deneme\", \"aylik_fiyat_kurus\": 0, \"aylik_fiyat\": \"TRY 0,00\", \"para\": \"TRY\", \"dahil_istek\": 200, \"dahil_token\": 200000, \"ozellikler\": {\"destek\": \"topluluk\", \"rag\": false, \"sso\": ",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S7.3 Plan limitleri organizasyon kotasına yazıldı (DB)",
+      "komut": "sqlite: SELECT gunluk_istek, aylik_token FROM kota WHERE kapsam_id=2",
+      "beklenen": "gunluk_istek=200",
+      "gozlenen": "satırlar=[(200, 200000)]",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S7.4 Kota aşımı → 429 kota_asildi",
+      "komut": "POST /api/v1/sohbet ×201 (deneme planı kotası dolana kadar)",
+      "beklenen": "429 kota_asildi",
+      "gozlenen": "deneme=201 beklemeler=0 429 kod=kota_asildi :: {\"hata\":{\"kod\":\"kota_asildi\",\"mesaj\":\"Günlük istek kotanız doldu.\",\"ayrinti\":{\"kapsam\":\"organizasyon\",\"sifirlanma\":\"2026-09-18T07:48:09.285062Z\",\"bdm_id\":2}}}",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S7.5 Gecikmiş abonelikte sohbet 402 abonelik_gecikmis (spec §6)",
+      "komut": "POST /api/v1/faturalama/abonelik (B) → DB durum=gecikmis → POST /api/v1/sohbet (B)",
+      "beklenen": "402 abonelik_gecikmis",
+      "gozlenen": "abonelik=201 :: {\"abonelik\": {\"id\": 2, \"durum\": \"aktif\", \"plan\": {\"id\": 1, \"ad\": \"Deneme\", \"slug\": \"deneme\", \"aylik_ sohbet=402 kod=abonelik_gecikmis :: {\"hata\":{\"kod\":\"abonelik_gecikmis\",\"mesaj\":\"Abonelik ödemesi gecikmiş. Lütfen faturalama sayfasından ödeme yapın.\",\"ayrinti\":{\"durum\":\"gecikmis\",\"org_id\":3}}}",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S8.1 Aynı hata TR ve EN farklı mesaj döner",
+      "komut": "GET /api/v1/boyle-bir-uc-yok (Accept-Language: tr | en)",
+      "beklenen": "iki mesaj farklı ve kod aynı",
+      "gozlenen": "TR='Kayıt bulunamadı.' EN='Record not found.'",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S8.2 Content-Language başlığı (API.md §16)",
+      "komut": "GET /api/v1/boyle-bir-uc-yok yanıt başlıkları",
+      "beklenen": "Content-Language: tr | en",
+      "gozlenen": "TR=tr EN=en",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S8.3 401 zarfı da dilden bağımsız kod + çevrilmiş mesaj taşır",
+      "komut": "GET /api/v1/bdm (jetonsuz, Accept-Language: en)",
+      "beklenen": "401 kimlik_gerekli + İngilizce mesaj",
+      "gozlenen": "401 :: {\"hata\": {\"kod\": \"kimlik_gerekli\", \"mesaj\": \"You must sign in to perform this action.\", \"ayrinti\": {}}}",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S9.1 Görsel üretimi dosya kaydı oluşturur",
+      "komut": "POST /api/v1/medya/gorsel {bdm_id: A, istem}",
+      "beklenen": "200 dosya_id + DB kaydı (image/png, A org)",
+      "gozlenen": "200 :: [{\"dosya_id\": 2, \"ad\": \"gorsel-duman-a-modeli-20260917-075014824667-1.png\", \"mime\": \"image/png\", \"boyut\": 70}] DB=[(2, 'image/png')]",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S9.2 Ses üretimi dosya kaydı oluşturur",
+      "komut": "POST /api/v1/medya/ses {bdm_id: A, metin, bicim: mp3}",
+      "beklenen": "200 dosya_id + DB kaydı (audio/mpeg, A org)",
+      "gozlenen": "200 :: {\"dosya_id\": 3} DB=[(2, 'audio/mpeg')]",
+      "sonuc": "gecti"
+    },
+    {
+      "ad": "S9.3 Yetenek kapalıyken medya reddedilir",
+      "komut": "POST /api/v1/medya/gorsel (gorsel yeteneği kapalı BDM)",
+      "beklenen": "400 medya_desteklenmiyor",
+      "gozlenen": "400 kod=medya_desteklenmiyor :: {\"hata\":{\"kod\":\"medya_desteklenmiyor\",\"mesaj\":\"Seçilen model görsel veya ses üretimini desteklemiyor.\",\"ayrinti\":{\"yetenek\":\"gorsel\",\"bdm_id\":1}}}",
+      "sonuc": "gecti"
+    }
+  ]
+}

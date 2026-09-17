@@ -131,19 +131,23 @@ def kova_anahtarlari(scope: Scope, kural: Kural) -> list[str]:
 
 
 class OranSiniriMiddleware:
-    """Saf ASGI ara katmani; yanit govdesine dokunmaz."""
+    """Saf ASGI ara katmani; yanit govdesine dokunmaz.
 
-    def __init__(self, uygulama: ASGIApp) -> None:
-        self.uygulama = uygulama
+    Ilk parametre adi `app`'dir: Starlette ara katmanlari `cls(app, ...)` ile
+    kurar ve `app` adi kurulum biciminden bagimsiz olarak gecerlidir.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http" or scope.get("method") == "OPTIONS":
-            await self.uygulama(scope, receive, send)
+            await self.app(scope, receive, send)
             return
 
         kural = kural_sec(str(scope.get("path", "")))
         if kural is None:
-            await self.uygulama(scope, receive, send)
+            await self.app(scope, receive, send)
             return
 
         anahtarlar = kova_anahtarlari(scope, kural)
@@ -156,7 +160,7 @@ class OranSiniriMiddleware:
                 yeniden_dene = max(yeniden_dene, kalan)
                 break
         if izin:
-            await self.uygulama(scope, receive, send)
+            await self.app(scope, receive, send)
             return
 
         yanit = JSONResponse(

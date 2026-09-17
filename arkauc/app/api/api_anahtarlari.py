@@ -14,11 +14,23 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from arkauc.app.cekirdek.bagimliliklar import gecerli_personel, veritabani_oturumu
+from arkauc.app.cekirdek.bagimliliklar import (
+    aktif_organizasyon,
+    gecerli_personel,
+    veritabani_oturumu,
+)
 from arkauc.app.cekirdek.denetim import islem_kaydet
 from arkauc.app.cekirdek.guvenlik import api_anahtari_uret
 from arkauc.app.cekirdek.hatalar import Bulunamadi, GecersizIstek
-from bdm_veritabani.modeller import AnahtarDurumu, ApiAnahtari, Bdm, Kullanici, Rol
+from arkauc.app.cekirdek.organizasyon import uyelik_getir
+from bdm_veritabani.modeller import (
+    AnahtarDurumu,
+    ApiAnahtari,
+    Bdm,
+    Kullanici,
+    Organizasyon,
+    Rol,
+)
 
 router = APIRouter()
 
@@ -50,15 +62,21 @@ def _sozluk(anahtar: ApiAnahtari) -> dict[str, object]:
 
 
 async def _izinli_modelleri_dogrula(
-    oturum: AsyncSession, modeller: list[str]
+    oturum: AsyncSession, org_id: int, modeller: list[str]
 ) -> list[str]:
-    """Model slug'ı ya da kimliği olmayan girdileri reddeder; boş liste tümü demektir."""
+    """Model slug'ı ya da kimliği olmayan girdileri reddeder; boş liste tümü demektir.
+
+    Yalnız aktif organizasyonun modelleri geçerlidir; başka organizasyonun
+    model kimliği `400` ile reddedilir.
+    """
     temiz = [str(parca).strip() for parca in modeller if str(parca).strip()]
     if not temiz:
         return []
     bilinen = {
         str(deger)
-        for satir in (await oturum.execute(sa.select(Bdm.id, Bdm.slug))).all()
+        for satir in (
+            await oturum.execute(sa.select(Bdm.id, Bdm.slug).where(Bdm.org_id == org_id))
+        ).all()
         for deger in satir
     }
     bilinmeyen = sorted({parca for parca in temiz if parca not in bilinen})
@@ -73,13 +91,14 @@ async def _izinli_modelleri_dogrula(
 async def anahtarlari_listele(
     oturum: AsyncSession = Depends(veritabani_oturumu),
     _personel: Kullanici = Depends(gecerli_personel(YAZMA_ROLLERI)),
+    organizasyon: Organizasyon = Depends(aktif_organizasyon),
 ) -> list[dict[str, object]]:
-    """Yönetici/operatör için tüm API anahtarlarını maskeli olarak listeler."""
+    """Yönetici/operatör için aktif organizasyonun anahtarlarını maskeli listeler."""
     satirlar = (
         await oturum.execute(
-            sa.select(ApiAnahtari).order_by(
-                ApiAnahtari.olusturulma.desc(), ApiAnahtari.id.desc()
-            )
+            sa.select(ApiAnahtari)
+            .where(ApiAnahtari.org_id == organizasyon.id)
+            .order_by(ApiAnahtari.olusturulma.desc(), ApiAnahtari.id.desc())
         )
     ).scalars().all()
     return [_sozluk(anahtar) for anahtar in satirlar]
@@ -90,18 +109,22 @@ async def anahtar_olustur(
     govde: AnahtarOlustur,
     oturum: AsyncSession = Depends(veritabani_oturumu),
     personel: Kullanici = Depends(gecerli_personel(YAZMA_ROLLERI)),
+    organizasyon: Organizasyon = Depends(aktif_organizasyon),
 ) -> dict[str, object]:
     """Yeni API anahtarı üretir; tam anahtar yalnız bu yanıtta döner."""
-    izinli = await _izinli_modelleri_dogrula(oturum, govde.izinli_modeller)
+    izinli = await _izinli_modelleri_dogrula(oturum, organizasyon.id, govde.izinli_modeller)
     if govde.kullanici_id is not None:
-        sahibi = await oturum.get(Kullanici, govde.kullanici_id)
-        if sahibi is None:
+        # Anahtar yalniz aktif organizasyonun uyesine baglanabilir; baska
+        # kiracinin kullanicisi `400` ile reddedilir (varlik sizdirilmaz).
+        if await uyelik_getir(oturum, organizasyon.id, govde.kullanici_id) is None:
             raise GecersizIstek(
-                "Belirtilen kullanıcı bulunamadı.", {"alan": "kullanici_id"}
+                "Belirtilen kullanıcı bu organizasyonun üyesi değil.",
+                {"alan": "kullanici_id"},
             )
 
     uretilen = api_anahtari_uret()
     anahtar = ApiAnahtari(
+        org_id=organizasyon.id,
         ad=govde.ad,
         onek=uretilen["onek"],
         anahtar_hash=uretilen["hash"],
@@ -117,6 +140,7 @@ async def anahtar_olustur(
     await islem_kaydet(
         oturum,
         "api_anahtari.olusturuldu",
+        org_id=organizasyon.id,
         kullanici_id=personel.id,
         hedef_tur="api_anahtari",
         hedef_id=anahtar.id,
@@ -130,9 +154,16 @@ async def anahtar_iptal(
     anahtar_id: int,
     oturum: AsyncSession = Depends(veritabani_oturumu),
     personel: Kullanici = Depends(gecerli_personel(YAZMA_ROLLERI)),
+    organizasyon: Organizasyon = Depends(aktif_organizasyon),
 ) -> dict[str, object]:
     """Anahtarı iptal eder; iptal edilmiş anahtar kimlik doğrulamada reddedilir."""
-    anahtar = await oturum.get(ApiAnahtari, anahtar_id)
+    anahtar = (
+        await oturum.execute(
+            sa.select(ApiAnahtari).where(
+                ApiAnahtari.id == anahtar_id, ApiAnahtari.org_id == organizasyon.id
+            )
+        )
+    ).scalar_one_or_none()
     if anahtar is None:
         raise Bulunamadi("API anahtarı bulunamadı.", {"api_anahtari_id": anahtar_id})
 
@@ -141,6 +172,7 @@ async def anahtar_iptal(
     await islem_kaydet(
         oturum,
         "api_anahtari.iptal_edildi",
+        org_id=organizasyon.id,
         kullanici_id=personel.id,
         hedef_tur="api_anahtari",
         hedef_id=anahtar.id,

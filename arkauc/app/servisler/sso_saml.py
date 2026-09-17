@@ -4,7 +4,13 @@ Güvenlik kuralları (pazarlık yok):
 - XML-DSig imzası `signxml` ile doğrulanır; veri YALNIZ doğrulanmış düğümden
   okunur (XSW saldırılarına karşı).
 - IdP sertifikası zorunludur; sertifikasız imza kabul edilmez.
-- Audience, Destination/Recipient, zaman penceresi ve InResponseTo denetlenir.
+- `Destination` (yalnız imzalı Response'dan okunur), `Recipient`, `Conditions`
+  ve `SubjectConfirmationData` süre alanları ile InResponseTo denetlenir;
+  alanların yokluğu da reddedilir (fail-closed).
+- `idp_sso_url` `https` olmalıdır (`KUTYAI_SSO_YEREL_IZIN` ile yerel istisna).
+- `AuthnRequest`, `sp_imza_anahtari` (PEM RSA özel anahtarı) tanımlıysa
+  HTTP-Redirect bağlamasında RSA-SHA256 ile imzalanır; tanımsızsa imzasız
+  üretilir ve durum `logger.warning` ile bildirilir.
 - Aynı `Assertion ID` 10 dakika içinde reddedilir (tekrar oynatma).
 """
 
@@ -12,16 +18,20 @@ from __future__ import annotations
 
 import base64
 import logging
+import secrets
 import time
 import zlib
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import quote
 
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from lxml import etree
 from signxml import XMLVerifier
 
-from arkauc.app.cekirdek.hatalar import GecersizIstek, JetonGecersiz
+from arkauc.app.cekirdek.hatalar import Cakisma, GecersizIstek, JetonGecersiz
+from arkauc.app.servisler.sso_oidc import adres_denetle
 from bdm_veritabani.modeller import SsoSaglayici
 
 logger = logging.getLogger("kutyai.sso.saml")
@@ -36,6 +46,9 @@ GECERLI_ALGORITMALAR = (
     "http://www.w3.org/2001/04/xmldsig-more#rsa-sha384",
     "http://www.w3.org/2001/04/xmldsig-more#rsa-sha512",
 )
+
+#: HTTP-Redirect bağlamasında AuthnRequest imzası için `SigAlg` değeri.
+SIG_ALGORITMASI_URI = "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"
 
 #: {assertion_id: gorulme_zamani}
 _kullanilan_assertionlar: dict[str, float] = {}
@@ -88,7 +101,8 @@ def _tekrar_denetle(assertion_id: str, *, simdi: float | None = None) -> None:
     for anahtar in suresi_gecti:
         _kullanilan_assertionlar.pop(anahtar, None)
     if assertion_id and assertion_id in _kullanilan_assertionlar:
-        raise JetonGecersiz(
+        # Spec §12: `saml_tekrar_oynatma` → 409 (aynı Assertion ID yeniden kullanıldı).
+        raise Cakisma(
             "saml_tekrar_oynatma", {"assertion_id": assertion_id}, kod="saml_tekrar_oynatma"
         )
     if assertion_id:
@@ -100,18 +114,58 @@ def tekrar_kumesini_temizle() -> None:
     _kullanilan_assertionlar.clear()
 
 
+def istek_id_uret() -> str:
+    """Yeni `AuthnRequest` kimliği (`_` ile başlar; XML `ID`)."""
+    govde = f"kutyai{int(time.time() * 1000)}{secrets.token_hex(8)}"
+    return "_" + base64.urlsafe_b64encode(govde.encode()).decode().rstrip("=")
+
+
+def _sp_imza_anahtari(saglayici: SsoSaglayici) -> rsa.RSAPrivateKey | None:
+    """`sp_imza_anahtari` PEM'ini yükler; tanımsızsa uyarıp `None` döner.
+
+    Tanımlı ama yüklenemeyen (ya da RSA olmayan) anahtarla istek imzasız
+    gönderilmez: yapılandırma hatası `sso_yapilandirilmamis` ile bildirilir
+    (fail-closed).
+    """
+    pem = _ayar(saglayici, "sp_imza_anahtari").strip()
+    if not pem:
+        logger.warning(
+            "SAML SP imza anahtarı tanımsız (`sp_imza_anahtari`); "
+            "AuthnRequest imzasız üretiliyor: saglayici=%s",
+            saglayici.slug,
+        )
+        return None
+    try:
+        anahtar = serialization.load_pem_private_key(pem.encode("utf-8"), password=None)
+    except (TypeError, ValueError) as hata:
+        raise GecersizIstek("sso_yapilandirilmamis", {"alan": "sp_imza_anahtari"}) from hata
+    if not isinstance(anahtar, rsa.RSAPrivateKey):
+        raise GecersizIstek("sso_yapilandirilmamis", {"alan": "sp_imza_anahtari"})
+    return anahtar
+
+
 def authn_istegi_uret(
-    saglayici: SsoSaglayici, *, acs_url: str, relay_state: str
+    saglayici: SsoSaglayici,
+    *,
+    acs_url: str,
+    relay_state: str,
+    istek_id: str | None = None,
 ) -> tuple[str, str]:
-    """(yönlendirme_url, istek_id) — HTTP-Redirect bağlaması."""
-    sso_url = _ayar(saglayici, "idp_sso_url")
+    """(yönlendirme_url, istek_id) — HTTP-Redirect bağlaması.
+
+    `sp_imza_anahtari` tanımlıysa `SigAlg=rsa-sha256` + `Signature` eklenir;
+    imza, URL sorgusunda görünen `SAMLRequest=..&RelayState=..&SigAlg=..`
+    dizesi üzerinden RSA-SHA256 ile hesaplanır. `istek_id` verilmezse yeni
+    kimlik üretilir (state'e yazılabilmesi için dışarıdan da verilebilir).
+    `idp_sso_url` `https` olmalıdır (`KUTYAI_SSO_YEREL_IZIN` ile yerel istisna).
+    """
+    sso_url = _ayar(saglayici, "idp_sso_url").strip()
     sp_entity = _ayar(saglayici, "sp_entity_id", acs_url)
     if not sso_url:
         raise GecersizIstek("sso_yapilandirilmamis", {"alan": "idp_sso_url"})
+    sso_url = adres_denetle(sso_url, alan="idp_sso_url")
 
-    istek_id = "_" + base64.urlsafe_b64encode(
-        f"kutyai{int(time.time() * 1000)}".encode()
-    ).decode().rstrip("=")
+    istek_id = istek_id or istek_id_uret()
     istek = (
         f'<samlp:AuthnRequest xmlns:samlp="{PROTOCOL_NS}" xmlns:saml="{SAML_NS}" '
         f'ID="{istek_id}" Version="2.0" IssueInstant="{_iso(simdi())}" '
@@ -124,11 +178,19 @@ def authn_istegi_uret(
     )
     sikistirilmis = zlib.compress(istek.encode("utf-8"))[2:-4]  # raw deflate
     kodlu = base64.b64encode(sikistirilmis).decode("ascii")
-    url = (
-        f"{sso_url}?SAMLRequest={quote(kodlu)}"
-        f"&RelayState={quote(relay_state)}"
+    temel = (
+        f"SAMLRequest={quote(kodlu, safe='')}"
+        f"&RelayState={quote(relay_state, safe='')}"
     )
-    return url, istek_id
+    anahtar = _sp_imza_anahtari(saglayici)
+    if anahtar is None:
+        return f"{sso_url}?{temel}", istek_id
+
+    imzalanacak = f"{temel}&SigAlg={quote(SIG_ALGORITMASI_URI, safe='')}"
+    imza = base64.b64encode(
+        anahtar.sign(imzalanacak.encode("ascii"), padding.PKCS1v15(), hashes.SHA256())
+    ).decode("ascii")
+    return f"{sso_url}?{imzalanacak}&Signature={quote(imza, safe='')}", istek_id
 
 
 def simdi() -> datetime:
@@ -223,47 +285,57 @@ def _assertion_sec(dogrulanmis: etree._Element) -> etree._Element:
     return assertionlar[0]
 
 
-def _kosul_metni(assertion: etree._Element, ad: str) -> str:
-    bulunan = assertion.find(f".//{_ns('saml', ad)}")
-    return bulunan.text.strip() if bulunan is not None and bulunan.text else ""
-
-
 def yanit_dogrula(
     saglayici: SsoSaglayici,
     *,
     saml_yaniti: str,
     acs_url: str,
-    beklenen_istek_id: str | None,
+    beklenen_istek_id: str,
     simdi_an: datetime | None = None,
     tekrar_denetle: bool = True,
 ) -> dict[str, str]:
-    """SAMLResponse'u doğrular ve kullanıcı alanlarını döndürür."""
+    """SAMLResponse'u doğrular ve kullanıcı alanlarını döndürür.
+
+    Yanıt, başlatılan `AuthnRequest` kimliğine bağlanır (spec §7):
+    `InResponseTo` hiç yoksa ya da farklı bir kimlik taşıyorsa yanıt
+    reddedilir; bu yüzden `beklenen_istek_id` zorunludur ve akışı başlatan
+    taraf (bkz. `/saml/acs`) her zaman dolu bir kimlik verir.
+
+    Zaman penceresi ve alıcı denetimleri pazarlıksızdır: `Conditions` ve
+    `SubjectConfirmationData` düğümleri ile `NotOnOrAfter` alanları yoksa
+    yanıt kabul edilmez.
+    """
     sertifika = _sertifika(saglayici)
     ham = _guvenli_ayristir(saml_yaniti)
     dogrulanmis = _imzali_dugum(ham, sertifika)
 
+    # Destination yalnızca İMZALI düğümden okunur; Response imzalıysa zorunludur
+    # (imzasız bir Response'un alanı saldırgan denetimindedir). Yalnız Assertion
+    # imzalıysa bağlama, imzalı `SubjectConfirmationData@Recipient` ile kurulur.
     yanit_dugumu = dogrulanmis if dogrulanmis.tag == _ns("p", "Response") else None
     if yanit_dugumu is not None:
-        if beklenen_istek_id and yanit_dugumu.get("InResponseTo") not in (None, beklenen_istek_id):
-            raise JetonGecersiz(
-                "saml_yanit_gecersiz", {"neden": "in_response_to"}, kod="saml_yanit_gecersiz"
-            )
         hedef = yanit_dugumu.get("Destination")
-        if hedef and hedef != acs_url:
+        if not hedef or hedef != acs_url:
             raise JetonGecersiz(
                 "saml_yanit_gecersiz", {"neden": "destination"}, kod="saml_yanit_gecersiz"
             )
 
     assertion = _assertion_sec(dogrulanmis)
 
-    if beklenen_istek_id:
-        gelen = assertion.get("InResponseTo") or (
-            yanit_dugumu.get("InResponseTo") if yanit_dugumu is not None else None
+    # InResponseTo: başlatılan istek kimliği zorunlu eşleşmeli. Doğrulanmış
+    # ağaçta bulunan TÜM InResponseTo değerleri (Response, Assertion,
+    # SubjectConfirmationData) beklenen kimliğe eşit olmalı; hiçbiri yoksa da
+    # yanıt kabul edilmez.
+    onay = assertion.find(f".//{_ns('saml', 'SubjectConfirmationData')}")
+    gelenler = [
+        dügüm.get("InResponseTo")
+        for dügüm in (yanit_dugumu, assertion, onay)
+        if dügüm is not None and dügüm.get("InResponseTo")
+    ]
+    if not gelenler or any(gelen != beklenen_istek_id for gelen in gelenler):
+        raise JetonGecersiz(
+            "saml_yanit_gecersiz", {"neden": "in_response_to"}, kod="saml_yanit_gecersiz"
         )
-        if gelen and gelen != beklenen_istek_id:
-            raise JetonGecersiz(
-                "saml_yanit_gecersiz", {"neden": "in_response_to"}, kod="saml_yanit_gecersiz"
-            )
 
     # Audience
     sp_entity = _ayar(saglayici, "sp_entity_id", acs_url)
@@ -273,34 +345,51 @@ def yanit_dogrula(
             "saml_yanit_gecersiz", {"neden": "audience"}, kod="saml_yanit_gecersiz"
         )
 
-    # SubjectConfirmationData: Recipient + NotOnOrAfter
-    onay = assertion.find(f".//{_ns('saml', 'SubjectConfirmationData')}")
-    if onay is not None:
-        alici = onay.get("Recipient")
-        if alici and alici != acs_url:
-            raise JetonGecersiz(
-                "saml_yanit_gecersiz", {"neden": "recipient"}, kod="saml_yanit_gecersiz"
-            )
-        son = _zaman_coz(onay.get("NotOnOrAfter"))
-        if son is not None and _su_an(simdi_an) > son + timedelta(seconds=ZAMAN_TOLERANSI_SN):
-            raise JetonGecersiz(
-                "saml_yanit_gecersiz", {"neden": "subject_suresi"}, kod="saml_yanit_gecersiz"
-            )
+    # SubjectConfirmationData: Recipient ve NotOnOrAfter zorunlu.
+    if onay is None:
+        raise JetonGecersiz(
+            "saml_yanit_gecersiz", {"neden": "subject_confirmation"}, kod="saml_yanit_gecersiz"
+        )
+    alici = onay.get("Recipient")
+    if not alici or alici != acs_url:
+        raise JetonGecersiz(
+            "saml_yanit_gecersiz", {"neden": "recipient"}, kod="saml_yanit_gecersiz"
+        )
+    konu_son = _zaman_coz(onay.get("NotOnOrAfter"))
+    if konu_son is None:
+        raise JetonGecersiz(
+            "saml_yanit_gecersiz",
+            {"neden": "sure_yok", "alan": "subject"},
+            kod="saml_yanit_gecersiz",
+        )
+    if _su_an(simdi_an) > konu_son + timedelta(seconds=ZAMAN_TOLERANSI_SN):
+        raise JetonGecersiz(
+            "saml_yanit_gecersiz", {"neden": "subject_suresi"}, kod="saml_yanit_gecersiz"
+        )
 
-    # Conditions: NotBefore / NotOnOrAfter
+    # Conditions: NotOnOrAfter zorunlu (NotBefore varsa denetlenir).
     kosullar = assertion.find(_ns("saml", "Conditions"))
-    if kosullar is not None:
-        baslangic = _zaman_coz(kosullar.get("NotBefore"))
-        bitis = _zaman_coz(kosullar.get("NotOnOrAfter"))
-        an = _su_an(simdi_an)
-        if baslangic is not None and an + timedelta(seconds=ZAMAN_TOLERANSI_SN) < baslangic:
-            raise JetonGecersiz(
-                "saml_yanit_gecersiz", {"neden": "not_before"}, kod="saml_yanit_gecersiz"
-            )
-        if bitis is not None and an > bitis + timedelta(seconds=ZAMAN_TOLERANSI_SN):
-            raise JetonGecersiz(
-                "saml_yanit_gecersiz", {"neden": "not_on_or_after"}, kod="saml_yanit_gecersiz"
-            )
+    if kosullar is None:
+        raise JetonGecersiz(
+            "saml_yanit_gecersiz", {"neden": "conditions"}, kod="saml_yanit_gecersiz"
+        )
+    baslangic = _zaman_coz(kosullar.get("NotBefore"))
+    bitis = _zaman_coz(kosullar.get("NotOnOrAfter"))
+    if bitis is None:
+        raise JetonGecersiz(
+            "saml_yanit_gecersiz",
+            {"neden": "sure_yok", "alan": "conditions"},
+            kod="saml_yanit_gecersiz",
+        )
+    an = _su_an(simdi_an)
+    if baslangic is not None and an + timedelta(seconds=ZAMAN_TOLERANSI_SN) < baslangic:
+        raise JetonGecersiz(
+            "saml_yanit_gecersiz", {"neden": "not_before"}, kod="saml_yanit_gecersiz"
+        )
+    if an > bitis + timedelta(seconds=ZAMAN_TOLERANSI_SN):
+        raise JetonGecersiz(
+            "saml_yanit_gecersiz", {"neden": "not_on_or_after"}, kod="saml_yanit_gecersiz"
+        )
 
     assertion_id = assertion.get("ID") or ""
     if tekrar_denetle:
@@ -345,6 +434,7 @@ def _su_an(simdi_an: datetime | None) -> datetime:
 
 __all__: list[str] = [
     "authn_istegi_uret",
+    "istek_id_uret",
     "yanit_dogrula",
     "tekrar_kumesini_temizle",
     "GECERLI_ALGORITMALAR",

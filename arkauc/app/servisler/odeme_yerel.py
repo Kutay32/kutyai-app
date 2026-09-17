@@ -12,15 +12,22 @@ from typing import Any, Mapping
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from arkauc.app.cekirdek.hatalar import GecersizIstek
-from bdm_veritabani.modeller import Organizasyon, Plan
+from bdm_veritabani.modeller import Abonelik, Fatura, Organizasyon, Plan
 
 
 class YerelSaglayici:
     ad = "yerel"
 
     async def abonelik_baslat(
-        self, oturum: AsyncSession, *, organizasyon: Organizasyon, plan: Plan
+        self,
+        oturum: AsyncSession,
+        *,
+        organizasyon: Organizasyon,
+        plan: Plan,
+        abonelik: Abonelik,
+        fatura: Fatura,
     ) -> dict[str, Any]:
+        """Yerelde saglayici cagrisi yoktur: abonelik hemen `aktif` baslar."""
         return {"dis_id": "", "url": None, "saglayici": self.ad}
 
     async def odeme_oturumu(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 
 import sqlalchemy as sa
@@ -40,8 +41,18 @@ from bdm_veritabani.oturum import oturum_fabrikasi
 
 router = APIRouter(tags=["faturalama"])
 
+logger = logging.getLogger("kutyai.faturalama")
+
 VARSAYILAN_SAYFA = 25
 EN_BUYUK_SAYFA = 200
+
+#: Durum guncelleyen Stripe olaylari; digerleri `uygulandi: false` doner.
+_WEBHOOK_TURLERI = (
+    "checkout.session.completed",
+    "invoice.paid",
+    "invoice.payment_failed",
+    "customer.subscription.deleted",
+)
 
 
 class AbonelikIstegi(BaseModel):
@@ -143,12 +154,14 @@ async def abonelik_baslat(
     organizasyon: Organizasyon = Depends(aktif_organizasyon),
     personel: Kullanici = Depends(gecerli_personel(ORG_YONETIM_ROLLERI)),
 ) -> dict:
-    """Plan secer, kotayi uygular, ilk faturayi uretir."""
+    """Plan secer, ilk faturayi uretir, saglayicida odeme oturumu acar.
+
+    Odeme onayi saglayicidan (webhook) gelene kadar abonelik `deneme`,
+    fatura `taslak` kalir; `yerel` surucude tahsilat manuel oldugu icin
+    abonelik hemen `aktif` olur ve kota yazilir.
+    """
     plan = await _plan_getir(oturum, veri.plan_id)
     saglayici = saglayici_sec()
-    baslat = await saglayici.abonelik_baslat(
-        oturum, organizasyon=organizasyon, plan=plan
-    )
 
     abonelik = await aktif_abonelik(oturum, organizasyon.id)
     yeni = abonelik is None
@@ -156,15 +169,13 @@ async def abonelik_baslat(
         abonelik = Abonelik(org_id=organizasyon.id, plan_id=plan.id)
         oturum.add(abonelik)
     abonelik.plan_id = plan.id
-    abonelik.durum = AbonelikDurumu.aktif
+    abonelik.durum = AbonelikDurumu.deneme
     if yeni:
         abonelik.donem_basi = datetime.now(timezone.utc)
     abonelik.donem_sonu = donem_sonu(veri.donem_gun)
     abonelik.saglayici = saglayici.ad
-    abonelik.dis_id = str(baslat.get("dis_id", ""))
+    # Saglayici metadata'si ve kota icin kimlikler simdiden gerekli.
     await oturum.flush()
-
-    await plan_kotasini_uygula(oturum, org_id=organizasyon.id, plan=plan)
 
     fatura = Fatura(
         org_id=organizasyon.id,
@@ -180,6 +191,22 @@ async def abonelik_baslat(
         ],
     )
     oturum.add(fatura)
+    await oturum.flush()
+
+    baslat = await saglayici.abonelik_baslat(
+        oturum,
+        organizasyon=organizasyon,
+        plan=plan,
+        abonelik=abonelik,
+        fatura=fatura,
+    )
+    abonelik.dis_id = str(baslat.get("dis_id") or "")
+    fatura.dis_id = str(baslat.get("oturum_id") or baslat.get("dis_id") or "")
+
+    if not baslat.get("odeme_bekliyor"):
+        abonelik.durum = AbonelikDurumu.aktif
+        await plan_kotasini_uygula(oturum, org_id=organizasyon.id, plan=plan)
+
     await islem_kaydet(
         oturum,
         "faturalama.abonelik_baslatildi",
@@ -187,7 +214,11 @@ async def abonelik_baslat(
         kullanici_id=personel.id,
         hedef_tur="abonelik",
         hedef_id=abonelik.id,
-        ayrinti={"plan": plan.slug, "saglayici": saglayici.ad},
+        ayrinti={
+            "plan": plan.slug,
+            "saglayici": saglayici.ad,
+            "odeme_bekliyor": bool(baslat.get("odeme_bekliyor")),
+        },
         ip=istek.client.host if istek.client else "",
     )
     await oturum.flush()
@@ -332,46 +363,117 @@ async def stripe_webhook(istek: Request) -> dict:
 
 
 async def _webhook_uygula(oturum: AsyncSession, olay: dict) -> bool:
-    """Webhook olayini abonelik/fatura durumuna isler."""
+    """Webhook olayini abonelik/fatura durumuna isler (spec §6).
+
+    Esleme once `metadata` kimlikleri (`abonelik_id`, `fatura_id`), sonra
+    saglayici `dis_id` kimlikleri (checkout oturumu, abonelik) uzerinden
+    yapilir; hicbir kayda oturmayan olay uygulanmaz (`uygulandi: false`) ve
+    gunluge yazilir. Odeme onaylandiginda abonelik `aktif` olur ve plan
+    kotasi uygulanir.
+    """
     tur = str(olay.get("tur", ""))
-    abonelik_dis_id = str(olay.get("abonelik_dis_id") or "")
-    fatura_id = str(olay.get("fatura_id") or "")
+    if tur not in _WEBHOOK_TURLERI:
+        return False
 
-    abonelik = None
-    if abonelik_dis_id:
-        abonelik = (
-            await oturum.execute(
-                sa.select(Abonelik).where(Abonelik.dis_id == abonelik_dis_id)
-            )
-        ).scalar_one_or_none()
-    if abonelik is None and fatura_id.isdigit():
-        fatura = await oturum.get(Fatura, int(fatura_id))
-        if fatura is not None and fatura.abonelik_id:
-            abonelik = await oturum.get(Abonelik, fatura.abonelik_id)
+    abonelik = await _olay_aboneligi(oturum, olay)
+    fatura = await _olay_faturasi(oturum, olay)
+    # Kiraci tutarliligi: olay ancak kendi organizasyonunun kayitlarini
+    # etkiler (checkout oturumundaki `client_reference_id`).
+    beklenen_org = str(olay.get("org_id") or "")
+    if beklenen_org.isdigit():
+        org_id = int(beklenen_org)
+        if abonelik is not None and abonelik.org_id != org_id:
+            logger.warning("Stripe olayı başka organizasyonun aboneliğini hedefliyor: %s", org_id)
+            abonelik = None
+        if fatura is not None and fatura.org_id != org_id:
+            logger.warning("Stripe olayı başka organizasyonun faturasını hedefliyor: %s", org_id)
+            fatura = None
+    if abonelik is None and fatura is not None and fatura.abonelik_id:
+        abonelik = await oturum.get(Abonelik, fatura.abonelik_id)
+    if abonelik is None and fatura is None:
+        logger.warning(
+            "Eşleşmeyen Stripe olayı: tur=%s dis_id=%s abonelik=%s fatura=%s",
+            tur,
+            olay.get("dis_id"),
+            olay.get("abonelik_id") or olay.get("abonelik_dis_id") or "",
+            olay.get("fatura_id"),
+        )
+        return False
 
+    uygulandi = False
     if tur in ("checkout.session.completed", "invoice.paid"):
         if abonelik is not None:
             abonelik.durum = AbonelikDurumu.aktif
-        if fatura_id.isdigit():
-            fatura = await oturum.get(Fatura, int(fatura_id))
-            if fatura is not None:
-                fatura.durum = FaturaDurumu.odendi
-                fatura.odeme_tarihi = datetime.now(timezone.utc)
+            abonelik_dis_id = str(olay.get("abonelik_dis_id") or "")
+            if abonelik_dis_id:
+                # Checkout oturumundan gelen gercek abonelik kimligi sonraki
+                # fatura olaylarinin eslesmesini saglar.
+                abonelik.dis_id = abonelik_dis_id
+            plan = await oturum.get(Plan, abonelik.plan_id)
+            if plan is not None:
+                await plan_kotasini_uygula(oturum, org_id=abonelik.org_id, plan=plan)
+            uygulandi = True
+        if fatura is not None:
+            fatura.durum = FaturaDurumu.odendi
+            fatura.odeme_tarihi = datetime.now(timezone.utc)
+            uygulandi = True
     elif tur == "invoice.payment_failed":
         if abonelik is not None:
             abonelik.durum = AbonelikDurumu.gecikmis
-        if fatura_id.isdigit():
-            fatura = await oturum.get(Fatura, int(fatura_id))
-            if fatura is not None:
-                fatura.durum = FaturaDurumu.basarisiz
-    elif tur == "customer.subscription.deleted":
-        if abonelik is not None:
-            abonelik.durum = AbonelikDurumu.iptal
-    else:
+            uygulandi = True
+        if fatura is not None:
+            fatura.durum = FaturaDurumu.basarisiz
+            uygulandi = True
+    elif abonelik is not None:  # customer.subscription.deleted
+        abonelik.durum = AbonelikDurumu.iptal
+        uygulandi = True
+
+    if not uygulandi:
+        logger.warning(
+            "Stripe olayı uygulanacak kayıt bulamadı: tur=%s abonelik=%s fatura=%s",
+            tur,
+            olay.get("abonelik_id") or olay.get("abonelik_dis_id") or olay.get("dis_id"),
+            olay.get("fatura_id"),
+        )
         return False
 
     await oturum.flush()
     return True
+
+
+async def _olay_aboneligi(oturum: AsyncSession, olay: dict) -> Abonelik | None:
+    """Olayi abonelige esler: metadata `abonelik_id`, saglayici kimlikleri."""
+    abonelik_id = str(olay.get("abonelik_id") or "")
+    if abonelik_id.isdigit():
+        abonelik = await oturum.get(Abonelik, int(abonelik_id))
+        if abonelik is not None:
+            return abonelik
+    for kimlik in (str(olay.get("abonelik_dis_id") or ""), str(olay.get("dis_id") or "")):
+        if not kimlik:
+            continue
+        abonelik = (
+            await oturum.execute(
+                sa.select(Abonelik).where(Abonelik.dis_id == kimlik)
+            )
+        ).scalar_one_or_none()
+        if abonelik is not None:
+            return abonelik
+    return None
+
+
+async def _olay_faturasi(oturum: AsyncSession, olay: dict) -> Fatura | None:
+    """Olayi faturaya esler: metadata `fatura_id`, saglayici `dis_id`."""
+    fatura_id = str(olay.get("fatura_id") or "")
+    if fatura_id.isdigit():
+        fatura = await oturum.get(Fatura, int(fatura_id))
+        if fatura is not None:
+            return fatura
+    dis_id = str(olay.get("dis_id") or "")
+    if not dis_id:
+        return None
+    return (
+        await oturum.execute(sa.select(Fatura).where(Fatura.dis_id == dis_id))
+    ).scalar_one_or_none()
 
 
 __all__ = ["router", "abonelik_durumu"]

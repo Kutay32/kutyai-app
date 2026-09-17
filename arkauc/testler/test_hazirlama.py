@@ -945,3 +945,35 @@ async def test_on_kontrol_konteyner_saglayicisinda_docker_uyarisi_kalir(surucu_k
     assert sonuc["uygun"] is False
     assert DOCKER_UYARI_MESAJI in sonuc["uyarilar"]
     assert any("vllm/vllm-openai:latest" in uyari for uyari in sonuc["uyarilar"])
+
+
+# --------------------------------------------------------------------------
+# Organizasyon izolasyonu
+# --------------------------------------------------------------------------
+
+
+async def test_hazirlama_uclari_organizasyon_ile_sinirli(istemci, yardimci):
+    """Başka organizasyonun BDM'i hazırlama uçlarında `404` gibi davranır."""
+    bdm_id = await bdm_ekle("ollama")
+    sahip = await yardimci.yonetici()
+    alfa = await yardimci.organizasyon("Alfa Hazırlık", sahibi=sahip)
+    beta = await yardimci.organizasyon("Beta Hazırlık", sahibi=sahip)
+    async with oturum_fabrikasi()() as oturum:
+        kayit = await oturum.get(Bdm, bdm_id)
+        assert kayit is not None
+        kayit.org_id = alfa.id
+        await oturum.commit()
+
+    beta_basliklar = yardimci.org_basliklari(sahip, beta)
+    for yol in ("dogrula", "cek", "manifest"):
+        yanit = await istemci.post(f"{HAZIRLAMA}/{bdm_id}/{yol}", headers=beta_basliklar)
+        assert yanit.status_code == 404, yol
+        assert yanit.json()["hata"]["kod"] == "bulunamadi", yol
+
+    izinsiz = await istemci.get(f"{HAZIRLAMA}/{bdm_id}/on-kontrol", headers=beta_basliklar)
+    assert izinsiz.status_code == 404
+
+    alfa_basliklar = yardimci.org_basliklari(sahip, alfa)
+    assert (
+        await istemci.get(f"{HAZIRLAMA}/{bdm_id}/on-kontrol", headers=alfa_basliklar)
+    ).status_code == 200

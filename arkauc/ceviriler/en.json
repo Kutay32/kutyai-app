@@ -38,7 +38,6 @@
   "kendi_uyeligini_dusuremezsin": "You cannot demote your own owner role.",
   "api_anahtari_kisitli_alan": "Only an administrator can change the provider address and API key.",
   "sağlayıcı_adresi_gecersiz": "The provider address is invalid.",
-  "medya_yetenegi_yok": "This generation type is disabled in the model capabilities.",
   "arac_bulunamadi": "Tool not found or disabled.",
   "arac_tur_siniri": "The tool call was repeated too many times.",
   "dosya_tur_desteklenmiyor": "This file type is not supported.",

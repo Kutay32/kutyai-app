@@ -206,32 +206,60 @@ def basliklari_maskele(arac: Arac) -> dict[str, str]:
 def uc_noktasi_dogrula(uc_noktasi: str) -> str:
     """Webhook uç noktasını SSRF ve şema kurallarına göre denetler.
 
-    v1 `temel_url` kuralları yeniden kullanılır (yalnız http/https, bulut
-    metadata konakları yasak); ek olarak https zorunludur ve yalnızca
-    `KUTYAI_ARAC_YEREL_IZIN=true` iken http kabul edilir.
+    v1 `temel_url` kuralları yeniden kullanılır (yalnız http/https; loopback/
+    özel/link-local/metadata adresleri reddedilir) ve **https zorunludur**;
+    yalnızca `KUTYAI_ARAC_YEREL_IZIN=true` iken yerel ağa `http` kabul edilir
+    (bu kipte yerel ağ adresleri ve çözümlenemeyen konak adları da geçer).
     """
     temiz = (uc_noktasi or "").strip()
     if not temiz:
         raise GecersizIstek("arac_uc_noktasi_zorunlu", {}, ceviriler={})
+    # Şema kuralı adres denetiminden önce uygulanır: yerel izin yoksa `http`
+    # adresi, çözümleme aşamasına girmeden `arac_https_zorunlu` ile döner.
+    try:
+        sema = urlparse(temiz).scheme.lower()
+    except ValueError:
+        sema = ""
+    if sema == "http" and not ayarlar.arac_yerel_izin:
+        raise GecersizIstek("arac_https_zorunlu", {}, ceviriler={})
     try:
         # v1 `temel_url` denetimi yeniden kullanılır (tek SSRF kural kaynağı).
-        guvenli = _adres_dogrula(temiz)
+        guvenli = _adres_dogrula(temiz, yerel_izin=ayarlar.arac_yerel_izin)
     except ValueError as hata:
         # Teknik gerekçe yalnızca `ayrinti`ya girer; mesaj katalogdan çevrilir.
         raise GecersizIstek(
             "arac_uc_noktasi_gecersiz", {"neden": str(hata)}
         ) from hata
-    ayrisan = urlparse(guvenli)
-    if not ayrisan.hostname:
+    try:
+        konak = urlparse(guvenli).hostname
+    except ValueError as hata:  # pragma: no cover - bozuk IPv6 köşesi
+        raise GecersizIstek(
+            "arac_uc_noktasi_gecersiz", {"neden": str(hata)}
+        ) from hata
+    if not konak:
         raise GecersizIstek("arac_uc_noktasi_gecersiz", {"neden": "konak yok"})
-    sema = ayrisan.scheme.lower()
-    if sema != "https" and not (sema == "http" and ayarlar.arac_yerel_izin):
-        raise GecersizIstek("arac_https_zorunlu", {}, ceviriler={})
     return guvenli
 
 
+#: Jeton sırrından webhook imza anahtarı türetirken kullanılan etiket.
+_IMZA_ANAHTAR_ETIKETI = b"arac-imza"
+
+
 def _imza_anahtari() -> bytes:
-    return (ayarlar.arac_imza_anahtari or ayarlar.gizli_anahtar).encode("utf-8")
+    """Webhook imza anahtarını döndürür (jeton sırrından AYRI anahtar).
+
+    `KUTYAI_ARAC_IMZA_ANAHTARI` tanımlıysa doğrudan kullanılır; tanımsızsa
+    oturum jetonlarını imzalayan `KUTYAI_GIZLI_ANAHTAR` webhook alıcılarıyla
+    paylaşılmış sayılmasın diye HMAC-SHA256 ile ondan **ayrı** bir anahtar
+    türetilir (`hmac(gizli_anahtar, b"arac-imza")`). Böylece webhook tarafına
+    verilen imza, jeton imzalama sırrını doğrulamak için kullanılamaz.
+    """
+    tanimli = (ayarlar.arac_imza_anahtari or "").strip()
+    if tanimli:
+        return tanimli.encode("utf-8")
+    return hmac.new(
+        ayarlar.gizli_anahtar.encode("utf-8"), _IMZA_ANAHTAR_ETIKETI, hashlib.sha256
+    ).digest()
 
 
 def imza_hesapla(govde: bytes) -> str:

@@ -232,7 +232,11 @@ async def kullanim_ozeti(
 
 
 async def kullanim_zaman_serisi(
-    oturum: AsyncSession, *, gun: int = 30, kirilim: str = "bdm"
+    oturum: AsyncSession,
+    *,
+    gun: int = 30,
+    kirilim: str = "bdm",
+    org_id: int | None = None,
 ) -> dict[str, object]:
     """Gunluk istek/token serisi; toplama Python tarafinda yapilir (tasınabilirlik)."""
     gun = max(1, min(int(gun), 365))
@@ -245,6 +249,8 @@ async def kullanim_zaman_serisi(
         KullanimKaydi.cikti_token,
         etiket_sutunu,
     ).where(KullanimKaydi.olusturulma >= esik)
+    if org_id is not None:
+        sorgu = sorgu.where(KullanimKaydi.org_id == org_id)
     if kirilim == "bdm":
         sorgu = sorgu.outerjoin(Bdm, Bdm.id == KullanimKaydi.bdm_id)
     else:

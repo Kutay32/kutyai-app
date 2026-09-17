@@ -1,17 +1,21 @@
 """Güvenlik sıkılaştırma testleri (güvenlik incelemesi bulguları).
 
 Kilitlenen davranışlar:
-- SSRF: `temel_url` yalnız http/https; bulut metadata adresleri reddedilir.
+- SSRF: `temel_url` yalnız http/https; loopback/özel/link-local ve bulut
+  metadata adresleri reddedilir (yerel ağ izni yalnız `BdmOlustur` çağrısında
+  `yerel_izin=True` ile verilir).
 - Argv enjeksiyonu: `upstream_model` bayrak enjeksiyonuna kapalı.
 - Oran sınırı, `Authorization` başlığı döndürülerek atlatılamaz.
 """
 
 from __future__ import annotations
 
+import ipaddress
+
 import pytest
 
 from arkauc.app.cekirdek.oran_siniri import Kural, kova_anahtarlari
-from bdm_listesi import BdmOlustur
+from bdm_listesi import BdmOlustur, sema
 from bdm_listesi.sema import _adres_dogrula
 
 
@@ -44,11 +48,33 @@ def test_jeton_ile_ayirmayan_kural_tek_kovali():
     assert len(_kovalar("/api/v1/bdm", "Bearer kuty_abc")) == 1
 
 
+@pytest.fixture
+def cozucu_taklit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """DNS'i taklit eder: `localhost` → loopback, diğer adlar → genel IP."""
+    sema._cozulemeyen_konaklar.clear()
+    monkeypatch.setattr(
+        sema,
+        "_adres_coz",
+        lambda konak: [
+            ipaddress.ip_address("127.0.0.1" if konak == "localhost" else "93.184.216.34")
+        ],
+    )
+
+
 @pytest.mark.parametrize(
     "adres",
-    ["http://169.254.169.254/latest/meta-data", "https://metadata.google.internal/x"],
+    [
+        "http://169.254.169.254/latest/meta-data",
+        "http://169.254.169.254./latest/meta-data",
+        "http://[::ffff:169.254.169.254]/latest/meta-data",
+        "http://2852039166/latest/meta-data",
+        "http://100.100.100.200/latest/meta-data",
+        "https://metadata.google.internal/x",
+        "https://metadata.google.internal./x",
+    ],
 )
 def test_metadata_adresleri_reddedilir(adres):
+    """Kara liste değil: normalize edilmiş konak, sayısal IPv4 ve aralıklar denetlenir."""
     with pytest.raises(ValueError):
         _adres_dogrula(adres)
 
@@ -61,10 +87,31 @@ def test_http_disi_semalar_reddedilir(adres):
 
 @pytest.mark.parametrize(
     "adres",
-    ["http://localhost:11434/v1", "http://127.0.0.1:8000/v1", "https://api.openai.com/v1"],
+    [
+        "http://localhost:11434/v1",
+        "http://127.0.0.1:8000/v1",
+        "http://[::1]:8000/v1",
+        "http://10.0.0.5/v1",
+        "http://192.168.1.20/v1",
+    ],
 )
-def test_gecerli_adresler_kabul_edilir(adres):
-    assert _adres_dogrula(adres) == adres
+def test_yerel_adresler_kati_kipte_reddedilir(adres, cozucu_taklit):
+    """Loopback/özel ağ adresleri artık kabul edilmez (yerel izin cagirana birakilir)."""
+    with pytest.raises(ValueError):
+        _adres_dogrula(adres)
+
+
+def test_genel_https_adresi_kabul_edilir(cozucu_taklit):
+    assert _adres_dogrula("https://api.ornek.com/v1") == "https://api.ornek.com/v1"
+
+
+def test_yerel_izin_loopbacki_acar_metadata_kapatir(cozucu_taklit):
+    """`yerel_izin=True` (yerel model sunuculari) loopback'i acar; metadata kapali kalir."""
+    assert _adres_dogrula("http://127.0.0.1:11434/v1", yerel_izin=True) == (
+        "http://127.0.0.1:11434/v1"
+    )
+    with pytest.raises(ValueError):
+        _adres_dogrula("http://169.254.169.254/latest/meta-data", yerel_izin=True)
 
 
 def test_bozuk_adres_kayit_asamasinda_reddedilmez():

@@ -127,20 +127,43 @@ async def varsayilan_uyelik_ekle(
     return uyelik
 
 
-async def organizasyon_coz(
+async def denetim_organizasyonu(oturum: AsyncSession, kullanici_id: int) -> int:
+    """Denetim izi etiketlemesi icin organizasyon kimligi.
+
+    Kullanicinin ilk aktif uyeligi; hic uyeligi yoksa varsayilan organizasyon
+    dondurulur. Boylece kimlik/ayar gibi organizasyon baglami tasimayan
+    eylemler de bir kiracinin denetim izinde gorunur, hicbir kayit
+    organizasyonsuz (tum kiraclara acik) kalmaz.
+    """
+    organizasyon_id = (
+        await oturum.execute(
+            sa.select(Uyelik.organizasyon_id)
+            .where(Uyelik.kullanici_id == kullanici_id, Uyelik.durum == UyelikDurumu.aktif)
+            .order_by(Uyelik.id)
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if organizasyon_id is not None:
+        return int(organizasyon_id)
+
+    from bdm_veritabani.tohum import varsayilan_organizasyon
+
+    return (await varsayilan_organizasyon(oturum)).id
+
+
+async def _organizasyon_sec(
     oturum: AsyncSession,
     *,
-    baslik: str | None = None,
-    org_claim: int | None = None,
-    kullanici_id: int | None = None,
-    anahtar: ApiAnahtari | None = None,
-    varsayilana_ekle: bool = False,
+    baslik: str | None,
+    org_claim: int | None,
+    kullanici_id: int | None,
+    anahtar: ApiAnahtari | None,
+    varsayilana_ekle: bool,
 ) -> Organizasyon:
-    """Aktif organizasyonu cozer (spec §2.2 oncelik sirasi).
+    """Durum denetimi yapmadan aktif organizasyonu secer (spec §2.2 oncelik sirasi).
 
-    `varsayilana_ekle=True` iken hic uyeligi olmayan kullanici varsayilan
-    organizasyona eklenir (tek kiracili kurulumlarin ve ilk kullanicinin
-    sorunsuz calismasi icin). Panel uclari bunu kullanmaz.
+    Askida organizasyon denetimi cagirana aittir; boylece hangi dalla
+    cozulurse cozulsun ayni kapiya takilir.
     """
     if baslik:
         organizasyon = await organizasyon_getir_slug(oturum, baslik.strip())
@@ -155,13 +178,10 @@ async def organizasyon_coz(
         uyelik = await uyelik_getir(oturum, organizasyon.id, kullanici_id)
         if uyelik is None or uyelik.durum != UyelikDurumu.aktif:
             raise YetkiYok("Belirtilen organizasyona erişiminiz yok.")
-        await organizasyon_durumu_denetle(organizasyon)
         return organizasyon
 
     if anahtar is not None:
-        organizasyon = await organizasyon_getir(oturum, anahtar.org_id)
-        await organizasyon_durumu_denetle(organizasyon)
-        return organizasyon
+        return await organizasyon_getir(oturum, anahtar.org_id)
 
     if kullanici_id is None:
         raise GecersizIstek("organizasyon_gerekli", {"neden": ORGANIZASYON_GEREKLI_MESAJ})
@@ -169,9 +189,7 @@ async def organizasyon_coz(
     if org_claim is not None:
         uyelik = await uyelik_getir(oturum, org_claim, kullanici_id)
         if uyelik is not None and uyelik.durum == UyelikDurumu.aktif:
-            organizasyon = await organizasyon_getir(oturum, org_claim)
-            await organizasyon_durumu_denetle(organizasyon)
-            return organizasyon
+            return await organizasyon_getir(oturum, org_claim)
 
     for uyelik in await aktif_uyelikler(oturum, kullanici_id):
         if uyelik.durum != UyelikDurumu.aktif:
@@ -184,7 +202,7 @@ async def organizasyon_coz(
         kullanici = await oturum.get(Kullanici, kullanici_id)
         if kullanici is not None:
             await varsayilan_uyelik_ekle(oturum, kullanici)
-            return await organizasyon_coz(
+            return await _organizasyon_sec(
                 oturum,
                 baslik=baslik,
                 org_claim=org_claim,
@@ -194,6 +212,36 @@ async def organizasyon_coz(
             )
 
     raise GecersizIstek("organizasyon_gerekli", {"neden": ORGANIZASYON_GEREKLI_MESAJ})
+
+
+async def organizasyon_coz(
+    oturum: AsyncSession,
+    *,
+    baslik: str | None = None,
+    org_claim: int | None = None,
+    kullanici_id: int | None = None,
+    anahtar: ApiAnahtari | None = None,
+    varsayilana_ekle: bool = False,
+) -> Organizasyon:
+    """Aktif organizasyonu cozer (spec §2.2 oncelik sirasi).
+
+    Cozulen organizasyonun durumu tek cikis noktasinda denetlenir: askida
+    organizasyon hangi dalla cozulmus olursa olsun `403 yetki_yok` dondurur.
+
+    `varsayilana_ekle=True` iken hic uyeligi olmayan kullanici varsayilan
+    organizasyona eklenir (tek kiracili kurulumlarin ve ilk kullanicinin
+    sorunsuz calismasi icin). Panel uclari bunu kullanmaz.
+    """
+    organizasyon = await _organizasyon_sec(
+        oturum,
+        baslik=baslik,
+        org_claim=org_claim,
+        kullanici_id=kullanici_id,
+        anahtar=anahtar,
+        varsayilana_ekle=varsayilana_ekle,
+    )
+    await organizasyon_durumu_denetle(organizasyon)
+    return organizasyon
 
 
 def rol_yetkili_mi(uyelik_rolu: UyelikRolu, izinli: tuple[UyelikRolu, ...]) -> bool:

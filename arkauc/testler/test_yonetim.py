@@ -949,3 +949,41 @@ async def test_surucu_hata_mesajlari_ic_ayrinti_sizdirmaz(monkeypatch, sahte_sun
         await yerel.durdur("yerel:bozuk-model")
     assert hata.value.mesaj == "Ollama sunucusuna ulaşılamadı; model bellekten boşaltılamadı."
     assert ic_metin not in str(hata.value.ayrinti)
+
+
+# --------------------------------------------------------------------------
+# Organizasyon izolasyonu
+# --------------------------------------------------------------------------
+
+
+async def test_yonetim_uclari_organizasyon_ile_sinirli(istemci, yardimci):
+    """Başka organizasyonun BDM'i yönetim uçlarında `404` gibi davranır."""
+    bdm_id = await _bdm_ekle(durum=BdmDurumu.durdu)
+    sahip = await yardimci.yonetici()
+    alfa = await yardimci.organizasyon("Alfa Yönetim", sahibi=sahip)
+    beta = await yardimci.organizasyon("Beta Yönetim", sahibi=sahip)
+    async with oturum_fabrikasi()() as oturum:
+        kayit = await oturum.get(Bdm, bdm_id)
+        assert kayit is not None
+        kayit.org_id = alfa.id
+        await oturum.commit()
+
+    beta_basliklar = yardimci.org_basliklari(sahip, beta)
+    for yol in ("baslat", "durdur", "yeniden-baslat"):
+        yanit = await istemci.post(f"{UC}/{bdm_id}/{yol}", headers=beta_basliklar)
+        assert yanit.status_code == 404, yol
+        assert yanit.json()["hata"]["kod"] == "bulunamadi", yol
+
+    for yol in ("durum", "saglik", "gunlukler"):
+        yanit = await istemci.get(f"{UC}/{bdm_id}/{yol}", headers=beta_basliklar)
+        assert yanit.status_code == 404, yol
+
+    yol_guncelle = await istemci.patch(
+        f"{UC}/{bdm_id}/yol", json={"oncelik": 3}, headers=beta_basliklar
+    )
+    assert yol_guncelle.status_code == 404
+
+    alfa_basliklar = yardimci.org_basliklari(sahip, alfa)
+    assert (
+        await istemci.get(f"{UC}/{bdm_id}/durum", headers=alfa_basliklar)
+    ).status_code == 200

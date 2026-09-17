@@ -80,6 +80,8 @@ class Ayarlar(BaseSettings):
     # -- SSO (spec §7) --
     sso_otomatik_uyelik: bool = True
     sso_yeniden_yonlendirme: str = ""
+    #: IdP adreslerinde (`issuer`, `idp_sso_url`) `http` ve yerel ağ istisnası.
+    sso_yerel_izin: bool = False
 
     _uretilen: list[str] = PrivateAttr(default_factory=list)
 

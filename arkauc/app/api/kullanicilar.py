@@ -1,4 +1,8 @@
-"""Kullanici yonetimi uclari — yalnizca yonetici (API.md §6)."""
+"""Kullanici yonetimi uclari — yalnizca yonetici (API.md §6).
+
+Tum uclar aktif organizasyon kapsamindadir: liste yalniz organizasyonun
+uyelerini doner, hedef kullanici organizasyon uyesi degilse `404 bulunamadi`.
+"""
 
 from __future__ import annotations
 
@@ -6,11 +10,16 @@ from fastapi import APIRouter, Depends, Request, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from arkauc.app.cekirdek.bagimliliklar import gecerli_personel, veritabani_oturumu
+from arkauc.app.cekirdek.bagimliliklar import (
+    aktif_organizasyon,
+    gecerli_personel,
+    veritabani_oturumu,
+)
 from arkauc.app.cekirdek.denetim import islem_kaydet
 from arkauc.app.cekirdek.hatalar import Bulunamadi, GecersizGecis
+from arkauc.app.cekirdek.organizasyon import uyelik_getir
 from arkauc.app.servisler import kimlik as kimlik_servisi
-from bdm_veritabani.modeller import Kullanici, KullaniciDurumu, Rol
+from bdm_veritabani.modeller import Kullanici, KullaniciDurumu, Organizasyon, Rol
 
 router = APIRouter(prefix="/kullanicilar", tags=["kullanicilar"])
 
@@ -34,9 +43,14 @@ def _ip(istek: Request) -> str:
     return istek.client.host if istek.client else ""
 
 
-async def _kullanici_getir(oturum: AsyncSession, kullanici_id: int) -> Kullanici:
+async def _kullanici_getir(
+    oturum: AsyncSession, organizasyon_id: int, kullanici_id: int
+) -> Kullanici:
+    """Hedef kullanici; aktif organizasyonun uyesi degilse yok sayilir."""
     kullanici = await kimlik_servisi.kullanici_getir(oturum, kullanici_id)
     if kullanici is None:
+        raise Bulunamadi("Kullanıcı bulunamadı.")
+    if await uyelik_getir(oturum, organizasyon_id, kullanici_id) is None:
         raise Bulunamadi("Kullanıcı bulunamadı.")
     return kullanici
 
@@ -49,11 +63,18 @@ async def kullanicilari_listele(
     sayfa: int = 1,
     boyut: int = kimlik_servisi.VARSAYILAN_SAYFA_BOYUTU,
     _yonetici: Kullanici = Depends(gecerli_personel(YONETICI)),
+    organizasyon: Organizasyon = Depends(aktif_organizasyon),
     oturum: AsyncSession = Depends(veritabani_oturumu),
 ) -> dict[str, object]:
-    """Filtreli, sayfali kullanici listesi (`Sayfa<Kullanici>`)."""
+    """Aktif organizasyonun uyelerini filtreli, sayfali listeler (`Sayfa<Kullanici>`)."""
     return await kimlik_servisi.kullanicilari_listele(
-        oturum, rol=rol, durum=durum, arama=arama, sayfa=sayfa, boyut=boyut
+        oturum,
+        organizasyon_id=organizasyon.id,
+        rol=rol,
+        durum=durum,
+        arama=arama,
+        sayfa=sayfa,
+        boyut=boyut,
     )
 
 
@@ -62,11 +83,13 @@ async def kullanici_olustur(
     veri: KullaniciOlusturIstegi,
     istek: Request,
     yonetici: Kullanici = Depends(gecerli_personel(YONETICI)),
+    organizasyon: Organizasyon = Depends(aktif_organizasyon),
     oturum: AsyncSession = Depends(veritabani_oturumu),
 ) -> dict[str, object]:
-    """Yonetici tarafindan personel/kullanici daveti."""
+    """Yonetici tarafindan personel/kullanici daveti; aktif organizasyona uye yazilir."""
     kullanici = await kimlik_servisi.kullanici_olustur(
         oturum,
+        organizasyon_id=organizasyon.id,
         eposta=veri.eposta,
         ad_soyad=veri.ad_soyad,
         parola=veri.parola,
@@ -75,6 +98,7 @@ async def kullanici_olustur(
     await islem_kaydet(
         oturum,
         "kullanici.olustur",
+        org_id=organizasyon.id,
         kullanici_id=yonetici.id,
         hedef_tur="kullanici",
         hedef_id=kullanici.id,
@@ -90,10 +114,11 @@ async def kullanici_guncelle(
     veri: KullaniciGuncelleIstegi,
     istek: Request,
     yonetici: Kullanici = Depends(gecerli_personel(YONETICI)),
+    organizasyon: Organizasyon = Depends(aktif_organizasyon),
     oturum: AsyncSession = Depends(veritabani_oturumu),
 ) -> dict[str, object]:
     """Rol, durum ve ad soyad guncellemesi; her degisiklik denetime yazilir."""
-    kullanici = await _kullanici_getir(oturum, kullanici_id)
+    kullanici = await _kullanici_getir(oturum, organizasyon.id, kullanici_id)
     degisenler = veri.model_dump(exclude_unset=True)
     if not degisenler:
         return kimlik_servisi.kullanici_sozlugu(kullanici)
@@ -114,6 +139,7 @@ async def kullanici_guncelle(
     await islem_kaydet(
         oturum,
         "kullanici.guncelle",
+        org_id=organizasyon.id,
         kullanici_id=yonetici.id,
         hedef_tur="kullanici",
         hedef_id=kullanici.id,
@@ -131,16 +157,18 @@ async def kullanici_pasiflestir(
     kullanici_id: int,
     istek: Request,
     yonetici: Kullanici = Depends(gecerli_personel(YONETICI)),
+    organizasyon: Organizasyon = Depends(aktif_organizasyon),
     oturum: AsyncSession = Depends(veritabani_oturumu),
 ) -> None:
     """Kullaniciyi silmez, pasiflestirir."""
     if kullanici_id == yonetici.id:
         raise GecersizGecis("Kendi hesabınızı pasifleştiremezsiniz.")
-    kullanici = await _kullanici_getir(oturum, kullanici_id)
+    kullanici = await _kullanici_getir(oturum, organizasyon.id, kullanici_id)
     await kimlik_servisi.kullanici_pasiflestir(oturum, kullanici)
     await islem_kaydet(
         oturum,
         "kullanici.pasiflestir",
+        org_id=organizasyon.id,
         kullanici_id=yonetici.id,
         hedef_tur="kullanici",
         hedef_id=kullanici.id,

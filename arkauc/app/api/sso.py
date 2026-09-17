@@ -1,4 +1,17 @@
-"""SSO uçları: OIDC + SAML (spec §7)."""
+"""SSO uçları: OIDC + SAML (spec §7).
+
+Sağlayıcı türüne göre iki ayrı giriş yolu vardır; ikisi de ortak
+`_girisi_tamamla` (kullanıcı eşleme + üyelik) akışına bağlanır:
+
+- `oidc`: `GET /sso/{org}/{saglayici}/baslat` → `state`+`nonce`+PKCE ile
+  yetkilendirme yönlendirmesi, ardından `GET .../donus` kod değişimi.
+- `saml`: `GET /sso/{org}/{saglayici}/saml/baslat` (belgelenen yol; geriye
+  uyumlu eşdeğeri `.../baslat`) → imzalı `AuthnRequest`, ardından
+  `POST .../saml/acs` yanıt doğrulaması.
+
+Yanlış türdeki yol çağrılırsa `400 sso_yapilandirilmamis` döner
+(`/saml/*` yalnız `saml`, `/donus` yalnız `oidc`).
+"""
 
 from __future__ import annotations
 
@@ -120,6 +133,27 @@ async def _saglayici_slug_ile(
 
 def _api_tabani(istek: Request) -> str:
     return str(istek.base_url).rstrip("/") + "/api/v1"
+
+
+def _saml_yonlendirmesi(
+    istek: Request, organizasyon: Organizasyon, saglayici: SsoSaglayici
+) -> RedirectResponse:
+    """SAML sağlayıcı için `AuthnRequest` yönlendirmesi (spec §7).
+
+    `RelayState` = imzalı state; state, üretilen `AuthnRequest` kimliğini
+    taşır (OIDC'teki `nonce` ile aynı alan) ki `/saml/acs` yanıtı
+    `InResponseTo` ile bu isteğe bağlanabilsin.
+    """
+    taban = _api_tabani(istek)
+    acs = f"{taban}/sso/{organizasyon.slug}/{saglayici.slug}/saml/acs"
+    istek_id = sso_saml.istek_id_uret()
+    state = sso_oidc.state_uret(
+        saglayici_id=saglayici.id, nonce=istek_id, code_verifier="", donus=acs
+    )
+    url, _ = sso_saml.authn_istegi_uret(
+        saglayici, acs_url=acs, relay_state=state, istek_id=istek_id
+    )
+    return RedirectResponse(url, status_code=302)
 
 
 # -- sağlayıcı yönetimi --------------------------------------------------------
@@ -251,36 +285,55 @@ async def giris_baslat(
     istek: Request,
     oturum: AsyncSession = Depends(veritabani_oturumu),
 ) -> RedirectResponse:
+    """Sağlayıcı türüne göre giriş akışını başlatır.
+
+    `oidc` → `state`+`nonce`+PKCE ile yetkilendirme yönlendirmesi; `saml` →
+    imzalı `AuthnRequest` (spec §7'de belgelenen yol `/saml/baslat`, bu uç
+    geriye uyumluluk için SAML'de de çalışır).
+    """
     organizasyon, saglayici = await _saglayici_slug_ile(oturum, org_slug, saglayici_slug)
     taban = _api_tabani(istek)
 
-    if saglayici.tur == SsoTuru.oidc:
-        nonce = guvenlik.rastgele_jeton(24)
-        dogrulayici, meydan = sso_oidc.pkce_uret()
-        donus = f"{taban}/sso/{organizasyon.slug}/{saglayici.slug}/donus"
-        state = sso_oidc.state_uret(
-            saglayici_id=saglayici.id,
-            nonce=nonce,
-            code_verifier=dogrulayici,
-            donus=donus,
-        )
-        kesif = await sso_oidc.kesif_getir(saglayici, tasima=sso_oidc.varsayilan_tasima())
-        url = sso_oidc.yetkilendirme_url(
-            saglayici,
-            kesif,
-            state=state,
-            nonce=nonce,
-            code_challenge=meydan,
-            yonlendirme=donus,
-        )
-        return RedirectResponse(url, status_code=302)
+    if saglayici.tur != SsoTuru.oidc:
+        return _saml_yonlendirmesi(istek, organizasyon, saglayici)
 
-    acs = f"{taban}/sso/{organizasyon.slug}/{saglayici.slug}/saml/acs"
+    nonce = guvenlik.rastgele_jeton(24)
+    dogrulayici, meydan = sso_oidc.pkce_uret()
+    donus = f"{taban}/sso/{organizasyon.slug}/{saglayici.slug}/donus"
     state = sso_oidc.state_uret(
-        saglayici_id=saglayici.id, nonce="", code_verifier="", donus=acs
+        saglayici_id=saglayici.id,
+        nonce=nonce,
+        code_verifier=dogrulayici,
+        donus=donus,
     )
-    url, _istek_id = sso_saml.authn_istegi_uret(saglayici, acs_url=acs, relay_state=state)
+    kesif = await sso_oidc.kesif_getir(saglayici, tasima=sso_oidc.varsayilan_tasima())
+    url = sso_oidc.yetkilendirme_url(
+        saglayici,
+        kesif,
+        state=state,
+        nonce=nonce,
+        code_challenge=meydan,
+        yonlendirme=donus,
+    )
     return RedirectResponse(url, status_code=302)
+
+
+@router.get("/sso/{org_slug}/{saglayici_slug}/saml/baslat")
+async def saml_baslat(
+    org_slug: str,
+    saglayici_slug: str,
+    istek: Request,
+    oturum: AsyncSession = Depends(veritabani_oturumu),
+) -> RedirectResponse:
+    """SAML 2.0 akışını başlatır (spec §7'de belgelenen yol).
+
+    Yalnız `saml` sağlayıcılarda geçerlidir; `oidc` sağlayıcıda 400
+    `sso_yapilandirilmamis` döner (OIDC için `/baslat` kullanılır).
+    """
+    organizasyon, saglayici = await _saglayici_slug_ile(oturum, org_slug, saglayici_slug)
+    if saglayici.tur != SsoTuru.saml:
+        raise GecersizIstek("sso_yapilandirilmamis", {"saglayici": saglayici.slug})
+    return _saml_yonlendirmesi(istek, organizasyon, saglayici)
 
 
 @router.get("/sso/{org_slug}/{saglayici_slug}/donus", response_model=None)
@@ -293,6 +346,10 @@ async def oidc_donus(
     error: str | None = None,
     oturum: AsyncSession = Depends(veritabani_oturumu),
 ) -> JSONResponse | RedirectResponse:
+    """OIDC dönüş ucu: kod değişimi + `id_token` doğrulaması (spec §7).
+
+    Yalnız `oidc` sağlayıcılar için geçerlidir; `saml` için `/saml/acs`.
+    """
     organizasyon, saglayici = await _saglayici_slug_ile(oturum, org_slug, saglayici_slug)
     if saglayici.tur != SsoTuru.oidc:
         raise GecersizIstek("sso_yapilandirilmamis", {"saglayici": saglayici.slug})
@@ -304,6 +361,8 @@ async def oidc_donus(
     govde = sso_oidc.state_coz(state)
     if int(govde.get("sid", 0)) != saglayici.id:
         raise JetonGecersiz("oidc_durum_gecersiz", kod="oidc_durum_gecersiz")
+    # `state` tek kullanımlıktır: aynı state ikinci kez kabul edilmez.
+    sso_oidc.durum_tuket(govde)
 
     kesif = await sso_oidc.kesif_getir(saglayici, tasima=sso_oidc.varsayilan_tasima())
     jetonlar = await sso_oidc.kod_degistir(
@@ -333,9 +392,29 @@ async def saml_acs(
     RelayState: str | None = Form(default=None),
     oturum: AsyncSession = Depends(veritabani_oturumu),
 ) -> JSONResponse | RedirectResponse:
+    """SAML `SAMLResponse` doğrulaması (spec §7); yalnız `saml` sağlayıcılar.
+
+    `RelayState` ZORUNLUDUR: içindeki imzalı state çözülür, sağlayıcıyla
+    eşleşmesi denetlenir ve başlatılan `AuthnRequest` kimliği (`nonce`)
+    `InResponseTo` doğrulamasına verilir. State yoksa `400`, çözülemez ya da
+    başka sağlayıcıya aitse `401 oidc_durum_gecersiz` döner; IdP başlatmalı
+    akış desteklenmez.
+    """
     organizasyon, saglayici = await _saglayici_slug_ile(oturum, org_slug, saglayici_slug)
     if saglayici.tur != SsoTuru.saml:
         raise GecersizIstek("sso_yapilandirilmamis", {"saglayici": saglayici.slug})
+
+    if not RelayState:
+        raise GecersizIstek("oidc_durum_gecersiz", kod="oidc_durum_gecersiz")
+    govde = sso_oidc.state_coz(RelayState)
+    if int(govde.get("sid", 0)) != saglayici.id:
+        raise JetonGecersiz("oidc_durum_gecersiz", kod="oidc_durum_gecersiz")
+    # SAML akışında state.nonce alanı AuthnRequest kimliğini taşır
+    # (bkz. `_saml_yonlendirmesi`).
+    beklenen = str(govde.get("nonce") or "")
+    if not beklenen:
+        raise JetonGecersiz("oidc_durum_gecersiz", kod="oidc_durum_gecersiz")
+    sso_oidc.durum_tuket(govde)
 
     import base64 as _b64
 
@@ -346,16 +425,9 @@ async def saml_acs(
             "saml_yanit_gecersiz", {"neden": "base64"}, kod="saml_yanit_gecersiz"
         ) from hata
 
-    beklenen = None
-    if RelayState:
-        try:
-            beklenen = str(sso_oidc.state_coz(RelayState).get("jti", "")) or None
-        except JetonGecersiz:
-            beklenen = None
-
     acs = f"{_api_tabani(istek)}/sso/{organizasyon.slug}/{saglayici.slug}/saml/acs"
     bilgi = sso_saml.yanit_dogrula(
-        saglayici, saml_yaniti=xml_metni, acs_url=acs, beklenen_istek_id=None
+        saglayici, saml_yaniti=xml_metni, acs_url=acs, beklenen_istek_id=beklenen
     )
     return await _girisi_tamamla(istek, oturum, organizasyon, saglayici, bilgi)
 
@@ -420,7 +492,15 @@ async def _kullanici_esle(
     saglayici: SsoSaglayici,
     bilgi: dict[str, str],
 ) -> Kullanici:
-    """Önce `sso_kimlik`, sonra e-posta; yoksa kullanıcı oluşturur."""
+    """Önce `sso_kimlik`, sonra e-posta; yoksa kullanıcı oluşturur.
+
+    E-posta ile mevcut bir kullanıcıya bağlanma **yalnız** o kullanıcı bu
+    organizasyonda aktif üyeyse yapılır (SEC-SSO-001): aksi halde bir
+    organizasyon yöneticisi kendi IdP'sinde başka bir kurbanın e-postasına
+    assertion ürettirip hesabı devralabilirdi. IdP `email_verified=false`
+    bildirdiyse e-posta eşleşmesi hiç denenmez. JIT (yeni kullanıcı) yolu
+    değişmez.
+    """
     dis_id = bilgi.get("dis_id") or ""
     eposta = (bilgi.get("eposta") or "").lower()
     ad = bilgi.get("ad") or ""
@@ -440,9 +520,21 @@ async def _kullanici_esle(
 
     kullanici = None
     if eposta:
-        kullanici = (
+        mevcut = (
             await oturum.execute(sa.select(Kullanici).where(Kullanici.eposta == eposta))
         ).scalar_one_or_none()
+        if mevcut is not None:
+            if (bilgi.get("eposta_dogrulandi") or "").lower() == "false":
+                raise JetonGecersiz(
+                    "sso_dogrulanamadi", {"alan": "email_verified"}, kod="sso_dogrulanamadi"
+                )
+            uyelik = await uyelik_getir(oturum, organizasyon.id, mevcut.id)
+            if uyelik is None or uyelik.durum != UyelikDurumu.aktif:
+                raise YetkiYok(
+                    "Bu e-posta başka bir organizasyona ait.",
+                    {"neden": "eposta_organizasyon", "organizasyon": organizasyon.slug},
+                )
+            kullanici = mevcut
 
     if kullanici is None:
         if not eposta:

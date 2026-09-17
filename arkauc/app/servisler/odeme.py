@@ -13,6 +13,7 @@ from arkauc.app.cekirdek.hatalar import GecersizIstek
 from bdm_veritabani.modeller import (
     Abonelik,
     AbonelikDurumu,
+    Fatura,
     Kota,
     KotaKapsami,
     Organizasyon,
@@ -26,9 +27,23 @@ class OdemeSaglayici(Protocol):
     ad: str
 
     async def abonelik_baslat(
-        self, oturum: AsyncSession, *, organizasyon: Organizasyon, plan: Plan
+        self,
+        oturum: AsyncSession,
+        *,
+        organizasyon: Organizasyon,
+        plan: Plan,
+        abonelik: Abonelik,
+        fatura: Fatura,
     ) -> dict[str, Any]:
-        """Abonelik kaydini saglayicida baslatir: `{dis_id, url|None}`."""
+        """Abonelik kaydini saglayicida baslatir.
+
+        `abonelik`/`fatura` satirlari saglayici tarafinda (ornegin checkout
+        `metadata`) etiketlemek icin verilir; yazma cagirana aittir. Donen
+        sozluk: `{dis_id, url|None, saglayici, odeme_bekliyor?}` — `dis_id`
+        saglayicidaki abonelik kimligi (yoksa oturum kimligi), `oturum_id`
+        acilan odeme oturumu, `odeme_bekliyor=True` ise abonelik ancak
+        saglayici onayi (webhook) geldiginde `aktif` olur.
+        """
         ...
 
     async def odeme_oturumu(

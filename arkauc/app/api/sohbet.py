@@ -28,6 +28,7 @@ from arkauc.app.cekirdek.bagimliliklar import (
     veritabani_oturumu,
 )
 from arkauc.app.cekirdek.hatalar import (
+    AbonelikGecikmis,
     BdmHazirDegil,
     Bulunamadi,
     GecersizIstek,
@@ -47,6 +48,7 @@ from arkauc.app.servisler.arac import arac_bul, araclari_getir
 from arkauc.app.servisler.dosya import baglam_metni
 from arkauc.app.servisler.gomme import gomme_uret
 from arkauc.app.servisler.kota import kota_kullan, kota_token_ekle
+from arkauc.app.servisler.odeme import abonelik_durumu, erisim_var_mi
 from arkauc.app.servisler.upstream import UstSaglayici
 from arkauc.app.servisler.vektor import vektor_ara
 from bdm_konusma_gecmisi import (
@@ -341,6 +343,18 @@ async def _ek_baglam(
     )
 
 
+async def _abonelik_denetle(oturum: AsyncSession, organizasyon: Organizasyon) -> None:
+    """Gecikmis/iptal abonelikte sohbeti `402 abonelik_gecikmis` ile kapatir (spec §6).
+
+    Abonelik kaydi olmayan organizasyonlar serbesttir (tek kiracili kurulum).
+    """
+    durum = await abonelik_durumu(oturum, organizasyon.id)
+    if not erisim_var_mi(durum):
+        raise AbonelikGecikmis(
+            ayrinti={"durum": durum.value if durum is not None else "", "org_id": organizasyon.id}
+        )
+
+
 async def _kota_denetle(oturum: AsyncSession, bdm: Bdm, kimlik: IstemciKimligi) -> None:
     """Kotadan istek rezerve eder; limit doluysa 429 firlatir ve kaydeder."""
     try:
@@ -417,6 +431,7 @@ async def sohbet(
 ) -> dict[str, object]:
     """Tek yanitli sohbet; upstream hatasi 502 `ust_saglayici_hatasi` dondurur."""
     await _bakim_denetimi(oturum)
+    await _abonelik_denetle(oturum, organizasyon)
     bdm = await _bdm_coz(oturum, istek, kimlik, organizasyon)
     await _kota_denetle(oturum, bdm, kimlik)
     konusma = await _konusma_coz(oturum, istek, bdm, kimlik, organizasyon)
@@ -539,6 +554,7 @@ async def sohbet_akis(
 ) -> Response:
     """SSE akisi: `baslangic`, `arac_cagrisi`*, `arac_sonucu`*, `parca`*, `kullanim`, `hata`?, `bitti`."""
     await _bakim_denetimi(oturum)
+    await _abonelik_denetle(oturum, organizasyon)
     bdm = await _bdm_coz(oturum, istek, kimlik, organizasyon)
     await _kota_denetle(oturum, bdm, kimlik)
     konusma = await _konusma_coz(oturum, istek, bdm, kimlik, organizasyon)

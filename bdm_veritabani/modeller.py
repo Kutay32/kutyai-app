@@ -20,6 +20,35 @@ def simdi() -> datetime:
     return datetime.now(timezone.utc)
 
 
+class UtcZaman(sa.TypeDecorator[datetime]):
+    """UTC zaman damgasi: yazarken UTC'ye cevirip naive saklar, okurken UTC'yi geri takar.
+
+    SQLite zaman dilimi bilgisini saklamaz; ham `DateTime(timezone=True)` ile
+    okunan deger naive kalir ve API `isoformat()` ciktisi `+00:00` tasimaz —
+    istemciler bunu yerel saat sanip kaydirir. Bu tip, damgayi her iki yonde
+    de UTC olarak isaretler; kayit bicimi (DDL) degismez.
+    """
+
+    impl = sa.DateTime(timezone=True)
+    cache_ok = True
+
+    def process_bind_param(self, deger: datetime | None, lehce: Any) -> datetime | None:
+        if deger is None:
+            return None
+        if deger.tzinfo is None:
+            deger = deger.replace(tzinfo=timezone.utc)
+        # Aware deger birakilir: SQLite baglayicisi yalnizca alanlari bicimlendirir
+        # (damga ayni kalir), Postgres ise ani dogru yorumlar.
+        return deger.astimezone(timezone.utc)
+
+    def process_result_value(self, deger: datetime | None, lehce: Any) -> datetime | None:
+        if deger is None:
+            return None
+        if deger.tzinfo is None:
+            return deger.replace(tzinfo=timezone.utc)
+        return deger.astimezone(timezone.utc)
+
+
 class Taban(DeclarativeBase):
     pass
 
@@ -220,11 +249,11 @@ class Kullanici(Taban):
         index=True,
     )
     eposta_dogrulandi: Mapped[bool] = mapped_column(default=False)
-    olusturulma: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=simdi)
+    olusturulma: Mapped[datetime] = mapped_column(UtcZaman, default=simdi)
     guncellenme: Mapped[datetime] = mapped_column(
-        sa.DateTime(timezone=True), default=simdi, onupdate=simdi
+        UtcZaman, default=simdi, onupdate=simdi
     )
-    son_giris: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
+    son_giris: Mapped[datetime | None] = mapped_column(UtcZaman, nullable=True)
 
     def __repr__(self) -> str:  # pragma: no cover - hata ayiklama kolayligi
         return f"<Kullanici {self.id} {self.eposta} {self.rol.value}>"
@@ -243,9 +272,9 @@ class Oturum(Taban):
         sa.ForeignKey("kullanici.id", ondelete="CASCADE"), index=True
     )
     jeton_hash: Mapped[str] = mapped_column(sa.String(128), unique=True, index=True)
-    son_kullanma: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True))
+    son_kullanma: Mapped[datetime] = mapped_column(UtcZaman)
     iptal: Mapped[bool] = mapped_column(default=False)
-    olusturulma: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=simdi)
+    olusturulma: Mapped[datetime] = mapped_column(UtcZaman, default=simdi)
     user_agent: Mapped[str] = mapped_column(sa.String(400), default="")
     ip: Mapped[str] = mapped_column(sa.String(64), default="")
 
@@ -264,9 +293,9 @@ class DogrulamaJetonu(Taban):
     )
     tur: Mapped[JetonTuru] = mapped_column(_sayisal_enum(JetonTuru, "jeton_turu"))
     jeton_hash: Mapped[str] = mapped_column(sa.String(128), unique=True, index=True)
-    son_kullanma: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True))
+    son_kullanma: Mapped[datetime] = mapped_column(UtcZaman)
     kullanildi: Mapped[bool] = mapped_column(default=False)
-    olusturulma: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=simdi)
+    olusturulma: Mapped[datetime] = mapped_column(UtcZaman, default=simdi)
 
 
 # --------------------------------------------------------------------------
@@ -293,8 +322,8 @@ class ApiAnahtari(Taban):
     )
     izinli_modeller: Mapped[list[str]] = mapped_column(sa.JSON, default=list)
     gunluk_istek_siniri: Mapped[int | None] = mapped_column(nullable=True)
-    olusturulma: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=simdi)
-    son_kullanim: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
+    olusturulma: Mapped[datetime] = mapped_column(UtcZaman, default=simdi)
+    son_kullanim: Mapped[datetime | None] = mapped_column(UtcZaman, nullable=True)
 
 
 # --------------------------------------------------------------------------
@@ -331,9 +360,9 @@ class Bdm(Taban):
     )
     yerel_mi: Mapped[bool] = mapped_column(default=False)
     konteyner: Mapped[dict[str, Any] | None] = mapped_column(sa.JSON, nullable=True)
-    olusturulma: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=simdi)
+    olusturulma: Mapped[datetime] = mapped_column(UtcZaman, default=simdi)
     guncellenme: Mapped[datetime] = mapped_column(
-        sa.DateTime(timezone=True), default=simdi, onupdate=simdi
+        UtcZaman, default=simdi, onupdate=simdi
     )
 
 
@@ -361,9 +390,9 @@ class Konusma(Taban):
     token_girdi: Mapped[int] = mapped_column(default=0)
     token_cikti: Mapped[int] = mapped_column(default=0)
     arsivlendi: Mapped[bool] = mapped_column(default=False)
-    olusturulma: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=simdi)
+    olusturulma: Mapped[datetime] = mapped_column(UtcZaman, default=simdi)
     guncellenme: Mapped[datetime] = mapped_column(
-        sa.DateTime(timezone=True), default=simdi, onupdate=simdi
+        UtcZaman, default=simdi, onupdate=simdi
     )
 
     mesajlar: Mapped[list["Mesaj"]] = relationship(
@@ -387,7 +416,7 @@ class Mesaj(Taban):
     gecikme_ms: Mapped[int] = mapped_column(default=0)
     model: Mapped[str] = mapped_column(sa.String(200), default="")
     hata: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
-    olusturulma: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=simdi)
+    olusturulma: Mapped[datetime] = mapped_column(UtcZaman, default=simdi)
 
     konusma: Mapped[Konusma] = relationship(back_populates="mesajlar")
 
@@ -421,7 +450,7 @@ class KullanimKaydi(Taban):
         _sayisal_enum(KullanimDurumu, "kullanim_durumu"), default=KullanimDurumu.basarili
     )
     olusturulma: Mapped[datetime] = mapped_column(
-        sa.DateTime(timezone=True), default=simdi, index=True
+        UtcZaman, default=simdi, index=True
     )
 
 
@@ -441,8 +470,8 @@ class Kota(Taban):
     aylik_token: Mapped[int | None] = mapped_column(nullable=True)
     kullanilan_gunluk: Mapped[int] = mapped_column(default=0)
     kullanilan_aylik: Mapped[int] = mapped_column(default=0)
-    gun_sifirlanma: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=simdi)
-    ay_sifirlanma: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=simdi)
+    gun_sifirlanma: Mapped[datetime] = mapped_column(UtcZaman, default=simdi)
+    ay_sifirlanma: Mapped[datetime] = mapped_column(UtcZaman, default=simdi)
 
 
 # --------------------------------------------------------------------------
@@ -466,7 +495,7 @@ class IslemKaydi(Taban):
     ayrinti: Mapped[dict[str, Any]] = mapped_column(sa.JSON, default=dict)
     ip: Mapped[str] = mapped_column(sa.String(64), default="")
     olusturulma: Mapped[datetime] = mapped_column(
-        sa.DateTime(timezone=True), default=simdi, index=True
+        UtcZaman, default=simdi, index=True
     )
 
 
@@ -481,7 +510,7 @@ class Ayar(Taban):
     anahtar: Mapped[str] = mapped_column(sa.String(80), primary_key=True)
     deger: Mapped[Any] = mapped_column(sa.JSON, nullable=True)
     guncellenme: Mapped[datetime] = mapped_column(
-        sa.DateTime(timezone=True), default=simdi, onupdate=simdi
+        UtcZaman, default=simdi, onupdate=simdi
     )
 
 
@@ -515,9 +544,9 @@ class Organizasyon(Taban):
         _sayisal_enum(OrganizasyonDurumu, "organizasyon_durumu"),
         default=OrganizasyonDurumu.aktif,
     )
-    olusturulma: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=simdi)
+    olusturulma: Mapped[datetime] = mapped_column(UtcZaman, default=simdi)
     guncellenme: Mapped[datetime] = mapped_column(
-        sa.DateTime(timezone=True), default=simdi, onupdate=simdi
+        UtcZaman, default=simdi, onupdate=simdi
     )
 
 
@@ -538,7 +567,7 @@ class Uyelik(Taban):
     durum: Mapped[UyelikDurumu] = mapped_column(
         _sayisal_enum(UyelikDurumu, "uyelik_durumu"), default=UyelikDurumu.aktif
     )
-    olusturulma: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=simdi)
+    olusturulma: Mapped[datetime] = mapped_column(UtcZaman, default=simdi)
 
 
 class Plan(Taban):
@@ -553,7 +582,7 @@ class Plan(Taban):
     dahil_token: Mapped[int | None] = mapped_column(nullable=True)
     ozellikler: Mapped[dict[str, Any]] = mapped_column(sa.JSON, default=dict)
     etkin: Mapped[bool] = mapped_column(default=True)
-    olusturulma: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=simdi)
+    olusturulma: Mapped[datetime] = mapped_column(UtcZaman, default=simdi)
 
 
 class Abonelik(Taban):
@@ -569,13 +598,13 @@ class Abonelik(Taban):
     durum: Mapped[AbonelikDurumu] = mapped_column(
         _sayisal_enum(AbonelikDurumu, "abonelik_durumu"), default=AbonelikDurumu.deneme
     )
-    donem_basi: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=simdi)
-    donem_sonu: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=simdi)
+    donem_basi: Mapped[datetime] = mapped_column(UtcZaman, default=simdi)
+    donem_sonu: Mapped[datetime] = mapped_column(UtcZaman, default=simdi)
     saglayici: Mapped[str] = mapped_column(sa.String(40), default="yerel")
     dis_id: Mapped[str] = mapped_column(sa.String(200), default="")
-    olusturulma: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=simdi)
+    olusturulma: Mapped[datetime] = mapped_column(UtcZaman, default=simdi)
     guncellenme: Mapped[datetime] = mapped_column(
-        sa.DateTime(timezone=True), default=simdi, onupdate=simdi
+        UtcZaman, default=simdi, onupdate=simdi
     )
 
 
@@ -596,9 +625,9 @@ class Fatura(Taban):
     )
     kalemler: Mapped[list[dict[str, Any]]] = mapped_column(sa.JSON, default=list)
     dis_id: Mapped[str] = mapped_column(sa.String(200), default="")
-    olusturulma: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=simdi)
+    olusturulma: Mapped[datetime] = mapped_column(UtcZaman, default=simdi)
     odeme_tarihi: Mapped[datetime | None] = mapped_column(
-        sa.DateTime(timezone=True), nullable=True
+        UtcZaman, nullable=True
     )
 
 
@@ -618,7 +647,7 @@ class Dosya(Taban):
     sha256: Mapped[str] = mapped_column(sa.String(64), default="", index=True)
     yol: Mapped[str] = mapped_column(sa.Text, default="")
     metin: Mapped[str] = mapped_column(sa.Text, default="")
-    olusturulma: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=simdi)
+    olusturulma: Mapped[datetime] = mapped_column(UtcZaman, default=simdi)
 
 
 class VektorBelgesi(Taban):
@@ -637,7 +666,7 @@ class VektorBelgesi(Taban):
     )
     belge_meta: Mapped[dict[str, Any]] = mapped_column(sa.JSON, default=dict)
     parca_sayisi: Mapped[int] = mapped_column(default=0)
-    olusturulma: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=simdi)
+    olusturulma: Mapped[datetime] = mapped_column(UtcZaman, default=simdi)
 
 
 class VektorParcasi(Taban):
@@ -654,7 +683,7 @@ class VektorParcasi(Taban):
     icerik: Mapped[str] = mapped_column(sa.Text, default="")
     vektor: Mapped[list[float]] = mapped_column(sa.JSON, default=list)
     token_sayisi: Mapped[int] = mapped_column(default=0)
-    olusturulma: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=simdi)
+    olusturulma: Mapped[datetime] = mapped_column(UtcZaman, default=simdi)
 
 
 class Arac(Taban):
@@ -675,9 +704,9 @@ class Arac(Taban):
     uc_noktasi: Mapped[str] = mapped_column(sa.String(400), default="")
     basliklar_sifreli: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
     etkin: Mapped[bool] = mapped_column(default=True)
-    olusturulma: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=simdi)
+    olusturulma: Mapped[datetime] = mapped_column(UtcZaman, default=simdi)
     guncellenme: Mapped[datetime] = mapped_column(
-        sa.DateTime(timezone=True), default=simdi, onupdate=simdi
+        UtcZaman, default=simdi, onupdate=simdi
     )
 
 
@@ -706,7 +735,7 @@ class AracCagrisi(Taban):
     )
     gecikme_ms: Mapped[int] = mapped_column(default=0)
     hata: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
-    olusturulma: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=simdi)
+    olusturulma: Mapped[datetime] = mapped_column(UtcZaman, default=simdi)
 
 
 class SsoSaglayici(Taban):
@@ -725,9 +754,9 @@ class SsoSaglayici(Taban):
     etkin: Mapped[bool] = mapped_column(default=True)
     ayarlar: Mapped[dict[str, Any]] = mapped_column(sa.JSON, default=dict)
     sir_sifreli: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
-    olusturulma: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=simdi)
+    olusturulma: Mapped[datetime] = mapped_column(UtcZaman, default=simdi)
     guncellenme: Mapped[datetime] = mapped_column(
-        sa.DateTime(timezone=True), default=simdi, onupdate=simdi
+        UtcZaman, default=simdi, onupdate=simdi
     )
 
 
@@ -746,7 +775,7 @@ class SsoKimlik(Taban):
     )
     dis_id: Mapped[str] = mapped_column(sa.String(300), index=True)
     eposta: Mapped[str] = mapped_column(sa.String(320), default="")
-    olusturulma: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=simdi)
+    olusturulma: Mapped[datetime] = mapped_column(UtcZaman, default=simdi)
 
 
 class PostaSablonu(Taban):
@@ -765,5 +794,5 @@ class PostaSablonu(Taban):
     govde_metin: Mapped[str] = mapped_column(sa.Text, default="")
     govde_html: Mapped[str] = mapped_column(sa.Text, default="")
     guncellenme: Mapped[datetime] = mapped_column(
-        sa.DateTime(timezone=True), default=simdi, onupdate=simdi
+        UtcZaman, default=simdi, onupdate=simdi
     )

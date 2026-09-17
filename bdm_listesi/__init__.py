@@ -2,6 +2,7 @@
 
 from bdm_listesi.katalog import (
     bdm_getir,
+    bdm_getir_org,
     bdm_guncelle,
     bdm_kopyala,
     bdm_listele,
@@ -25,6 +26,7 @@ from bdm_listesi.sema import BdmGuncelle, BdmKopyala, BdmOlustur
 
 __all__ = [
     "bdm_getir",
+    "bdm_getir_org",
     "bdm_guncelle",
     "bdm_kopyala",
     "bdm_listele",

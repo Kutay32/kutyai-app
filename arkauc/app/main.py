@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from arkauc.app.api.sistem import SURUM
 from arkauc.app.cekirdek.ayarlar import ayarlar
 from arkauc.app.cekirdek.hatalar import isleyicileri_kur
+from arkauc.app.cekirdek.i18n import DilBasligiMiddleware
 from arkauc.app.cekirdek.oran_siniri import OranSiniriMiddleware
 from bdm_veritabani.oturum import motoru_sifirla, oturum_fabrikasi, tablolari_olustur
 from bdm_veritabani.tohum import tohumla
@@ -129,7 +130,8 @@ def uygulama_olustur() -> FastAPI:
         openapi_url="/api/openapi.json",
     )
     # Oran sinirlayici once eklenir; CORS en dista kalir ki 429 yanitlari da
-    # tarayici tarafinda okunabilir olsun.
+    # tarayici tarafinda okunabilir olsun. Dil basligi ara katmani en dista
+    # eklenir: 429 ve CORS oncesi yanitlar dahil her yanita yazilir.
     uygulama.add_middleware(OranSiniriMiddleware)
     uygulama.add_middleware(
         CORSMiddleware,
@@ -138,6 +140,7 @@ def uygulama_olustur() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    uygulama.add_middleware(DilBasligiMiddleware)
     isleyicileri_kur(uygulama)
     uygulama.state.yuklenen_yonlendiriciler = yonlendiricileri_yukle(uygulama)
     return uygulama

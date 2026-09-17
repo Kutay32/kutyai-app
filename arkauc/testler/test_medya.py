@@ -209,7 +209,7 @@ async def test_servis_gorsel_yetenegi_yoksa_400():
         kayit = await oturum.get(Bdm, bdm.id)
         with pytest.raises(MedyaDesteklenmiyor) as yakalanan:
             await medya.gorsel_uret(kayit, "kedi", tasima=SahteMedya().tasima())
-    assert yakalanan.value.kod == "medya_yetenegi_yok"
+    assert yakalanan.value.kod == "medya_desteklenmiyor"
     assert yakalanan.value.ayrinti["yetenek"] == "gorsel"
 
 
@@ -400,9 +400,9 @@ async def test_yetenek_kapali_gorsel_400(istemci, yardimci, sahte):
     )
     assert yanit.status_code == 400
     hata = yanit.json()["hata"]
-    assert hata["kod"] == "medya_yetenegi_yok"
+    assert hata["kod"] == "medya_desteklenmiyor"
     assert hata["ayrinti"]["yetenek"] == "gorsel"
-    assert hata["mesaj"] == "Model yeteneklerinde bu üretim türü kapalı."
+    assert hata["mesaj"] == "Seçilen model görsel veya ses üretimini desteklemiyor."
     assert await dosyalari_getir() == []
     kullanim = await kullanimlari_getir()
     assert len(kullanim) == 1
@@ -421,8 +421,8 @@ async def test_yetenek_kapali_ses_400_ingilizce_mesaj(istemci, yardimci, sahte):
     )
     assert yanit.status_code == 400
     hata = yanit.json()["hata"]
-    assert hata["kod"] == "medya_yetenegi_yok"
-    assert hata["mesaj"] == "This generation type is disabled in the model capabilities."
+    assert hata["kod"] == "medya_desteklenmiyor"
+    assert hata["mesaj"] == "The selected model does not support image or audio generation."
     assert sahte.yollar == []
 
 

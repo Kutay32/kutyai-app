@@ -19,6 +19,10 @@ from arkauc.app.cekirdek.hatalar import (
     GecersizIstek,
     YetkiYok,
 )
+from arkauc.app.cekirdek.organizasyon import (
+    denetim_organizasyonu,
+    varsayilan_uyelik_ekle,
+)
 from arkauc.app.servisler import kimlik as kimlik_servisi
 from arkauc.app.servisler.posta import (
     dogrulama_baglantisi,
@@ -29,7 +33,6 @@ from arkauc.app.servisler.posta import (
     smtp_tanimli_mi,
 )
 from bdm_veritabani.modeller import (
-    PERSONEL_ROLLERI,
     DogrulamaJetonu,
     JetonTuru,
     Kullanici,
@@ -112,7 +115,7 @@ async def _giris_yap(
     if kullanici.durum == KullaniciDurumu.pasif:
         raise YetkiYok("Hesabınız devre dışı bırakılmış. Yöneticiye başvurun.")
     if panel:
-        if kullanici.rol not in PERSONEL_ROLLERI:
+        if not await kimlik_servisi.personel_uyeligi_var_mi(oturum, kullanici.id):
             raise YetkiYok("Panele yalnızca personel hesapları giriş yapabilir.")
     elif kullanici.rol != Rol.son_kullanici:
         raise YetkiYok("Bu giriş kapısı yalnızca son kullanıcılar içindir.")
@@ -128,6 +131,7 @@ async def _giris_yap(
     await islem_kaydet(
         oturum,
         "kimlik.giris",
+        org_id=await denetim_organizasyonu(oturum, kullanici.id),
         kullanici_id=kullanici.id,
         hedef_tur="kullanici",
         hedef_id=kullanici.id,
@@ -152,7 +156,11 @@ async def kayit(
     istek: Request,
     oturum: AsyncSession = Depends(veritabani_oturumu),
 ) -> dict[str, object]:
-    """Son kullanici kaydi; hesap `beklemede` acilir ve dogrulama baglantisi gonderilir."""
+    """Son kullanici kaydi; hesap `beklemede` acilir, dogrulama baglantisi gonderilir.
+
+    Kayit varsayilan organizasyona uye yazilir: kullanici panel listesinde
+    gorunur ve ilk organizasyon kapsamli istegini beklemez.
+    """
     if not await ayar_oku(oturum, "kayit_acik", True):
         raise YetkiYok("Kayıt şu anda kapalı. Yöneticiye başvurun.")
     eposta = kimlik_servisi.eposta_normalize(veri.eposta)
@@ -172,6 +180,9 @@ async def kayit(
     )
     oturum.add(kullanici)
     await kimlik_servisi.kaydi_yaz(oturum, eposta)
+    # Uyelik kaydi burada acilir; aksi hâlde kullanici panel listesinde
+    # gorunmez ve ilk organizasyon kapsamli istegine kadar kiracisiz kalir.
+    await varsayilan_uyelik_ekle(oturum, kullanici)
 
     jeton = await kimlik_servisi.dogrulama_jetonu_uret(
         oturum, kullanici, JetonTuru.eposta_dogrulama, kimlik_servisi.EPOSTA_DOGRULAMA_SAAT
@@ -192,6 +203,7 @@ async def kayit(
     await islem_kaydet(
         oturum,
         "kimlik.kayit",
+        org_id=await denetim_organizasyonu(oturum, kullanici.id),
         kullanici_id=kullanici.id,
         hedef_tur="kullanici",
         hedef_id=kullanici.id,
@@ -220,6 +232,7 @@ async def dogrula(
     await islem_kaydet(
         oturum,
         "kimlik.dogrula",
+        org_id=await denetim_organizasyonu(oturum, kullanici.id),
         kullanici_id=kullanici.id,
         hedef_tur="kullanici",
         hedef_id=kullanici.id,
@@ -260,6 +273,7 @@ async def yenile(
     await islem_kaydet(
         oturum,
         "kimlik.yenile",
+        org_id=await denetim_organizasyonu(oturum, kullanici.id),
         kullanici_id=kullanici.id,
         hedef_tur="kullanici",
         hedef_id=kullanici.id,
@@ -283,6 +297,7 @@ async def cikis(
     await islem_kaydet(
         oturum,
         "kimlik.cikis",
+        org_id=await denetim_organizasyonu(oturum, kullanici.id),
         kullanici_id=kullanici.id,
         hedef_tur="kullanici",
         hedef_id=kullanici.id,
@@ -321,6 +336,7 @@ async def sifre_sifirlama_iste(
     await islem_kaydet(
         oturum,
         "kimlik.sifre_sifirlama_iste",
+        org_id=await denetim_organizasyonu(oturum, kullanici.id),
         kullanici_id=kullanici.id,
         hedef_tur="kullanici",
         hedef_id=kullanici.id,
@@ -350,6 +366,7 @@ async def sifre_sifirla(
     await islem_kaydet(
         oturum,
         "kimlik.sifre_sifirla",
+        org_id=await denetim_organizasyonu(oturum, kullanici.id),
         kullanici_id=kullanici.id,
         hedef_tur="kullanici",
         hedef_id=kullanici.id,

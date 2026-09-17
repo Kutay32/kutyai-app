@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from arkauc.app.cekirdek.bagimliliklar import (
     IstemciKimligi,
+    aktif_organizasyon,
     gecerli_istemci,
     gecerli_personel,
     veritabani_oturumu,
@@ -17,7 +18,7 @@ from arkauc.app.cekirdek.bagimliliklar import (
 from arkauc.app.cekirdek.hatalar import GecersizIstek
 from arkauc.app.servisler.kota import kapsam_kota_durumu, kapsam_sec
 from bdm_konusma_gecmisi import kullanim_ozeti, kullanim_zaman_serisi
-from bdm_veritabani.modeller import KullanimKaydi, KotaKapsami, Kullanici
+from bdm_veritabani.modeller import KullanimKaydi, KotaKapsami, Kullanici, Organizasyon
 
 router = APIRouter(tags=["kullanim"])
 
@@ -50,9 +51,10 @@ async def ozet(
     gun: int = Query(30, ge=1, le=365),
     oturum: AsyncSession = Depends(veritabani_oturumu),
     _personel: Kullanici = Depends(gecerli_personel()),
+    organizasyon: Organizasyon = Depends(aktif_organizasyon),
 ) -> dict[str, object]:
-    """Son `gun` gunun kullanim ozeti."""
-    sonuc = await kullanim_ozeti(oturum, gun=gun)
+    """Aktif organizasyonun son `gun` gunluk kullanim ozeti."""
+    sonuc = await kullanim_ozeti(oturum, gun=gun, org_id=organizasyon.id)
     return {alan: sonuc[alan] for alan in OZET_ALANLARI}
 
 
@@ -62,13 +64,16 @@ async def zaman_serisi(
     kirilim: str = Query("bdm"),
     oturum: AsyncSession = Depends(veritabani_oturumu),
     _personel: Kullanici = Depends(gecerli_personel()),
+    organizasyon: Organizasyon = Depends(aktif_organizasyon),
 ) -> dict[str, object]:
     """`bdm` veya `kullanici` kiriliminda istek/token serisi."""
     if kirilim not in KIRILIMLAR:
         raise GecersizIstek(
             "kirilim 'bdm' veya 'kullanici' olmalıdır.", {"alan": "kirilim"}
         )
-    sonuc = await kullanim_zaman_serisi(oturum, gun=gun, kirilim=kirilim)
+    sonuc = await kullanim_zaman_serisi(
+        oturum, gun=gun, kirilim=kirilim, org_id=organizasyon.id
+    )
     return {"seri": sonuc["seri"]}
 
 

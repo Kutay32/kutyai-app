@@ -1,4 +1,13 @@
-"""OIDC (Authorization Code + PKCE) istemcisi (spec §7)."""
+"""OIDC (Authorization Code + PKCE) istemcisi (spec §7).
+
+Güvenlik kuralları (pazarlık yok):
+- IdP adresleri (`issuer`) `https` olmalıdır; keşif belgesindeki `issuer`
+  alanı yapılandırılanla birebir eşleşir (mix-up savunması).
+- `state` imzalıdır, **tek kullanımlıktır** (`jti` süreç içi kümede tutulur)
+  ve 10 dakika sonra düşer.
+- E-posta ile hesap birleştirme kararı `email_verified` iddiasına duyarlıdır
+  (bkz. `kullanici_bilgisi`).
+"""
 
 from __future__ import annotations
 
@@ -6,6 +15,7 @@ import base64
 import hashlib
 import logging
 import secrets
+import time
 from typing import Any
 from urllib.parse import urlencode
 
@@ -14,7 +24,9 @@ import jwt
 from jwt import PyJWKClient
 
 from arkauc.app.cekirdek import guvenlik
+from arkauc.app.cekirdek.ayarlar import ayarlar
 from arkauc.app.cekirdek.hatalar import GecersizIstek, JetonGecersiz, UstSaglayiciHatasi
+from bdm_listesi.sema import _adres_dogrula
 from bdm_veritabani.modeller import SsoSaglayici
 
 logger = logging.getLogger("kutyai.sso.oidc")
@@ -23,10 +35,32 @@ STATE_TUR = "sso_state"
 STATE_OMRU_DK = 10
 VARSAYILAN_KAPSAM = "openid email profile"
 
+#: {state jti: gorulme_zamani} — `state` tek kullanım kümesi (süreç içi).
+_kullanilan_durumlar: dict[str, float] = {}
+
 
 def varsayilan_tasima() -> httpx.AsyncBaseTransport | None:
     """Testlerin ve önizlemenin taşımayı geçersiz kılması için kanca."""
     return None
+
+
+def adres_denetle(adres: str, *, alan: str) -> str:
+    """IdP adresini şema ve SSRF kurallarına göre denetler.
+
+    `https` zorunludur; `KUTYAI_SSO_YEREL_IZIN=true` iken (geliştirme, şirket
+    içi IdP) `http` ve yerel/özel adresler de kabul edilir. Katı modda
+    metadata/loopback/özel ağ adresleri reddedilir (`bdm_listesi.sema` tek
+    kural kaynağıdır). Reddedilen adres `400 sso_yapilandirilmamis` üretir.
+    """
+    yerel = bool(ayarlar.sso_yerel_izin)
+    kucuk = adres.strip().lower()
+    if not (kucuk.startswith("https://") or (yerel and kucuk.startswith("http://"))):
+        raise GecersizIstek("sso_yapilandirilmamis", {"alan": alan})
+    try:
+        return _adres_dogrula(adres, yerel_izin=yerel)
+    except ValueError as hata:
+        logger.warning("SSO IdP adresi reddedildi (%s): %s", alan, hata)
+        raise GecersizIstek("sso_yapilandirilmamis", {"alan": alan}) from hata
 
 
 def ayar(saglayici: SsoSaglayici, anahtar: str, varsayilan: str = "") -> str:
@@ -46,10 +80,15 @@ def istemci_sirri(saglayici: SsoSaglayici) -> str:
 async def kesif_getir(
     saglayici: SsoSaglayici, *, tasima: httpx.AsyncBaseTransport | None = None
 ) -> dict[str, Any]:
-    """`.well-known/openid-configuration` belgesini okur."""
-    issuer = ayar(saglayici, "issuer").rstrip("/")
+    """`.well-known/openid-configuration` belgesini okur.
+
+    Yapılandırılan `issuer` `https` olmalıdır ve keşif belgesindeki `issuer`
+    alanıyla birebir eşleşmelidir (mix-up saldırılarına karşı).
+    """
+    issuer = ayar(saglayici, "issuer").strip()
     if not issuer:
         raise GecersizIstek("sso_yapilandirilmamis", {"alan": "issuer"})
+    issuer = adres_denetle(issuer, alan="issuer").rstrip("/")
     adres = f"{issuer}/.well-known/openid-configuration"
     async with httpx.AsyncClient(timeout=15.0, transport=tasima) as istemci:
         try:
@@ -63,7 +102,25 @@ async def kesif_getir(
             "Kimlik sağlayıcısı keşif belgesini reddetti.",
             {"saglayici": saglayici.slug, "durum": yanit.status_code},
         )
-    return yanit.json()
+    try:
+        belge = yanit.json()
+    except ValueError as hata:
+        raise UstSaglayiciHatasi(
+            "Kimlik sağlayıcısı geçersiz keşif belgesi döndü.", {"saglayici": saglayici.slug}
+        ) from hata
+    if not isinstance(belge, dict):
+        raise UstSaglayiciHatasi(
+            "Kimlik sağlayıcısı geçersiz keşif belgesi döndü.", {"saglayici": saglayici.slug}
+        )
+    belge_issuer = str(belge.get("issuer") or "").strip().rstrip("/")
+    if belge_issuer != issuer:
+        logger.warning(
+            "Keşif `issuer` alanı yapılandırmayla uyuşmuyor: saglayici=%s", saglayici.slug
+        )
+        raise GecersizIstek(
+            "sso_yapilandirilmamis", {"alan": "issuer", "neden": "kesif_uyusmazligi"}
+        )
+    return belge
 
 
 def pkce_uret() -> tuple[str, str]:
@@ -75,10 +132,8 @@ def pkce_uret() -> tuple[str, str]:
 
 
 def state_uret(*, saglayici_id: int, nonce: str, code_verifier: str, donus: str) -> str:
-    """Kısa ömürlü, imzalı `state` (tek kullanımlık; DB gerektirmez)."""
+    """Kısa ömürlü, imzalı `state`; `jti` alanı tek kullanımı sağlar."""
     from datetime import datetime, timedelta, timezone
-
-    from arkauc.app.cekirdek.ayarlar import ayarlar
 
     simdi = datetime.now(timezone.utc)
     govde = {
@@ -99,6 +154,32 @@ def state_coz(jeton: str) -> dict[str, Any]:
     except JetonGecersiz as hata:
         raise JetonGecersiz("oidc_durum_gecersiz", kod="oidc_durum_gecersiz") from hata
     return govde
+
+
+def durum_tuket(govde: dict[str, Any]) -> None:
+    """`state`'i tek kullanımlık yapar (SAML tekrar kümesiyle aynı desen).
+
+    Aynı `jti` ikinci kez görülürse `401 oidc_durum_gecersiz` yükseltilir;
+    kayıtlar `STATE_OMRU_DK` sonra düşer. Küme süreç belleğindedir ve çok
+    replikada paylaşılmaz (varsayılan dağıtım tek süreçtir).
+    """
+    su_an = time.time()
+    suresi_gecenler = [
+        anahtar
+        for anahtar, zaman in _kullanilan_durumlar.items()
+        if su_an - zaman > STATE_OMRU_DK * 60
+    ]
+    for anahtar in suresi_gecenler:
+        _kullanilan_durumlar.pop(anahtar, None)
+    jti = str(govde.get("jti") or "")
+    if not jti or jti in _kullanilan_durumlar:
+        raise JetonGecersiz("oidc_durum_gecersiz", kod="oidc_durum_gecersiz")
+    _kullanilan_durumlar[jti] = su_an
+
+
+def durum_kumesini_temizle() -> None:
+    """Testler arası izolasyon."""
+    _kullanilan_durumlar.clear()
 
 
 def yetkilendirme_url(
@@ -175,12 +256,16 @@ async def id_jetonu_dogrula(
     nonce: str,
     tasima: httpx.AsyncBaseTransport | None = None,
 ) -> dict[str, Any]:
-    """İmza (JWKS), `iss`, `aud`, `exp`, `nonce` denetimi."""
+    """İmza (JWKS), `iss`, `aud`, `exp`, `nonce` denetimi.
+
+    Beklenen `iss` daima yapılandırılan `issuer`'dır (keşif belgesiyle
+    eşleştiği `kesif_getir`'de doğrulanır); keşiften gelen değere güvenilmez.
+    """
     jwks_uri = kesif.get("jwks_uri")
     if not jwks_uri:
         raise GecersizIstek("sso_yapilandirilmamis", {"alan": "jwks_uri"})
     istemci_id = ayar(saglayici, "client_id")
-    issuer = kesif.get("issuer") or ayar(saglayici, "issuer")
+    issuer = ayar(saglayici, "issuer").strip().rstrip("/")
 
     try:
         anahtar_istemcisi = PyJWKClient(jwks_uri)
@@ -202,8 +287,28 @@ async def id_jetonu_dogrula(
     return govde
 
 
+def _bayrak_metni(deger: Any) -> str:
+    """`email_verified` benzeri iddiayı `"true"` / `"false"` / `""` yapar.
+
+    İddia hiç yoksa ya da tanınmayan bir değerse `""` döner: e-posta
+    eşleşmesi bu durumda kısıtlanmaz (iddia yokluğu `false` sayılmaz).
+    """
+    if isinstance(deger, bool):
+        return "true" if deger else "false"
+    metin = str(deger).strip().lower() if deger is not None else ""
+    if metin in {"true", "1"}:
+        return "true"
+    if metin in {"false", "0"}:
+        return "false"
+    return ""
+
+
 def kullanici_bilgisi(saglayici: SsoSaglayici, govde: dict[str, Any]) -> dict[str, str]:
-    """id_token'dan kullanıcı alanlarını çıkarır."""
+    """id_token'dan kullanıcı alanlarını çıkarır.
+
+    `eposta_dogrulandi`, IdP'nin `email_verified` iddiasını taşır; `"false"`
+    ise e-posta ile mevcut hesaba bağlanılmaz (`_kullanici_esle`).
+    """
     eposta_claim = ayar(saglayici, "eposta_claim", "email")
     ad_claim = ayar(saglayici, "ad_claim", "name")
     eposta = str(govde.get(eposta_claim) or govde.get("email") or govde.get("preferred_username") or "")
@@ -211,4 +316,9 @@ def kullanici_bilgisi(saglayici: SsoSaglayici, govde: dict[str, Any]) -> dict[st
     dis_id = str(govde.get("sub") or "")
     if not dis_id:
         raise JetonGecersiz("sso_dogrulanamadi", {"alan": "sub"}, kod="sso_dogrulanamadi")
-    return {"dis_id": dis_id, "eposta": eposta.strip().lower(), "ad": ad.strip()}
+    return {
+        "dis_id": dis_id,
+        "eposta": eposta.strip().lower(),
+        "ad": ad.strip(),
+        "eposta_dogrulandi": _bayrak_metni(govde.get("email_verified")),
+    }

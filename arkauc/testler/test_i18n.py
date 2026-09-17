@@ -32,6 +32,9 @@ def test_dil_cozme():
     assert dil_coz("tr-TR") == "tr"
     assert dil_coz("de-DE") == "tr"
     assert dil_coz("") == "tr"
+    # Spec §10.1: `az*` etiketi İngilizceye eşlenir.
+    assert dil_coz("az-AZ,az;q=0.9") == "en"
+    assert dil_coz("de-DE,az;q=0.8") == "en"
 
 
 async def test_diller_ucu(istemci):
@@ -88,3 +91,35 @@ async def test_ozel_hata_kodu_katalog_anahtarindan_turetilir(istemci, yardimci):
     )
     assert ingilizce.status_code == 404
     assert ingilizce.json()["hata"]["mesaj"] == "Plan not found."
+
+
+async def test_icerik_dili_basligi_her_yanitta_doner(istemci):
+    """API.md §16: yanıt başlığı `Content-Language: tr|en` döner."""
+    tr = await istemci.get("/api/v1/saglik")
+    assert tr.status_code == 200
+    assert tr.headers["content-language"] == "tr"
+
+    en = await istemci.get("/api/v1/saglik", headers={"Accept-Language": "en-US,en;q=0.9"})
+    assert en.headers["content-language"] == "en"
+
+    # Hata yanıtları da başlığı taşır.
+    hata = await istemci.get("/api/v1/bdm", headers={"Accept-Language": "en"})
+    assert hata.status_code == 401
+    assert hata.headers["content-language"] == "en"
+
+
+async def test_cerceve_hata_mesaji_dile_duyarli(istemci):
+    """Çerçeve (yönlendirme) hataları da katalogdan çözülür (spec §10.1)."""
+    tr = await istemci.get("/api/v1/boyle-bir-uc-yok")
+    assert tr.status_code == 404
+    assert tr.json()["hata"]["kod"] == "bulunamadi"
+    assert tr.json()["hata"]["mesaj"] == "Kayıt bulunamadı."
+
+    en = await istemci.get("/api/v1/boyle-bir-uc-yok", headers={"Accept-Language": "en"})
+    assert en.json()["hata"]["kod"] == "bulunamadi"
+    assert en.json()["hata"]["mesaj"] == "Record not found."
+
+    yontem = await istemci.put("/api/v1/saglik", headers={"Accept-Language": "en"})
+    assert yontem.status_code == 405
+    assert yontem.json()["hata"]["kod"] == "yontem_izinli_degil"
+    assert yontem.json()["hata"]["mesaj"] == "This method is not allowed for this address."

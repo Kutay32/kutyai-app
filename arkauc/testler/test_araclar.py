@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import ipaddress
 import json
+import socket
 import threading
 import time
 from datetime import datetime
@@ -22,6 +24,8 @@ import sqlalchemy as sa
 from arkauc.app.cekirdek import guvenlik
 from arkauc.app.cekirdek.ayarlar import ayarlar
 from arkauc.app.servisler import arac as arac_servisi
+from bdm_listesi import sema as bdm_sema
+from bdm_listesi.sema import _adres_dogrula
 from bdm_veritabani.modeller import (
     Arac,
     AracCagrisi,
@@ -139,9 +143,20 @@ async def _olustur(
     return yanit.json()
 
 
-def _beklenen_imza(govde: bytes) -> str:
-    anahtar = (ayarlar.arac_imza_anahtari or ayarlar.gizli_anahtar).encode("utf-8")
+def _imza(anahtar: bytes, govde: bytes) -> str:
     return "sha256=" + hmac.new(anahtar, govde, hashlib.sha256).hexdigest()
+
+
+def _turetilmis_anahtar() -> bytes:
+    """`KUTYAI_ARAC_IMZA_ANAHTARI` boşken beklenen, jeton sırrından AYRI anahtar."""
+    return hmac.new(
+        ayarlar.gizli_anahtar.encode("utf-8"), b"arac-imza", hashlib.sha256
+    ).digest()
+
+
+def _beklenen_imza(govde: bytes) -> str:
+    tanimli = (ayarlar.arac_imza_anahtari or "").strip()
+    return _imza(tanimli.encode("utf-8") if tanimli else _turetilmis_anahtar(), govde)
 
 
 async def _cagri_sayisi() -> int:
@@ -344,6 +359,46 @@ async def test_webhook_cagrisi_imza_ve_basliklar(istemci, yardimci, webhook) -> 
         }
 
 
+async def test_webhook_imzasi_jeton_sirriyla_hesaplanmaz(
+    istemci, yardimci, webhook
+) -> None:
+    """İmza anahtarı tanımsızken jeton sırrı değil, ondan türetilmiş AYRI anahtar kullanılır."""
+    yonetici = await yardimci.yonetici()
+    basliklar = yardimci.basliklar(yonetici)
+    arac = await _olustur(istemci, basliklar, slug="turetilmis", uc_noktasi=webhook.adres)
+
+    yanit = await istemci.post(
+        f"{UC}/{arac['id']}/dene", json={"argumanlar": {}}, headers=basliklar
+    )
+    assert yanit.status_code == 200, yanit.text
+
+    govde = webhook.son_istek["govde"]
+    imza = webhook.son_istek["basliklar"][arac_servisi.IMZA_BASLIGI]
+    assert imza.startswith("sha256=")
+    assert imza == _imza(_turetilmis_anahtar(), govde)
+    assert imza != _imza(ayarlar.gizli_anahtar.encode("utf-8"), govde)
+
+
+async def test_webhook_imza_anahtari_tanimliysa_kullanilir(
+    istemci, yardimci, webhook, monkeypatch
+) -> None:
+    """Tanımlı `KUTYAI_ARAC_IMZA_ANAHTARI` türetilmiş anahtarın önüne geçer."""
+    monkeypatch.setattr(ayarlar, "arac_imza_anahtari", "paylasilan-imza-anahtari")
+    yonetici = await yardimci.yonetici()
+    basliklar = yardimci.basliklar(yonetici)
+    arac = await _olustur(istemci, basliklar, slug="tanimli", uc_noktasi=webhook.adres)
+
+    yanit = await istemci.post(
+        f"{UC}/{arac['id']}/dene", json={"argumanlar": {}}, headers=basliklar
+    )
+    assert yanit.status_code == 200, yanit.text
+
+    govde = webhook.son_istek["govde"]
+    imza = webhook.son_istek["basliklar"][arac_servisi.IMZA_BASLIGI]
+    assert imza == _imza(b"paylasilan-imza-anahtari", govde)
+    assert imza != _imza(_turetilmis_anahtar(), govde)
+
+
 async def test_dene_kisa_govde(istemci, yardimci, webhook) -> None:
     """`/dene` gövdesi `argumanlar` sarmadan da kabul edilir."""
     yonetici = await yardimci.yonetici()
@@ -417,7 +472,12 @@ async def test_webhook_yanit_boyutu_sinirli(istemci, yardimci, webhook) -> None:
     [
         "ftp://ornek.test/arac",
         "https://169.254.169.254/latest/meta-data",
+        "https://169.254.169.254./latest/meta-data",
+        "https://[::ffff:169.254.169.254]/latest/meta-data",
+        "http://2852039166/latest/meta-data",
+        "http://100.100.100.200/latest/meta-data",
         "https://metadata.google.internal/computeMetadata/v1",
+        "https://metadata.google.internal./computeMetadata/v1",
         "https:///kayip-konak",
     ],
 )
@@ -449,6 +509,70 @@ async def test_http_yalniz_yerel_izinle(istemci, yardimci, webhook, monkeypatch)
         headers=basliklar,
     )
     assert kabul.status_code == 201
+
+
+@pytest.fixture
+def cozucu_taklit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """DNS'i taklit eder; katı kip testleri ağa bağımlı olmasın."""
+    bdm_sema._cozulemeyen_konaklar.clear()
+    gercek = bdm_sema._adres_coz
+
+    def sahte(konak: str) -> list[Any]:
+        esleme = {
+            "genel.ornek.test": ["93.184.216.34"],
+            "yerel.ornek.test": ["127.0.0.1", "::1"],
+            "metadata.ornek.test": ["169.254.169.254"],
+        }
+        if konak == "yok.ornek.test":
+            raise socket.gaierror("çözümlenemedi")
+        if konak in esleme:
+            return [ipaddress.ip_address(adres) for adres in esleme[konak]]
+        return gercek(konak)
+
+    monkeypatch.setattr(bdm_sema, "_adres_coz", sahte)
+
+
+@pytest.mark.parametrize(
+    "adres",
+    [
+        "http://169.254.169.254/latest/meta-data",
+        "http://169.254.169.254./latest/meta-data",
+        "http://[::ffff:169.254.169.254]/latest/meta-data",
+        "http://2852039166/latest/meta-data",
+        "http://100.100.100.200/latest/meta-data",
+        "https://metadata.google.internal./computeMetadata/v1",
+        "http://localhost:11434/v1",
+        "http://127.0.0.1:8000/v1",
+        "https://[::1]/v1",
+        "https://yerel.ornek.test/v1",
+        "https://metadata.ornek.test/v1",
+        "https://yok.ornek.test/v1",
+    ],
+)
+def test_adres_dogrula_ssrf_varyantlarini_reddeder(
+    adres: str, cozucu_taklit: None
+) -> None:
+    """Katı kip: konak normalize edilir, çözümlenen adresler ve aralıklar denetlenir."""
+    with pytest.raises(ValueError):
+        _adres_dogrula(adres)
+
+
+def test_adres_dogrula_genel_https_adresini_kabul_eder(cozucu_taklit: None) -> None:
+    """Genel bir adrese çözümlenen https adresi kabul edilir."""
+    assert _adres_dogrula("https://genel.ornek.test/v1") == "https://genel.ornek.test/v1"
+
+
+def test_adres_dogrula_yerel_izin_kipinde_daraltmaz(cozucu_taklit: None) -> None:
+    """Yerel izin loopback/özel ağı açar; metadata ve link-local yine reddedilir."""
+    assert (
+        _adres_dogrula("http://127.0.0.1:8000/v1", yerel_izin=True)
+        == "http://127.0.0.1:8000/v1"
+    )
+    assert _adres_dogrula("http://192.168.7.9/v1", yerel_izin=True) == "http://192.168.7.9/v1"
+    with pytest.raises(ValueError):
+        _adres_dogrula("http://169.254.169.254/latest/meta-data", yerel_izin=True)
+    with pytest.raises(ValueError):
+        _adres_dogrula("http://metadata.google.internal/x", yerel_izin=True)
 
 
 # --------------------------------------------------------------------------

@@ -38,7 +38,6 @@
   "kendi_uyeligini_dusuremezsin": "Kendi sahip rolünüzü düşüremezsiniz.",
   "api_anahtari_kisitli_alan": "Sağlayıcı adresi ve API anahtarını yalnız yönetici değiştirebilir.",
   "sağlayıcı_adresi_gecersiz": "Sağlayıcı adresi geçersiz.",
-  "medya_yetenegi_yok": "Model yeteneklerinde bu üretim türü kapalı.",
   "arac_bulunamadi": "Araç bulunamadı veya etkin değil.",
   "arac_tur_siniri": "Araç çağrısı üst üste çok fazla tekrarlandı.",
   "dosya_tur_desteklenmiyor": "Bu dosya türü desteklenmiyor.",

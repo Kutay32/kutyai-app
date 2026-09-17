@@ -184,6 +184,18 @@ async def bdm_getir(oturum: AsyncSession, bdm_id: int) -> Bdm:
     return bdm
 
 
+async def bdm_getir_org(oturum: AsyncSession, org_id: int, bdm_id: int) -> Bdm:
+    """BDM'i organizasyon kapsaminda getirir.
+
+    Baska organizasyonun kaydi, varligi sizdirilmadan `404` gibi davranir
+    (spec §2.3, API.md §15).
+    """
+    bdm = await bdm_getir(oturum, bdm_id)
+    if bdm.org_id != org_id:
+        raise Bulunamadi("BDM kaydı bulunamadı.", {"bdm_id": bdm_id})
+    return bdm
+
+
 async def bdm_slug_getir(oturum: AsyncSession, slug: str) -> Bdm:
     bdm = (
         await oturum.execute(sa.select(Bdm).where(Bdm.slug == slug))

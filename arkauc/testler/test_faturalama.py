@@ -263,15 +263,156 @@ async def test_stripe_checkout_oturumu_uretir(monkeypatch):
         oturum.add(plan)
         await oturum.flush()
         organizasyon = await _organizasyon_olustur(oturum, "Stripe Org")
+        abonelik = Abonelik(org_id=organizasyon.id, plan_id=plan.id)
+        oturum.add(abonelik)
+        await oturum.flush()
+        fatura = Fatura(org_id=organizasyon.id, abonelik_id=abonelik.id)
+        oturum.add(fatura)
+        await oturum.flush()
         sonuc = await surucu.abonelik_baslat(
-            oturum, organizasyon=organizasyon, plan=plan
+            oturum,
+            organizasyon=organizasyon,
+            plan=plan,
+            abonelik=abonelik,
+            fatura=fatura,
         )
 
     assert sonuc["dis_id"] == "cs_test_1"
+    assert sonuc["oturum_id"] == "cs_test_1"
     assert sonuc["url"].startswith("https://checkout.stripe.com/")
+    assert sonuc["odeme_bekliyor"] is True
     assert yakalanan["yetki"] == "Bearer sk_test_123"
     assert "mode=subscription" in yakalanan["govde"]
     assert "unit_amount%5D=199900" in yakalanan["govde"]
+    # Webhook eşlemesi oturum kimliğiyle birlikte metadata üzerinden de kurulur.
+    assert f"client_reference_id={organizasyon.id}" in yakalanan["govde"]
+    assert f"metadata%5Babonelik_id%5D={abonelik.id}" in yakalanan["govde"]
+    assert f"metadata%5Bfatura_id%5D={fatura.id}" in yakalanan["govde"]
+
+
+async def test_stripe_abonelik_onay_gelene_kadar_deneme_kalir(istemci, yardimci, monkeypatch):
+    """Ödeme onayı (webhook) gelene kadar abonelik `deneme`, kota yazılmamış olur."""
+    from arkauc.app.servisler import odeme_stripe
+    from arkauc.app.servisler.odeme_stripe import StripeSaglayici
+
+    monkeypatch.setattr(ayarlar, "odeme_saglayici", "stripe")
+    monkeypatch.setattr(ayarlar, "stripe_gizli_anahtar", "sk_test_123")
+    monkeypatch.setattr(ayarlar, "stripe_webhook_sirri", "whsec_test")
+
+    async def isleyici(istek: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"id": "cs_test_2", "url": "https://checkout.stripe.com/c/pay/2"}
+        )
+
+    monkeypatch.setattr(
+        odeme_stripe,
+        "StripeSaglayici",
+        lambda *args, **kwargs: StripeSaglayici(tasima=httpx.MockTransport(isleyici)),
+    )
+    yonetici = await yardimci.yonetici()
+    organizasyon = await yardimci.organizasyon(sahibi=yonetici)
+    plan = await _plan_ekle(fiyat=149_900, istek=500)
+    basliklar = yardimci.org_basliklari(yonetici, organizasyon)
+
+    yanit = await istemci.post(
+        f"{FATURALAMA}/abonelik", json={"plan_id": plan.id}, headers=basliklar
+    )
+    assert yanit.status_code == 201, yanit.text
+    govde = yanit.json()
+    assert govde["abonelik"]["durum"] == "deneme"
+    assert govde["abonelik"]["dis_id"] == "cs_test_2"
+    assert govde["fatura"]["durum"] == "taslak"
+    assert govde["fatura"]["dis_id"] == "cs_test_2"
+    assert govde["odeme_url"].startswith("https://checkout.stripe.com/")
+
+    async with oturum_fabrikasi()() as oturum:
+        abonelik = (
+            await oturum.execute(
+                sa.select(Abonelik).where(Abonelik.org_id == organizasyon.id)
+            )
+        ).scalar_one()
+        abonelik_id = abonelik.id
+        fatura_id = govde["fatura"]["id"]
+        kota = (
+            await oturum.execute(
+                sa.select(Kota).where(Kota.kapsam_id == organizasyon.id)
+            )
+        ).scalar_one_or_none()
+        assert kota is None, "ödeme onayı gelmeden kota yazılmamalı"
+
+    olay = {
+        "type": "checkout.session.completed",
+        "data": {
+            "object": {
+                "id": "cs_test_2",
+                "object": "checkout.session",
+                "subscription": "sub_test_3",
+                "client_reference_id": str(organizasyon.id),
+                "metadata": {
+                    "abonelik_id": str(abonelik_id),
+                    "fatura_id": str(fatura_id),
+                },
+            }
+        },
+    }
+    govde_bytes = json.dumps(olay).encode()
+    onay = await istemci.post(
+        f"{FATURALAMA}/webhook/stripe",
+        content=govde_bytes,
+        headers={"Stripe-Signature": _imza(govde_bytes, "whsec_test")},
+    )
+    assert onay.status_code == 200, onay.text
+    assert onay.json()["uygulandi"] is True
+
+    async with oturum_fabrikasi()() as oturum:
+        abonelik = await oturum.get(Abonelik, abonelik_id)
+        assert abonelik.durum == AbonelikDurumu.aktif
+        # Gerçek abonelik kimliği saklanır: sonraki fatura olayları eşleşir.
+        assert abonelik.dis_id == "sub_test_3"
+        assert (await oturum.get(Fatura, fatura_id)).durum == FaturaDurumu.odendi
+        kota = (
+            await oturum.execute(
+                sa.select(Kota).where(
+                    Kota.kapsam == KotaKapsami.organizasyon,
+                    Kota.kapsam_id == organizasyon.id,
+                )
+            )
+        ).scalar_one()
+        assert kota.gunluk_istek == 500
+        assert kota.aylik_token == 10_000
+
+
+async def test_stripe_eslesmeyen_webhook_uygulanmaz(istemci, yardimci, monkeypatch):
+    """Hiçbir kayda oturmayan olay durum değiştirmez (`uygulandi: false`)."""
+    monkeypatch.setattr(ayarlar, "odeme_saglayici", "stripe")
+    monkeypatch.setattr(ayarlar, "stripe_gizli_anahtar", "sk_test_123")
+    monkeypatch.setattr(ayarlar, "stripe_webhook_sirri", "whsec_test")
+
+    olay = {
+        "type": "invoice.paid",
+        "data": {
+            "object": {
+                "id": "in_yok",
+                "object": "invoice",
+                "subscription": "sub_yok",
+                "metadata": {"fatura_id": "999999", "abonelik_id": "999999"},
+            }
+        },
+    }
+    govde = json.dumps(olay).encode()
+    yanit = await istemci.post(
+        f"{FATURALAMA}/webhook/stripe",
+        content=govde,
+        headers={"Stripe-Signature": _imza(govde, "whsec_test")},
+    )
+    assert yanit.status_code == 200, yanit.text
+    assert yanit.json()["uygulandi"] is False
+
+    async with oturum_fabrikasi()() as oturum:
+        abonelikler = (
+            await oturum.execute(sa.select(sa.func.count()).select_from(Abonelik))
+        ).scalar_one()
+        assert int(abonelikler) == 0
 
 
 async def test_stripe_webhook_imzasi_dogrulanir(istemci, yardimci, monkeypatch):
@@ -408,3 +549,40 @@ def test_erisim_kurali(durum, erisim):
     from arkauc.app.servisler.odeme import erisim_var_mi
 
     assert erisim_var_mi(durum) is erisim
+
+
+async def test_gecikmis_abonelik_sohbeti_402_ile_kapatir(istemci, yardimci):
+    """Spec §6: `gecikmis` abonelikte sohbet `402 abonelik_gecikmis` döner."""
+    yonetici = await yardimci.yonetici()
+    organizasyon = await yardimci.organizasyon("Gecikmiş A.Ş.", sahibi=yonetici)
+    plan = await _plan_ekle()
+    basliklar = yardimci.org_basliklari(yonetici, organizasyon)
+    govde = {"bdm_id": 999999, "mesaj": "selam"}
+
+    async with oturum_fabrikasi()() as oturum:
+        oturum.add(
+            Abonelik(
+                org_id=organizasyon.id, plan_id=plan.id, durum=AbonelikDurumu.gecikmis
+            )
+        )
+        await oturum.commit()
+
+    for uc in ("/api/v1/sohbet", "/api/v1/sohbet/akis"):
+        yanit = await istemci.post(uc, json=govde, headers=basliklar)
+        assert yanit.status_code == 402, uc
+        assert yanit.json()["hata"]["kod"] == "abonelik_gecikmis", uc
+        assert yanit.json()["hata"]["ayrinti"]["durum"] == "gecikmis", uc
+
+    # Abonelik aktifken kapı açılır: istek BDM çözümüne ilerler (BDM yok → 404).
+    async with oturum_fabrikasi()() as oturum:
+        abonelik = (
+            await oturum.execute(
+                sa.select(Abonelik).where(Abonelik.org_id == organizasyon.id)
+            )
+        ).scalars().one()
+        abonelik.durum = AbonelikDurumu.aktif
+        await oturum.commit()
+
+    yanit = await istemci.post("/api/v1/sohbet", json=govde, headers=basliklar)
+    assert yanit.status_code == 404
+    assert yanit.json()["hata"]["kod"] == "bulunamadi"

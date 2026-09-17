@@ -95,8 +95,7 @@ def destek_denetle(bdm: Bdm, ad: str) -> None:
     """Yetenek bayragi kapaliysa 400 `medya_desteklenmiyor` firlatir."""
     if not yetenek_var(bdm, ad):
         raise MedyaDesteklenmiyor(
-            "medya_yetenegi_yok",
-            {"yetenek": ad, "bdm_id": getattr(bdm, "id", None)},
+            ayrinti={"yetenek": ad, "bdm_id": getattr(bdm, "id", None)}
         )
 
 

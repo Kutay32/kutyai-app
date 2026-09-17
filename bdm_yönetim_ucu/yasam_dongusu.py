@@ -186,6 +186,7 @@ async def _kaydet(
     await islem_kaydet(
         oturum,
         eylem,
+        org_id=bdm.org_id,
         kullanici_id=kullanici_id,
         hedef_tur="bdm",
         hedef_id=bdm.id,
@@ -219,6 +220,7 @@ async def _basarisiz_baslatma(
     await islem_kaydet(
         oturum,
         eylem,
+        org_id=bdm.org_id,
         kullanici_id=kullanici_id,
         hedef_tur="bdm",
         hedef_id=bdm.id,
@@ -243,6 +245,7 @@ async def _durdurmayi_geri_al(
     await islem_kaydet(
         oturum,
         "bdm.durdurulamadi",
+        org_id=bdm.org_id,
         kullanici_id=kullanici_id,
         hedef_tur="bdm",
         hedef_id=bdm.id,

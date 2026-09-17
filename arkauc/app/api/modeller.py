@@ -12,17 +12,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from arkauc.app.cekirdek.bagimliliklar import (
     IstemciKimligi,
+    aktif_organizasyon,
     gecerli_istemci,
     gecerli_personel,
+    istemci_organizasyonu,
     veritabani_oturumu,
 )
 from arkauc.app.cekirdek.denetim import islem_kaydet
 from arkauc.app.cekirdek.hatalar import GecersizGecis, YetkiYok
+from arkauc.app.cekirdek.organizasyon import rol_yetkili_mi, uyelik_getir
 from bdm_listesi import (
     BdmGuncelle,
     BdmKopyala,
     BdmOlustur,
-    bdm_getir,
+    bdm_getir_org,
     bdm_guncelle,
     bdm_kopyala,
     bdm_listele,
@@ -32,7 +35,14 @@ from bdm_listesi import (
     kullanilabilir_modeller,
     saglayici_listesi,
 )
-from bdm_veritabani.modeller import BdmDurumu, Kullanici, Rol
+from bdm_veritabani.modeller import (
+    BdmDurumu,
+    Kullanici,
+    Organizasyon,
+    Rol,
+    UyelikDurumu,
+    UyelikRolu,
+)
 
 router = APIRouter()
 
@@ -41,7 +51,10 @@ YALNIZ_YONETICI = (Rol.yonetici,)
 
 # GUV-03: saglayici adresi ve upstream anahtari yalniz yoneticiye aittir.
 # Operator bunlari degistirip cozulmus anahtari kendi sunucusuna yonlendiremez.
+# Karar global `kullanici.rol` degil aktif organizasyondaki **uyelik** rolu
+# uzerinden verilir (spec §2.2).
 YONETICI_ALANLARI = ("temel_url", "api_anahtari", "saglayici")
+YONETICI_UYELIK_ROLLERI: tuple[UyelikRolu, ...] = (UyelikRolu.yonetici,)
 YONETICI_ALANI_MESAJI = "Sağlayıcı adresi ve API anahtarını yalnız yönetici değiştirebilir."
 
 _kimlikli_personel = gecerli_personel()
@@ -54,37 +67,54 @@ def _ip(istek: Request) -> str:
     return istek.client.host if istek.client else ""
 
 
-def _guncelleme_alanlarini_koru(govde: BdmGuncelle, kullanici: Kullanici) -> None:
-    """Guncellemede korumali alanlar yalniz yoneticide kalir (GUV-03)."""
-    if kullanici.rol == Rol.yonetici:
-        return
+async def _upstream_yetkili_mi(
+    oturum: AsyncSession, organizasyon_id: int, kullanici_id: int
+) -> bool:
+    """Aktif organizasyondaki uyelik rolu yonetici/sahip mi (GUV-03, spec §2.2)."""
+    uyelik = await uyelik_getir(oturum, organizasyon_id, kullanici_id)
+    if uyelik is None or uyelik.durum != UyelikDurumu.aktif:
+        return False
+    return rol_yetkili_mi(uyelik.rol, YONETICI_UYELIK_ROLLERI)
+
+
+async def _guncelleme_alanlarini_koru(
+    oturum: AsyncSession, govde: BdmGuncelle, kullanici: Kullanici, organizasyon: Organizasyon
+) -> None:
+    """Guncellemede korumali alanlar yalniz organizasyon yoneticisinde kalir (GUV-03)."""
     verilen = sorted(
         alan for alan in YONETICI_ALANLARI if alan in govde.model_fields_set
     )
-    if verilen:
-        raise YetkiYok(YONETICI_ALANI_MESAJI, {"alanlar": verilen})
+    if not verilen:
+        return
+    if await _upstream_yetkili_mi(oturum, organizasyon.id, kullanici.id):
+        return
+    raise YetkiYok(YONETICI_ALANI_MESAJI, {"alanlar": verilen})
 
 
-def _olusturma_alanlarini_koru(govde: BdmOlustur, kullanici: Kullanici) -> None:
-    """Yeni kayitta yalniz upstream anahtari yoneticiye aittir (GUV-03).
+async def _olusturma_alanlarini_koru(
+    oturum: AsyncSession, govde: BdmOlustur, kullanici: Kullanici, organizasyon: Organizasyon
+) -> None:
+    """Yeni kayitta upstream anahtari organizasyon yoneticisinde kalir (GUV-03).
 
     `temel_url` serbesttir: yeni kayit mevcut bir anahtari baska adrese
-    tasimaz. Bos anahtar (`""`) yerel saglayicilar icin gecerlidir.
+    tasimaz (alan korumasi guncellemede uygulanir).
     """
-    if kullanici.rol == Rol.yonetici:
+    if not govde.api_anahtari:
         return
-    if govde.api_anahtari:
-        raise YetkiYok(YONETICI_ALANI_MESAJI, {"alanlar": ["api_anahtari"]})
+    if await _upstream_yetkili_mi(oturum, organizasyon.id, kullanici.id):
+        return
+    raise YetkiYok(YONETICI_ALANI_MESAJI, {"alanlar": ["api_anahtari"]})
 
 
 @router.get("/modeller")
 async def modeller(
     kimlik: IstemciKimligi = Depends(gecerli_istemci),
+    organizasyon: Organizasyon = Depends(istemci_organizasyonu),
     oturum: AsyncSession = Depends(veritabani_oturumu),
 ) -> list[dict[str, object]]:
-    """Sohbet istemcisine acik modeller listesi."""
+    """Sohbet istemcisine acik modeller listesi (aktif organizasyon kapsaminda)."""
     izinli = kimlik.anahtar.izinli_modeller if kimlik.anahtar else None
-    return await kullanilabilir_modeller(oturum, izinli)
+    return await kullanilabilir_modeller(oturum, izinli, org_id=organizasyon.id)
 
 
 @router.get("/saglayicilar")
@@ -97,10 +127,11 @@ async def saglayicilar() -> list[dict[str, object]]:
 async def bdm_listesi(
     arama: str | None = Query(default=None, max_length=160),
     kullanici: Kullanici = Depends(_kimlikli_personel),
+    organizasyon: Organizasyon = Depends(aktif_organizasyon),
     oturum: AsyncSession = Depends(veritabani_oturumu),
 ) -> list[dict[str, object]]:
     """BDM kayitlarini listeler; `arama` ad ve slug uzerinde calisir."""
-    kayitlar = await bdm_listele(oturum, arama=arama)
+    kayitlar = await bdm_listele(oturum, org_id=organizasyon.id, arama=arama)
     return [bdm_sozlugu(kayit) for kayit in kayitlar]
 
 
@@ -109,14 +140,16 @@ async def bdm_olustur_ucu(
     govde: BdmOlustur,
     istek: Request,
     kullanici: Kullanici = Depends(_duzenleyici_personel),
+    organizasyon: Organizasyon = Depends(aktif_organizasyon),
     oturum: AsyncSession = Depends(veritabani_oturumu),
 ) -> dict[str, object]:
     """Yeni BDM kaydi olusturur (taslak durumunda)."""
-    _olusturma_alanlarini_koru(govde, kullanici)
-    bdm = await bdm_olustur(oturum, govde)
+    await _olusturma_alanlarini_koru(oturum, govde, kullanici, organizasyon)
+    bdm = await bdm_olustur(oturum, govde, org_id=organizasyon.id)
     await islem_kaydet(
         oturum,
         "bdm.olusturuldu",
+        org_id=organizasyon.id,
         kullanici_id=kullanici.id,
         hedef_tur="bdm",
         hedef_id=bdm.id,
@@ -132,15 +165,17 @@ async def bdm_guncelle_ucu(
     govde: BdmGuncelle,
     istek: Request,
     kullanici: Kullanici = Depends(_duzenleyici_personel),
+    organizasyon: Organizasyon = Depends(aktif_organizasyon),
     oturum: AsyncSession = Depends(veritabani_oturumu),
 ) -> dict[str, object]:
     """BDM kaydini kismen gunceller."""
-    _guncelleme_alanlarini_koru(govde, kullanici)
-    bdm = await bdm_getir(oturum, bdm_id)
+    await _guncelleme_alanlarini_koru(oturum, govde, kullanici, organizasyon)
+    bdm = await bdm_getir_org(oturum, organizasyon.id, bdm_id)
     await bdm_guncelle(oturum, bdm, govde)
     await islem_kaydet(
         oturum,
         "bdm.guncellendi",
+        org_id=organizasyon.id,
         kullanici_id=kullanici.id,
         hedef_tur="bdm",
         hedef_id=bdm.id,
@@ -156,14 +191,16 @@ async def bdm_kopyala_ucu(
     govde: BdmKopyala,
     istek: Request,
     kullanici: Kullanici = Depends(_yonetici_personel),
+    organizasyon: Organizasyon = Depends(aktif_organizasyon),
     oturum: AsyncSession = Depends(veritabani_oturumu),
 ) -> dict[str, object]:
     """Var olan BDM'yi yeni ad ve slug ile cogaltir."""
-    kaynak = await bdm_getir(oturum, bdm_id)
+    kaynak = await bdm_getir_org(oturum, organizasyon.id, bdm_id)
     yeni = await bdm_kopyala(oturum, kaynak, govde.yeni_ad, govde.yeni_slug)
     await islem_kaydet(
         oturum,
         "bdm.kopyalandi",
+        org_id=organizasyon.id,
         kullanici_id=kullanici.id,
         hedef_tur="bdm",
         hedef_id=yeni.id,
@@ -178,10 +215,11 @@ async def bdm_sil_ucu(
     bdm_id: int,
     istek: Request,
     kullanici: Kullanici = Depends(_yonetici_personel),
+    organizasyon: Organizasyon = Depends(aktif_organizasyon),
     oturum: AsyncSession = Depends(veritabani_oturumu),
 ) -> Response:
     """BDM kaydini siler; calisan bir BDM once durdurulmalidir."""
-    bdm = await bdm_getir(oturum, bdm_id)
+    bdm = await bdm_getir_org(oturum, organizasyon.id, bdm_id)
     if bdm.durum == BdmDurumu.calisiyor:
         raise GecersizGecis(
             "Çalışan bir BDM silinemez. Önce durdurun.",
@@ -190,6 +228,7 @@ async def bdm_sil_ucu(
     await islem_kaydet(
         oturum,
         "bdm.silindi",
+        org_id=organizasyon.id,
         kullanici_id=kullanici.id,
         hedef_tur="bdm",
         hedef_id=bdm.id,

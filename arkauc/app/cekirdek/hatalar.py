@@ -260,17 +260,11 @@ def isleyicileri_kur(uygulama: FastAPI) -> None:
         dil = istek_dili(istek)
         kod = _HTTP_KODLARI.get(hata.status_code)
         if kod is None:
-            return JSONResponse(
-                status_code=hata.status_code,
-                content={
-                    "hata": {
-                        "kod": "http_hatasi",
-                        "mesaj": mesaj("http_hatasi", dil),
-                        "ayrinti": {},
-                    }
-                },
-            )
-        return JSONResponse(status_code=hata.status_code, content=KutyaiHatasi(kod=kod).govde(dil))
+            kod = "http_hatasi"
+        return JSONResponse(
+            status_code=hata.status_code,
+            content={"hata": {"kod": kod, "mesaj": mesaj(kod, dil), "ayrinti": {}}},
+        )
 
     @uygulama.exception_handler(Exception)
     async def _beklenmeyen(istek: Request, hata: Exception) -> JSONResponse:

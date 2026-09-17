@@ -23,12 +23,16 @@ from arkauc.app.cekirdek.hatalar import (
     YetkiYok,
 )
 from bdm_veritabani.modeller import (
+    PERSONEL_UYELIK_ROLLERI,
+    ROL_ESLEME,
     DogrulamaJetonu,
     JetonTuru,
     Kullanici,
     KullaniciDurumu,
     Oturum,
     Rol,
+    Uyelik,
+    UyelikDurumu,
 )
 
 EPOSTA_DOGRULAMA_SAAT = 24
@@ -138,20 +142,46 @@ async def kullanici_getir(oturum: AsyncSession, kullanici_id: int) -> Kullanici 
     return await oturum.get(Kullanici, kullanici_id)
 
 
+async def personel_uyeligi_var_mi(oturum: AsyncSession, kullanici_id: int) -> bool:
+    """Kullanicinin herhangi bir organizasyonda aktif personel uyeligi var mi?
+
+    Panel kapisi global `kullanici.rol`e degil uyelik rolune bakar; boylece
+    davetle bir organizasyonda `sahip`/`yonetici` olan ama global rolu
+    `son_kullanici` kalan hesap da panele girebilir.
+    """
+    kayit = (
+        await oturum.execute(
+            sa.select(Uyelik.id)
+            .where(
+                Uyelik.kullanici_id == kullanici_id,
+                Uyelik.durum == UyelikDurumu.aktif,
+                Uyelik.rol.in_(PERSONEL_UYELIK_ROLLERI),
+            )
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    return kayit is not None
+
+
 async def kullanicilari_listele(
     oturum: AsyncSession,
     *,
+    organizasyon_id: int,
     rol: Rol | None = None,
     durum: KullaniciDurumu | None = None,
     arama: str | None = None,
     sayfa: int = 1,
     boyut: int = VARSAYILAN_SAYFA_BOYUTU,
 ) -> dict[str, object]:
-    """Filtreli ve sayfali kullanici listesi (`Sayfa<Kullanici>`)."""
+    """Aktif organizasyonun uyelerini filtreli ve sayfali listeler (`Sayfa<Kullanici>`).
+
+    Yalnizca verilen organizasyona uyeligi olan kullanicilar doner; `rol`/`durum`
+    suzgecleri `kullanici` alanlari uzerinde uygulanir.
+    """
     sayfa = max(1, int(sayfa or 1))
     boyut = min(max(1, int(boyut or VARSAYILAN_SAYFA_BOYUTU)), EN_BUYUK_SAYFA_BOYUTU)
 
-    kosullar: list[sa.ColumnElement[bool]] = []
+    kosullar: list[sa.ColumnElement[bool]] = [Uyelik.organizasyon_id == organizasyon_id]
     if rol is not None:
         kosullar.append(Kullanici.rol == rol)
     if durum is not None:
@@ -165,13 +195,17 @@ async def kullanicilari_listele(
     toplam = int(
         (
             await oturum.execute(
-                sa.select(sa.func.count()).select_from(Kullanici).where(*kosullar)
+                sa.select(sa.func.count())
+                .select_from(Kullanici)
+                .join(Uyelik, Uyelik.kullanici_id == Kullanici.id)
+                .where(*kosullar)
             )
         ).scalar_one()
     )
     kayitlar = (
         await oturum.execute(
             sa.select(Kullanici)
+            .join(Uyelik, Uyelik.kullanici_id == Kullanici.id)
             .where(*kosullar)
             .order_by(Kullanici.id.desc())
             .offset((sayfa - 1) * boyut)
@@ -189,12 +223,17 @@ async def kullanicilari_listele(
 async def kullanici_olustur(
     oturum: AsyncSession,
     *,
+    organizasyon_id: int,
     eposta: str,
     ad_soyad: str,
     parola: str,
     rol: Rol = Rol.son_kullanici,
 ) -> Kullanici:
-    """Yonetici tarafindan olusturulan kullanici: aktif ve dogrulanmis."""
+    """Yonetici tarafindan olusturulan kullanici: aktif, dogrulanmis ve organizasyon uyesi.
+
+    Uyelik rolu `kullanici.rol`inden turetilir (`ROL_ESLEME`); boylece davet
+    edilen personel aktif organizasyonda hemen yetki kazanir.
+    """
     parola_denetle(parola)
     normal = eposta_normalize(eposta)
     if not normal:
@@ -211,6 +250,15 @@ async def kullanici_olustur(
     )
     oturum.add(kullanici)
     await kaydi_yaz(oturum, normal)
+    oturum.add(
+        Uyelik(
+            organizasyon_id=organizasyon_id,
+            kullanici_id=kullanici.id,
+            rol=ROL_ESLEME[kullanici.rol],
+            durum=UyelikDurumu.aktif,
+        )
+    )
+    await oturum.flush()
     return kullanici
 
 

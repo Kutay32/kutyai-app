@@ -7,10 +7,14 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from arkauc.app.cekirdek.bagimliliklar import gecerli_personel, veritabani_oturumu
+from arkauc.app.cekirdek.bagimliliklar import (
+    aktif_organizasyon,
+    gecerli_personel,
+    veritabani_oturumu,
+)
 from arkauc.app.cekirdek.denetim import islem_kaydet
-from bdm_listesi import bdm_getir, bdm_sozlugu
-from bdm_veritabani.modeller import Kullanici
+from bdm_listesi import bdm_getir_org, bdm_sozlugu
+from bdm_veritabani.modeller import Kullanici, Organizasyon
 
 from . import gunlukler, saglik, surucu_durum, yasam_dongusu
 
@@ -44,9 +48,10 @@ async def baslat(
     istek: Request,
     oturum: AsyncSession = Depends(veritabani_oturumu),
     kullanici: Kullanici = Depends(gecerli_personel()),
+    organizasyon: Organizasyon = Depends(aktif_organizasyon),
 ) -> dict[str, object]:
     """BDM konteynerini başlatır."""
-    bdm = await bdm_getir(oturum, bdm_id)
+    bdm = await bdm_getir_org(oturum, organizasyon.id, bdm_id)
     return await yasam_dongusu.baslat(oturum, bdm, kullanici_id=kullanici.id, ip=_ip(istek))
 
 
@@ -56,9 +61,10 @@ async def durdur(
     istek: Request,
     oturum: AsyncSession = Depends(veritabani_oturumu),
     kullanici: Kullanici = Depends(gecerli_personel()),
+    organizasyon: Organizasyon = Depends(aktif_organizasyon),
 ) -> dict[str, object]:
     """Çalışan BDM konteynerini durdurur."""
-    bdm = await bdm_getir(oturum, bdm_id)
+    bdm = await bdm_getir_org(oturum, organizasyon.id, bdm_id)
     return await yasam_dongusu.durdur(oturum, bdm, kullanici_id=kullanici.id, ip=_ip(istek))
 
 
@@ -68,9 +74,10 @@ async def yeniden_baslat(
     istek: Request,
     oturum: AsyncSession = Depends(veritabani_oturumu),
     kullanici: Kullanici = Depends(gecerli_personel()),
+    organizasyon: Organizasyon = Depends(aktif_organizasyon),
 ) -> dict[str, object]:
     """BDM konteynerini durdurup yeniden başlatır."""
-    bdm = await bdm_getir(oturum, bdm_id)
+    bdm = await bdm_getir_org(oturum, organizasyon.id, bdm_id)
     return await yasam_dongusu.yeniden_baslat(
         oturum, bdm, kullanici_id=kullanici.id, ip=_ip(istek)
     )
@@ -81,9 +88,10 @@ async def durum(
     bdm_id: int,
     oturum: AsyncSession = Depends(veritabani_oturumu),
     kullanici: Kullanici = Depends(gecerli_personel()),
+    organizasyon: Organizasyon = Depends(aktif_organizasyon),
 ) -> dict[str, object]:
     """BDM durumu, konteyner kimliği ve sağlık özeti."""
-    bdm = await bdm_getir(oturum, bdm_id)
+    bdm = await bdm_getir_org(oturum, organizasyon.id, bdm_id)
     return await saglik.durum_ozeti(bdm)
 
 
@@ -92,9 +100,10 @@ async def bdm_sagligi(
     bdm_id: int,
     oturum: AsyncSession = Depends(veritabani_oturumu),
     kullanici: Kullanici = Depends(gecerli_personel()),
+    organizasyon: Organizasyon = Depends(aktif_organizasyon),
 ) -> dict[str, object]:
     """Çalışan konteynerin sağlık sondası sonucu."""
-    bdm = await bdm_getir(oturum, bdm_id)
+    bdm = await bdm_getir_org(oturum, organizasyon.id, bdm_id)
     return await saglik.saglik_ozeti(bdm)
 
 
@@ -104,9 +113,10 @@ async def gunluk_akisi(
     satir: int = Query(default=200, ge=1, le=2000),
     oturum: AsyncSession = Depends(veritabani_oturumu),
     kullanici: Kullanici = Depends(gecerli_personel()),
+    organizasyon: Organizasyon = Depends(aktif_organizasyon),
 ) -> StreamingResponse:
     """Konteyner günlüklerini SSE (`event: satir`) olarak akıtır."""
-    bdm = await bdm_getir(oturum, bdm_id)
+    bdm = await bdm_getir_org(oturum, organizasyon.id, bdm_id)
     konteyner_id = yasam_dongusu.konteyner_kimligi(bdm)
     surucu = yasam_dongusu.surucu_sec(bdm)
     akis = await gunlukler.akis(surucu, konteyner_id, satir)
@@ -124,9 +134,10 @@ async def yol_guncelle(
     istek: Request,
     oturum: AsyncSession = Depends(veritabani_oturumu),
     kullanici: Kullanici = Depends(gecerli_personel()),
+    organizasyon: Organizasyon = Depends(aktif_organizasyon),
 ) -> dict[str, object]:
     """BDM'nin takma adını ve yönlendirme önceliğini günceller."""
-    bdm = await bdm_getir(oturum, bdm_id)
+    bdm = await bdm_getir_org(oturum, organizasyon.id, bdm_id)
     konteyner = dict(bdm.konteyner or {})
     yol = dict(konteyner.get("yol") or {})
     if govde.oncelik is not None:
@@ -138,6 +149,7 @@ async def yol_guncelle(
     await islem_kaydet(
         oturum,
         "bdm.yol_guncellendi",
+        org_id=organizasyon.id,
         kullanici_id=kullanici.id,
         hedef_tur="bdm",
         hedef_id=bdm.id,

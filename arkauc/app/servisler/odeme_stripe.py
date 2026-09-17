@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from arkauc.app.cekirdek.ayarlar import ayarlar
 from arkauc.app.cekirdek.hatalar import GecersizIstek, UstSaglayiciHatasi
-from bdm_veritabani.modeller import Organizasyon, Plan
+from bdm_veritabani.modeller import Abonelik, Fatura, Organizasyon, Plan
 
 logger = logging.getLogger("kutyai.odeme.stripe")
 
@@ -63,8 +63,21 @@ class StripeSaglayici:
         return yanit.json()
 
     async def abonelik_baslat(
-        self, oturum: AsyncSession, *, organizasyon: Organizasyon, plan: Plan
+        self,
+        oturum: AsyncSession,
+        *,
+        organizasyon: Organizasyon,
+        plan: Plan,
+        abonelik: Abonelik,
+        fatura: Fatura,
     ) -> dict[str, Any]:
+        """Abonelik checkout oturumu acar.
+
+        Oturum `metadata[abonelik_id]`/`metadata[fatura_id]` ve
+        `client_reference_id` (organizasyon kimligi) ile etiketlenir: olay
+        `dis_id` ile eslesmese bile metadata uzerinden abonelik/fatura
+        bulunur. Odeme onaylanana kadar abonelik `deneme` kalir.
+        """
         oturum_verisi = await self._istek(
             "/checkout/sessions",
             {
@@ -72,6 +85,8 @@ class StripeSaglayici:
                 "success_url": f"{ayarlar.panel_url}/faturalama?durum=basarili",
                 "cancel_url": f"{ayarlar.panel_url}/faturalama?durum=iptal",
                 "client_reference_id": str(organizasyon.id),
+                "metadata[abonelik_id]": str(abonelik.id),
+                "metadata[fatura_id]": str(fatura.id),
                 "line_items[0][quantity]": 1,
                 "line_items[0][price_data][currency]": plan.para.lower(),
                 "line_items[0][price_data][unit_amount]": plan.aylik_fiyat_kurus,
@@ -79,10 +94,15 @@ class StripeSaglayici:
                 "line_items[0][price_data][product_data][name]": plan.ad,
             },
         )
+        oturum_id = str(oturum_verisi.get("id", ""))
+        # Stripe abonelik kimligini oturum yanitinda verebilir; yoksa esleme
+        # icin checkout oturum kimligi saklanir.
         return {
-            "dis_id": str(oturum_verisi.get("id", "")),
+            "dis_id": str(oturum_verisi.get("subscription") or oturum_id),
+            "oturum_id": oturum_id,
             "url": oturum_verisi.get("url"),
             "saglayici": self.ad,
+            "odeme_bekliyor": True,
         }
 
     async def odeme_oturumu(
@@ -167,10 +187,18 @@ class StripeSaglayici:
 
         tur = str(olay.get("type", ""))
         nesne = ((olay.get("data") or {}).get("object") or {})
+        # Abonelik olaylarinda metadata abonelik nesnesinden gelebilir
+        # (`subscription_details.metadata`); ust duzey metadata onceliklidir.
+        metadata = {
+            **((nesne.get("subscription_details") or {}).get("metadata") or {}),
+            **((nesne.get("metadata") or {})),
+        }
         return {
             "tur": tur,
+            "nesne_turu": str(nesne.get("object", "")),
             "dis_id": str(nesne.get("id", "")),
             "abonelik_dis_id": str(nesne.get("subscription", "") or ""),
-            "fatura_id": str((nesne.get("metadata") or {}).get("fatura_id", "")),
+            "abonelik_id": str(metadata.get("abonelik_id", "")),
+            "fatura_id": str(metadata.get("fatura_id", "")),
             "org_id": str(nesne.get("client_reference_id", "")),
         }

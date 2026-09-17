@@ -172,7 +172,11 @@ async def _anahtarla_istemci(jeton: str, oturum: AsyncSession) -> IstemciKimligi
         raise AnahtarGecersiz("API anahtarı iptal edilmiş.")
     anahtar.son_kullanim = datetime.now(timezone.utc)
     await islem_kaydet(
-        oturum, "api_anahtari.kullanildi", hedef_tur="api_anahtari", hedef_id=anahtar.id
+        oturum,
+        "api_anahtari.kullanildi",
+        org_id=anahtar.org_id,
+        hedef_tur="api_anahtari",
+        hedef_id=anahtar.id,
     )
     return IstemciKimligi(tur="anahtar", anahtar=anahtar)
 

@@ -12,11 +12,15 @@ from bdm_listesi import BdmOlustur, bdm_olustur
 from bdm_veritabani.modeller import (
     AnahtarDurumu,
     ApiAnahtari,
+    Bdm,
     IslemKaydi,
     Konusma,
+    KullanimDurumu,
+    KullanimKaydi,
     Mesaj,
     MesajRolu,
     Rol,
+    UyelikRolu,
 )
 from bdm_veritabani.oturum import oturum_fabrikasi
 
@@ -41,6 +45,7 @@ async def _konusma_ekle(
     bdm_id: int,
     *,
     kullanici_id: int | None = None,
+    org_id: int | None = None,
     baslik: str = "Sohbet",
     icerik: str = "Merhaba dünya",
     gun_once: int = 0,
@@ -49,6 +54,7 @@ async def _konusma_ekle(
     zaman = datetime.now(timezone.utc) - timedelta(days=gun_once)
     async with oturum_fabrikasi()() as oturum:
         konusma = Konusma(
+            org_id=org_id,
             kullanici_id=kullanici_id,
             bdm_id=bdm_id,
             baslik=baslik,
@@ -528,6 +534,44 @@ async def test_api_anahtari_uclari_izleyiciye_kapali_operator_ve_yoneticiye_acik
     assert yanit.json() == {"durum": "iptal"}
 
 
+async def test_api_anahtari_baska_organizasyonun_kullanicisina_atanamaz(istemci, yardimci):
+    sahip = await yardimci.yonetici()
+    alfa = await yardimci.organizasyon("Alfa Anahtar Üyesi", sahibi=sahip)
+    beta = await yardimci.organizasyon("Beta Anahtar Üyesi", sahibi=sahip)
+    beta_uyesi = await yardimci.kullanici_ekle(eposta="beta.uyesi@kutyai.local")
+    await yardimci.uye_yap(beta, beta_uyesi, UyelikRolu.son_kullanici)
+
+    yanit = await istemci.post(
+        "/api/v1/api-anahtarlari",
+        json={"ad": "Yabancı üye", "kullanici_id": beta_uyesi.id},
+        headers=yardimci.org_basliklari(sahip, alfa),
+    )
+    assert yanit.status_code == 400
+    hata = yanit.json()["hata"]
+    assert hata["kod"] == "gecersiz_istek"
+    assert hata["ayrinti"] == {"alan": "kullanici_id"}
+
+    yanit = await istemci.post(
+        "/api/v1/api-anahtarlari",
+        json={"ad": "Bilinmeyen kullanıcı", "kullanici_id": 999999},
+        headers=yardimci.org_basliklari(sahip, alfa),
+    )
+    assert yanit.status_code == 400
+    assert yanit.json()["hata"]["kod"] == "gecersiz_istek"
+
+    # Kendi organizasyonunun uyesine baglanabilir.
+    yanit = await istemci.post(
+        "/api/v1/api-anahtarlari",
+        json={"ad": "Beta üyesi", "kullanici_id": beta_uyesi.id},
+        headers=yardimci.org_basliklari(sahip, beta),
+    )
+    assert yanit.status_code == 201
+    async with oturum_fabrikasi()() as oturum:
+        anahtar = await oturum.get(ApiAnahtari, yanit.json()["id"])
+        assert anahtar.org_id == beta.id
+        assert anahtar.kullanici_id == beta_uyesi.id
+
+
 async def test_api_anahtari_bilinmeyen_modeli_reddeder(istemci, yardimci):
     basliklar = yardimci.basliklar(await yardimci.yonetici())
     yanit = await istemci.post(
@@ -647,3 +691,160 @@ async def test_ayarlar_sinirlari_dogrular_ve_yalniz_yonetici(istemci, yardimci):
     )
     assert yanit.status_code == 200
     assert yanit.json()["saklama_gun"] == 3650
+
+
+# --------------------------------------------------------------------------
+# Organizasyon izolasyonu
+# --------------------------------------------------------------------------
+
+
+async def test_api_anahtari_organizasyona_yazilir_ve_suzulur(istemci, yardimci):
+    sahip = await yardimci.yonetici()
+    alfa = await yardimci.organizasyon("Alfa Anahtar", sahibi=sahip)
+    beta = await yardimci.organizasyon("Beta Anahtar", sahibi=sahip)
+    alfa_basliklar = yardimci.org_basliklari(sahip, alfa)
+    beta_basliklar = yardimci.org_basliklari(sahip, beta)
+
+    yanit = await istemci.post(
+        "/api/v1/api-anahtarlari", json={"ad": "Alfa anahtarı"}, headers=alfa_basliklar
+    )
+    assert yanit.status_code == 201, yanit.text
+    anahtar_id = yanit.json()["id"]
+
+    async with oturum_fabrikasi()() as oturum:
+        kayit = await oturum.get(ApiAnahtari, anahtar_id)
+        assert kayit is not None
+        assert kayit.org_id == alfa.id
+
+    alfa_liste = await istemci.get("/api/v1/api-anahtarlari", headers=alfa_basliklar)
+    beta_liste = await istemci.get("/api/v1/api-anahtarlari", headers=beta_basliklar)
+    assert [k["id"] for k in alfa_liste.json()] == [anahtar_id]
+    assert beta_liste.json() == []
+
+    iptal = await istemci.post(
+        f"/api/v1/api-anahtarlari/{anahtar_id}/iptal", headers=beta_basliklar
+    )
+    assert iptal.status_code == 404
+    assert iptal.json()["hata"]["kod"] == "bulunamadi"
+
+
+async def test_api_anahtari_baska_organizasyonun_modelini_secmez(istemci, yardimci):
+    sahip = await yardimci.yonetici()
+    alfa = await yardimci.organizasyon("Alfa İzin", sahibi=sahip)
+    beta = await yardimci.organizasyon("Beta İzin", sahibi=sahip)
+    bdm_id = await _bdm_olustur("Beta Modeli")
+    async with oturum_fabrikasi()() as oturum:
+        bdm = await oturum.get(Bdm, bdm_id)
+        assert bdm is not None
+        bdm.org_id = beta.id
+        await oturum.commit()
+
+    yanit = await istemci.post(
+        "/api/v1/api-anahtarlari",
+        json={"ad": "Sızan anahtar", "izinli_modeller": [str(bdm_id)]},
+        headers=yardimci.org_basliklari(sahip, alfa),
+    )
+    assert yanit.status_code == 400
+    assert yanit.json()["hata"]["kod"] == "gecersiz_istek"
+
+
+async def test_konusma_loglari_organizasyona_gore_suzer(istemci, yardimci):
+    bdm_id = await _bdm_olustur()
+    sahip = await yardimci.yonetici()
+    alfa = await yardimci.organizasyon("Alfa Günlük", sahibi=sahip)
+    beta = await yardimci.organizasyon("Beta Günlük", sahibi=sahip)
+    alfa_basliklar = yardimci.org_basliklari(sahip, alfa)
+    beta_basliklar = yardimci.org_basliklari(sahip, beta)
+    konusma_id = await _konusma_ekle(bdm_id, baslik="Alfa sohbeti", org_id=alfa.id)
+
+    alfa_liste = await istemci.get("/api/v1/loglar/konusmalar", headers=alfa_basliklar)
+    beta_liste = await istemci.get("/api/v1/loglar/konusmalar", headers=beta_basliklar)
+    assert alfa_liste.json()["toplam"] == 1
+    assert beta_liste.json()["toplam"] == 0
+
+    assert (
+        await istemci.get(f"/api/v1/loglar/konusmalar/{konusma_id}", headers=beta_basliklar)
+    ).status_code == 404
+    assert (
+        await istemci.get(
+            f"/api/v1/loglar/konusmalar/{konusma_id}/disa-aktar", headers=beta_basliklar
+        )
+    ).status_code == 404
+    assert (
+        await istemci.delete(f"/api/v1/loglar/konusmalar/{konusma_id}", headers=beta_basliklar)
+    ).status_code == 404
+    assert (
+        await istemci.get(f"/api/v1/loglar/konusmalar/{konusma_id}", headers=alfa_basliklar)
+    ).status_code == 200
+
+    # Saklama temizliği yalnız çağıranın organizasyonunu tarar.
+    temizle = await istemci.post(
+        "/api/v1/loglar/temizle", json={"gun": 1}, headers=beta_basliklar
+    )
+    assert temizle.status_code == 200
+    assert temizle.json() == {"silinen": 0}
+    assert (await istemci.get("/api/v1/loglar/konusmalar", headers=alfa_basliklar)).json()[
+        "toplam"
+    ] == 1
+
+
+async def test_islem_kayitlari_organizasyona_gore_suzer(istemci, yardimci):
+    sahip = await yardimci.yonetici()
+    alfa = await yardimci.organizasyon("Alfa Denetim", sahibi=sahip)
+    beta = await yardimci.organizasyon("Beta Denetim", sahibi=sahip)
+    await istemci.post(
+        "/api/v1/api-anahtarlari",
+        json={"ad": "Alfa anahtarı"},
+        headers=yardimci.org_basliklari(sahip, alfa),
+    )
+
+    yol = "/api/v1/islem-kayitlari?eylem=api_anahtari.olusturuldu"
+    alfa_kayitlar = await istemci.get(yol, headers=yardimci.org_basliklari(sahip, alfa))
+    beta_kayitlar = await istemci.get(yol, headers=yardimci.org_basliklari(sahip, beta))
+    assert alfa_kayitlar.json()["toplam"] == 1
+    assert beta_kayitlar.json()["toplam"] == 0
+
+    async with oturum_fabrikasi()() as oturum:
+        satir = (
+            await oturum.execute(
+                sa.select(IslemKaydi).where(IslemKaydi.eylem == "api_anahtari.olusturuldu")
+            )
+        ).scalars().one()
+        assert satir.org_id == alfa.id
+
+
+async def test_kullanim_ozeti_organizasyona_gore_suzer(istemci, yardimci):
+    bdm_id = await _bdm_olustur()
+    sahip = await yardimci.yonetici()
+    alfa = await yardimci.organizasyon("Alfa Kullanım", sahibi=sahip)
+    beta = await yardimci.organizasyon("Beta Kullanım", sahibi=sahip)
+
+    async with oturum_fabrikasi()() as oturum:
+        oturum.add(
+            KullanimKaydi(
+                org_id=alfa.id,
+                bdm_id=bdm_id,
+                girdi_token=5,
+                cikti_token=7,
+                durum=KullanimDurumu.basarili,
+            )
+        )
+        await oturum.commit()
+
+    alfa_ozet = await istemci.get(
+        "/api/v1/kullanim/ozet", headers=yardimci.org_basliklari(sahip, alfa)
+    )
+    beta_ozet = await istemci.get(
+        "/api/v1/kullanim/ozet", headers=yardimci.org_basliklari(sahip, beta)
+    )
+    assert (alfa_ozet.json()["toplam_istek"], alfa_ozet.json()["toplam_token"]) == (1, 12)
+    assert (beta_ozet.json()["toplam_istek"], beta_ozet.json()["toplam_token"]) == (0, 0)
+
+    alfa_seri = await istemci.get(
+        "/api/v1/kullanim/zaman-serisi?kirilim=bdm", headers=yardimci.org_basliklari(sahip, alfa)
+    )
+    beta_seri = await istemci.get(
+        "/api/v1/kullanim/zaman-serisi?kirilim=bdm", headers=yardimci.org_basliklari(sahip, beta)
+    )
+    assert [nokta["token"] for nokta in alfa_seri.json()["seri"]] == [12]
+    assert beta_seri.json()["seri"] == []

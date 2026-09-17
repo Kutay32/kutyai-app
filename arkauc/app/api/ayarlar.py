@@ -18,6 +18,7 @@ from arkauc.app.cekirdek.ayarlar_db import ayar_oku, ayar_yaz
 from arkauc.app.cekirdek.bagimliliklar import gecerli_personel, veritabani_oturumu
 from arkauc.app.cekirdek.denetim import islem_kaydet
 from arkauc.app.cekirdek.guvenlik import sifrele
+from arkauc.app.cekirdek.organizasyon import denetim_organizasyonu
 from bdm_veritabani.modeller import Kullanici, Rol
 
 router = APIRouter()
@@ -96,6 +97,7 @@ async def ayarlari_guncelle(
         await islem_kaydet(
             oturum,
             "ayar.guncellendi",
+            org_id=await denetim_organizasyonu(oturum, yonetici.id),
             kullanici_id=yonetici.id,
             hedef_tur="ayar",
             ayrinti={"anahtarlar": anahtarlar},

@@ -43,6 +43,10 @@ GORUNTULEME_ROLLERI: tuple[UyelikRolu, ...] = (
     UyelikRolu.izleyici,
 )
 
+#: `sahip` rolune yukseltme yalniz mevcut `sahip` tarafindan yapilabilir;
+#: aksi halde `yonetici` kendini sahip yapip son-sahip korumasini islevsiz kilar.
+SAHIP_YUKSELTME_MESAJI = "Yalnız mevcut sahip bir üyeyi sahip yapabilir."
+
 
 class OrganizasyonOlustur(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -162,6 +166,7 @@ async def organizasyon_olustur(
     await islem_kaydet(
         oturum,
         "organizasyon.olusturuldu",
+        org_id=organizasyon.id,
         kullanici_id=kullanici.id,
         hedef_tur="organizasyon",
         hedef_id=organizasyon.id,
@@ -211,6 +216,7 @@ async def organizasyon_guncelle(
     await islem_kaydet(
         oturum,
         "organizasyon.guncellendi",
+        org_id=organizasyon.id,
         kullanici_id=kullanici.id,
         hedef_tur="organizasyon",
         hedef_id=organizasyon.id,
@@ -252,7 +258,7 @@ async def uye_ekle(
     oturum: AsyncSession = Depends(veritabani_oturumu),
     kullanici: Kullanici = Depends(gecerli_kullanici),
 ) -> dict:
-    await _uyelik_yetkili(
+    kendi_uyeligi = await _uyelik_yetkili(
         oturum,
         organizasyon_id=organizasyon_id,
         kullanici=kullanici,
@@ -262,6 +268,8 @@ async def uye_ekle(
     mevcut = await uyelik_getir(oturum, organizasyon_id, hedef.id)
     if mevcut is not None:
         raise Cakisma("Bu kullanıcı zaten organizasyonun üyesi.")
+    if veri.rol == UyelikRolu.sahip and kendi_uyeligi.rol != UyelikRolu.sahip:
+        raise YetkiYok(SAHIP_YUKSELTME_MESAJI)
     uyelik = Uyelik(
         organizasyon_id=organizasyon_id,
         kullanici_id=hedef.id,
@@ -272,6 +280,7 @@ async def uye_ekle(
     await islem_kaydet(
         oturum,
         "uyelik.eklendi",
+        org_id=organizasyon_id,
         kullanici_id=kullanici.id,
         hedef_tur="uyelik",
         hedef_id=f"{organizasyon_id}:{hedef.id}",
@@ -291,7 +300,7 @@ async def uye_guncelle(
     oturum: AsyncSession = Depends(veritabani_oturumu),
     kullanici: Kullanici = Depends(gecerli_kullanici),
 ) -> dict:
-    await _uyelik_yetkili(
+    kendi_uyeligi = await _uyelik_yetkili(
         oturum,
         organizasyon_id=organizasyon_id,
         kullanici=kullanici,
@@ -302,6 +311,13 @@ async def uye_guncelle(
         raise Bulunamadi("Üyelik bulunamadı.")
 
     ham = veri.model_dump(exclude_unset=True)
+    sahip_yukseliyor = (
+        "rol" in ham
+        and ham["rol"] == UyelikRolu.sahip
+        and uyelik.rol != UyelikRolu.sahip
+    )
+    if sahip_yukseliyor and kendi_uyeligi.rol != UyelikRolu.sahip:
+        raise YetkiYok(SAHIP_YUKSELTME_MESAJI)
     sahip_dusuyor = (
         uyelik.rol == UyelikRolu.sahip
         and (
@@ -333,6 +349,7 @@ async def uye_guncelle(
     await islem_kaydet(
         oturum,
         "uyelik.guncellendi",
+        org_id=organizasyon_id,
         kullanici_id=kullanici.id,
         hedef_tur="uyelik",
         hedef_id=f"{organizasyon_id}:{kullanici_id}",
@@ -381,6 +398,7 @@ async def uye_sil(
     await islem_kaydet(
         oturum,
         "uyelik.silindi",
+        org_id=organizasyon_id,
         kullanici_id=kullanici.id,
         hedef_tur="uyelik",
         hedef_id=f"{organizasyon_id}:{kullanici_id}",

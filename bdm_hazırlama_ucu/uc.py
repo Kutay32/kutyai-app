@@ -16,15 +16,19 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from arkauc.app.cekirdek import guvenlik
-from arkauc.app.cekirdek.bagimliliklar import gecerli_personel, veritabani_oturumu
+from arkauc.app.cekirdek.bagimliliklar import (
+    aktif_organizasyon,
+    gecerli_personel,
+    veritabani_oturumu,
+)
 from arkauc.app.cekirdek.denetim import islem_kaydet
 from arkauc.app.cekirdek.hatalar import KutyaiHatasi, SurucuYok
 from arkauc.app.servisler.konteyner import surucu_al
 from bdm_hazırlama_ucu import cekim, dogrulama, manifest
 from bdm_hazırlama_ucu.on_kontrol import GPU_UYARI_MESAJI, on_kontrol
-from bdm_listesi.katalog import bdm_getir
+from bdm_listesi.katalog import bdm_getir_org
 from bdm_listesi.saglayicilar import saglayici_bilgisi
-from bdm_veritabani.modeller import Bdm, Kullanici
+from bdm_veritabani.modeller import Bdm, Kullanici, Organizasyon
 
 router = APIRouter()
 
@@ -90,13 +94,15 @@ async def bdm_dogrula(
     bdm_id: int,
     oturum: AsyncSession = Depends(veritabani_oturumu),
     kullanici: Kullanici = Depends(gecerli_personel()),
+    organizasyon: Organizasyon = Depends(aktif_organizasyon),
 ) -> dict[str, Any]:
     """Upstream baglantisini ve model listesini dogrular; sonucu denetim izine yazar."""
-    bdm = await bdm_getir(oturum, bdm_id)
+    bdm = await bdm_getir_org(oturum, organizasyon.id, bdm_id)
     sonuc = await dogrulama.dogrula(bdm, oturum=oturum)
     await islem_kaydet(
         oturum,
         "bdm.dogrulandi",
+        org_id=organizasyon.id,
         kullanici_id=kullanici.id,
         hedef_tur="bdm",
         hedef_id=bdm.id,
@@ -114,9 +120,10 @@ async def bdm_cek(
     bdm_id: int,
     oturum: AsyncSession = Depends(veritabani_oturumu),
     kullanici: Kullanici = Depends(gecerli_personel()),
+    organizasyon: Organizasyon = Depends(aktif_organizasyon),
 ) -> StreamingResponse:
     """Ollama model indirmesini SSE (`event: ilerleme`, sonunda `event: bitti`) akitir."""
-    bdm = await bdm_getir(oturum, bdm_id)
+    bdm = await bdm_getir_org(oturum, organizasyon.id, bdm_id)
     await _gpu_denetle(bdm)
     cekim.cek_destegi_denetle(bdm)
     return StreamingResponse(
@@ -131,9 +138,10 @@ async def bdm_manifest(
     bdm_id: int,
     oturum: AsyncSession = Depends(veritabani_oturumu),
     kullanici: Kullanici = Depends(gecerli_personel()),
+    organizasyon: Organizasyon = Depends(aktif_organizasyon),
 ) -> dict[str, Any]:
     """Konteyner manifestini onizler; gizli ortam degerleri maskelenir."""
-    bdm = await bdm_getir(oturum, bdm_id)
+    bdm = await bdm_getir_org(oturum, organizasyon.id, bdm_id)
     await _gpu_denetle(bdm)
     govde = manifest.manifest_uret(bdm)
     govde["ortam"] = _ortami_maskele(govde["ortam"])
@@ -145,7 +153,8 @@ async def bdm_on_kontrol(
     bdm_id: int,
     oturum: AsyncSession = Depends(veritabani_oturumu),
     kullanici: Kullanici = Depends(gecerli_personel()),
+    organizasyon: Organizasyon = Depends(aktif_organizasyon),
 ) -> dict[str, Any]:
     """Docker, GPU, disk ve imaj hazirligini raporlar."""
-    bdm = await bdm_getir(oturum, bdm_id)
+    bdm = await bdm_getir_org(oturum, organizasyon.id, bdm_id)
     return await on_kontrol(bdm)

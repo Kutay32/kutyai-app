@@ -81,6 +81,14 @@ Tüm ayarlar kök `.env.ornek` ile aynı adları taşır (`KUTYAI_*`); Docker'a 
 | `KUTYAI_POSTGRES_*` | `kutyai` | Yalnız `postgres` profilinde; `KUTYAI_VERITABANI_URL` ile aynı olmalı |
 | `KUTYAI_ORTAM` | `gelistirme` | Üretimde `uretim` yapın; sırlar boşsa uygulama başlamaz |
 | `KUTYAI_HF_ONBELLEK` | boş → konteyner içi `bdm_veritabani/hf-onbellek` | Yerel model önbelleği; BDM konteynerine **Docker host** yolundan bağlanır, kalıcılık için host yolunu arkauc'a da bağlayın (`docker-compose.yml` içinde örnek yorumlu) |
+| `KUTYAI_DOSYA_DIZINI` | boş → konteyner içi `bdm_veritabani/dosyalar` | Yüklenen dosyaların kökü. Kalıcılık için `/veri/dosyalar` verin; aksi hâlde dosyalar konteyner katmanında kalır ve konteyner yeniden oluşturulunca kaybolur |
+| `KUTYAI_STRIPE_GIZLI_ANAHTAR`, `KUTYAI_STRIPE_WEBHOOK_SIRRI` | boş | Yalnız `KUTYAI_ODEME_SAGLAYICI=stripe` iken gerekir; `dagitim/.env` içinde tanımlayın (kök `.env.ornek` açıklamalıdır) |
+| `KUTYAI_ARAC_IMZA_ANAHTARI` | boş → jeton sırrından HMAC ile ayrı anahtar türetilir | Webhook `X-Kutyai-Imza` HMAC anahtarı; araç webhook'u kullanıyorsanız bağımsız anahtar tanımlayın |
+| `KUTYAI_SSO_YENIDEN_YONLENDIRME` | boş | Doluysa SSO girişi jeton yerine bu adrese `?kod=` ile döner; **tarayıcıdan görünen** arayüz adresi olmalıdır |
+
+Dosya, araç, RAG, ödeme ve SSO değişkenlerinin tamamı (varsayılanlarıyla) kök `.env.ornek`
+ve `kaynak/KURULUM.md` §12 içindedir; `docker compose`, `dagitim/.env` dosyasını arkauc
+konteynerine `env_file` olarak okur, bu yüzden aynı adlar orada da geçerlidir.
 
 Sır üretimi:
 
@@ -167,3 +175,50 @@ Geri yükleme: servisi durdurun, dosyayı/dökümü geri alın,
 - `postgres` portu ana makineye açılmaz; yalnız `kutyai-agi` ağından erişilir.
 - Üretimde `KUTYAI_ORTAM=uretim` verin, sırları `.env` içinde tanımlayın, `KUTYAI_SMTP_*`
   ayarlarını yapın ve arayüzleri HTTPS sonlandıran bir vekil arkasında çalıştırın.
+
+## 12. Helm (Kubernetes) ile dağıtım
+
+Bu klasördeki Compose dağıtımının Kubernetes karşılığı `helm/kutyai` chart'ıdır; Compose'daki
+üç servis üç Deployment'a karşılık gelir ve **aynı** ortam değişkeni adları (`KUTYAI_*`),
+portlar (8000/3000/3001), sağlık uçları ve kalıcı hacim yolu (`/veri`) kullanılır.
+
+| Dosya | Ne yapar |
+|---|---|
+| `helm/kutyai/Chart.yaml` | Chart sürümü `0.1.0`, `kubeVersion: ">=1.25.0-0"` |
+| `helm/kutyai/values.yaml` | Tüm değerler; sır varsayılanları **boş** (düz metin sır yok) |
+| `helm/kutyai/templates/` | Deployment/Service (arka-uc, onuc, panel), ConfigMap, Secret, PVC, HPA, Ingress, Namespace, ServiceAccount, göç Job'u |
+| `helm/kutyai/README.md` | Chart'ın tam belgesi: Compose ↔ Helm eşlemesi, sırlar, üretim notları, doğrulama |
+| `helm/kutyai/.helmignore` | Paketleme dışı bırakılanlar |
+
+Kurulum (`kaynak/KURULUM.md` §6, işletim `kaynak/ISLETIM.md` §8):
+
+```bash
+helm install kutyai helm/kutyai -n kutyai --create-namespace
+helm status kutyai -n kutyai          # erişim adresleri + sır uyarıları
+```
+
+Öne çıkan noktalar:
+
+- **Sırlar:** iki mod — `secrets.values` (chart Secret üretir; boş bırakılan
+  `KUTYAI_GIZLI_ANAHTAR` ve `KUTYAI_SIFRELEME_ANAHTARI` rastgele üretilir ve yükseltmede
+  `lookup` ile korunur) ya da `secrets.existingSecret` (üretimde önerilen). Parola içeren
+  `KUTYAI_VERITABANI_URL` `config` yerine `secrets.values` altına yazılır.
+- **Göç:** `templates/migration-job.yaml` → `python -m alembic upgrade head`,
+  `post-install,pre-upgrade` hook'u (compose'daki `docker compose exec arkauc ...` ile aynı komut).
+- **Ölçekleme:** HPA varsayılan kapalı; açmak için harici PostgreSQL ve pod'lar arası
+  paylaşılabilir hacim gerekir (varsayılan SQLite + `ReadWriteOnce`).
+- **BDM konteynerleri:** `arkauc.dockerSocket.enabled` varsayılan **kapalı**; açmak düğümde root
+  yetkisi demektir (bkz. §11).
+- **Kalıcı hacimler:** `kutyai-veri` / `kutyai-hf-onbellek` PVC'lerinde
+  `helm.sh/resource-policy: keep` vardır; `helm uninstall` veriyi silmez.
+- **v2 değişkenleri:** chart, dosya (`KUTYAI_DOSYA_MAKS_MB`, `KUTYAI_DOSYA_DIZINI=/veri/dosyalar`,
+  `KUTYAI_DOSYA_BAGLAM_KR`), araç (`KUTYAI_ARAC_YEREL_IZIN`, `KUTYAI_ARAC_MAKS_TUR`), RAG
+  (`KUTYAI_RAG_UST_K`), ödeme (`KUTYAI_ODEME_SAGLAYICI`) ve SSO (`KUTYAI_SSO_*`) anahtarlarını
+  `config` altında taşır; gizliler (`KUTYAI_STRIPE_*`, `KUTYAI_ARAC_IMZA_ANAHTARI`) `secrets.values`
+  altındadır ve `existingSecret` modunda kendi Secret'ınızda bulunmalıdır. Tam liste:
+  `dagitim/helm/kutyai/values.yaml`.
+
+**Doğrulama ve sınır:** `helm lint` temiz; `helm template` varsayılanda 12, chart README §8'deki
+varyantta 15 kaynak; `kubeconform -strict -kubernetes-version 1.29.0` ile 12/12 ve 15/15 geçerli
+(helm 3.16.3). Chart **gerçek bir kümeye kurulmadı**; `kubectl apply --dry-run=client` küme
+olmadığı için çalıştırılamadı.

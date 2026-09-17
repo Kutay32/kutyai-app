@@ -25,9 +25,10 @@ from arkauc.app.cekirdek.bagimliliklar import veritabani_oturumu
 from arkauc.app.cekirdek.denetim import islem_kaydet
 from arkauc.app.cekirdek.guvenlik import sifre_hashle
 from arkauc.app.cekirdek.hatalar import Cakisma
+from arkauc.app.cekirdek.organizasyon import denetim_organizasyonu, varsayilan_uyelik_ekle
 from bdm_hazırlama_ucu.dogrulama import dogrula
 from bdm_listesi import BdmOlustur, bdm_olustur, bdm_sozlugu
-from bdm_veritabani.modeller import Bdm, Kullanici, KullaniciDurumu, Rol
+from bdm_veritabani.modeller import Bdm, Kullanici, KullaniciDurumu, Rol, UyelikRolu
 
 router = APIRouter()
 
@@ -127,6 +128,10 @@ async def kurulumu_tamamla(
             oturum.add(yonetici)
             await oturum.flush()
 
+            # Kurucu, varsayilan organizasyonun sahibi olur (spec §2.1): kiracinin
+            # uyelik bagi kurulum aninda kurulur, ilk istege (JIT) birakilmaz.
+            await varsayilan_uyelik_ekle(oturum, yonetici, rol=UyelikRolu.sahip)
+
             bdm = await bdm_olustur(oturum, govde.bdm)
 
             await ayar_yaz(oturum, "marka_adi", govde.marka_adi)
@@ -135,6 +140,7 @@ async def kurulumu_tamamla(
             await islem_kaydet(
                 oturum,
                 "kurulum.tamamlandi",
+                org_id=await denetim_organizasyonu(oturum, yonetici.id),
                 kullanici_id=yonetici.id,
                 hedef_tur="bdm",
                 hedef_id=bdm.id,

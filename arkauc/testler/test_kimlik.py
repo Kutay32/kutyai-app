@@ -26,6 +26,7 @@ from bdm_veritabani.modeller import (
     KullaniciDurumu,
     Oturum,
     Rol,
+    UyelikRolu,
 )
 from bdm_veritabani.oturum import oturum_fabrikasi
 
@@ -251,6 +252,19 @@ async def test_panel_giris_yalniz_personel(istemci, yardimci):
     )
     assert yanit.status_code == 403
     assert yanit.json()["hata"]["kod"] == "yetki_yok"
+
+    # Bir organizasyonda `sahip` uyeligi olan davetli, global rolu
+    # `son_kullanici` kalsa da panele girebilir (yetki karari uyelik rolunden).
+    davetli = await yardimci.kullanici_ekle(
+        eposta="davetli.sahip@kutyai.local", rol=Rol.son_kullanici
+    )
+    await yardimci.organizasyon("Davetli Organizasyon", sahibi=davetli)
+    davetli_giris = await istemci.post(
+        "/api/v1/kimlik/panel-giris",
+        json={"eposta": "davetli.sahip@kutyai.local", "parola": PAROLA},
+    )
+    assert davetli_giris.status_code == 200
+    assert davetli_giris.json()["kullanici"]["rol"] == "son_kullanici"
 
     await yardimci.yonetici(eposta="yonetici@kutyai.local")
     panel = await istemci.post(
@@ -644,6 +658,128 @@ async def test_pasiflestirilen_kullanicinin_jetonlari_gecersiz(istemci, yardimci
     )
     assert ben.status_code == 403
     assert ben.json()["hata"]["kod"] == "yetki_yok"
+
+
+async def test_kullanicilar_aktif_organizasyon_kapsamli(istemci, yardimci):
+    """Liste yalniz aktif organizasyonun uyelerini doner; yabanci hedef 404 alir."""
+    sahip = await yardimci.yonetici()
+    alfa = await yardimci.organizasyon("Alfa Kullanıcılar", sahibi=sahip)
+    alfa_basliklari = yardimci.org_basliklari(sahip, alfa)
+    alfa_uyesi = await yardimci.kullanici_ekle(eposta="alfa.uyesi@kutyai.local")
+    await yardimci.uye_yap(alfa, alfa_uyesi, UyelikRolu.son_kullanici)
+    yabanci = await yardimci.kullanici_ekle(eposta="yabanci@kutyai.local")
+
+    liste = await istemci.get("/api/v1/kullanicilar", headers=alfa_basliklari)
+    assert liste.status_code == 200
+    assert liste.json()["toplam"] == 2
+    assert {k["eposta"] for k in liste.json()["kayitlar"]} == {
+        sahip.eposta,
+        alfa_uyesi.eposta,
+    }
+
+    arama = await istemci.get(
+        "/api/v1/kullanicilar?arama=yabanci", headers=alfa_basliklari
+    )
+    assert arama.json() == {"toplam": 0, "sayfa": 1, "boyut": 25, "kayitlar": []}
+
+    # Ayni kullanici kendi organizasyonunda listelenir: kapsam aktif organizasyondur.
+    varsayilan = await istemci.get(
+        "/api/v1/kullanicilar?arama=yabanci", headers=yardimci.basliklar(sahip)
+    )
+    assert [k["eposta"] for k in varsayilan.json()["kayitlar"]] == [yabanci.eposta]
+
+    guncelle = await istemci.patch(
+        f"/api/v1/kullanicilar/{yabanci.id}",
+        json={"ad_soyad": "Sızan Kişi"},
+        headers=alfa_basliklari,
+    )
+    assert guncelle.status_code == 404
+    assert guncelle.json()["hata"]["kod"] == "bulunamadi"
+
+    pasiflestir = await istemci.delete(
+        f"/api/v1/kullanicilar/{yabanci.id}", headers=alfa_basliklari
+    )
+    assert pasiflestir.status_code == 404
+
+    async with oturum_fabrikasi()() as oturum:
+        dokunulmamis = await oturum.get(Kullanici, yabanci.id)
+        assert dokunulmamis.durum == KullaniciDurumu.aktif
+        assert dokunulmamis.ad_soyad == "Test Kullanıcı"
+
+    # Organizasyon uyesi hedef normal sekilde yonetilir.
+    guncelle = await istemci.patch(
+        f"/api/v1/kullanicilar/{alfa_uyesi.id}",
+        json={"ad_soyad": "Alfa Üyesi"},
+        headers=alfa_basliklari,
+    )
+    assert guncelle.status_code == 200
+    assert guncelle.json()["ad_soyad"] == "Alfa Üyesi"
+    sil = await istemci.delete(
+        f"/api/v1/kullanicilar/{alfa_uyesi.id}", headers=alfa_basliklari
+    )
+    assert sil.status_code == 204
+
+
+async def test_kullanici_olusturma_aktif_organizasyona_uye_yapar(istemci, yardimci):
+    """Davet edilen kullanici aktif organizasyona uye yazilir, digerine yazilmaz."""
+    sahip = await yardimci.yonetici()
+    alfa = await yardimci.organizasyon("Alfa Davet", sahibi=sahip)
+    alfa_basliklari = yardimci.org_basliklari(sahip, alfa)
+
+    olustur = await istemci.post(
+        "/api/v1/kullanicilar",
+        json={"eposta": "Davet.Edilen@Kutyai.Local", "parola": PAROLA, "rol": "operator"},
+        headers=alfa_basliklari,
+    )
+    assert olustur.status_code == 201
+    yeni = olustur.json()
+
+    alfa_listesi = await istemci.get(
+        "/api/v1/kullanicilar?arama=davet.edilen", headers=alfa_basliklari
+    )
+    assert [k["id"] for k in alfa_listesi.json()["kayitlar"]] == [yeni["id"]]
+    varsayilan_liste = await istemci.get(
+        "/api/v1/kullanicilar?arama=davet.edilen", headers=yardimci.basliklar(sahip)
+    )
+    assert varsayilan_liste.json()["toplam"] == 0
+
+    uyeler = await istemci.get(
+        f"/api/v1/organizasyonlar/{alfa.id}/uyeler", headers=yardimci.basliklar(sahip)
+    )
+    uye = next(k for k in uyeler.json() if k["kullanici_id"] == yeni["id"])
+    assert (uye["rol"], uye["durum"]) == ("operator", "aktif")
+
+    # Davet edilen personel panel kapisindan giris yapabilir.
+    giris = await istemci.post(
+        "/api/v1/kimlik/panel-giris",
+        json={"eposta": yeni["eposta"], "parola": PAROLA},
+    )
+    assert giris.status_code == 200
+
+
+async def test_kullanici_guncelleme_denetimi_organizasyon_tasir(istemci, yardimci):
+    """`kullanici.guncelle` denetim kaydi yalniz aktif organizasyonda gorunur."""
+    sahip = await yardimci.yonetici()
+    alfa = await yardimci.organizasyon("Alfa Denetim", sahibi=sahip)
+    beta = await yardimci.organizasyon("Beta Denetim", sahibi=sahip)
+    hedef = await yardimci.kullanici_ekle(eposta="denetim.hedefi@kutyai.local")
+    await yardimci.uye_yap(alfa, hedef, UyelikRolu.son_kullanici)
+
+    guncelle = await istemci.patch(
+        f"/api/v1/kullanicilar/{hedef.id}",
+        json={"ad_soyad": "Denetim Hedefi"},
+        headers=yardimci.org_basliklari(sahip, alfa),
+    )
+    assert guncelle.status_code == 200
+
+    yol = "/api/v1/islem-kayitlari?eylem=kullanici.guncelle"
+    alfa_kayitlari = await istemci.get(yol, headers=yardimci.org_basliklari(sahip, alfa))
+    assert alfa_kayitlari.json()["toplam"] == 1
+    assert alfa_kayitlari.json()["kayitlar"][0]["hedef_id"] == str(hedef.id)
+    beta_kayitlari = await istemci.get(yol, headers=yardimci.org_basliklari(sahip, beta))
+    assert beta_kayitlari.json()["toplam"] == 0
+    varsayilan = await istemci.get(yol, headers=yardimci.basliklar(sahip))
+    assert varsayilan.json()["toplam"] == 0
 
 
 async def _smtp_ayarlarini_yaz(**degerler: object) -> None:
